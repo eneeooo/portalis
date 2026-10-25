@@ -10,7 +10,10 @@
 <body>
   <div class="wrap">
     <div id="bar"></div>
-    <p><a href="reviewer.html">&larr; All reviewers</a> <a id="manageLink" class="btn ghost small" style="display:none">Manage this topic</a></p>
+    <div class="topic-actions">
+      <a class="topic-action topic-back" href="reviewer.html"><span aria-hidden="true">&larr;</span> All reviewers</a>
+      <a id="manageLink" class="topic-action topic-manage" style="display:none">Manage this topic <span aria-hidden="true">&rarr;</span></a>
+    </div>
     <p id="subject" class="hint" style="font-size:19px"></p>
     <h1 id="title" style="font-family:'Permanent Marker',cursive;font-weight:normal;margin:0 0 16px"></h1>
 
@@ -31,7 +34,7 @@
   <script src="common.js"></script>
   <script>
     const topicId = Number(new URLSearchParams(location.search).get("id"));
-    let ctx, topic, questions = [], attempts = [], cur = null, answers = {}, saveTimer = null;
+    let ctx, topic, questions = [], attempts = [], cur = null, answers = {}, saveTimer = null, advanceTimer = null, advanceSeconds = 0, currentQuestionIndex = 0;
     const msg = document.getElementById("msg");
     const quiz = document.getElementById("quiz");
 
@@ -56,6 +59,7 @@
         m.style.display = "inline-block";
       }
       const rev = document.getElementById("reviewer");
+      rev.classList.add("reviewer-card");
       rev.appendChild(t.reviewer.trim() ? renderRich(t.reviewer) : el("p", "hint", "No reviewer text yet."));
 
       await loadQuiz();
@@ -84,6 +88,7 @@
 
     /* ---------- quiz home: tries, history, start / continue / retry ---------- */
     function renderHome() {
+      quiz.classList.remove("quiz-taking");
       quiz.innerHTML = "";
       const card = el("div", "card");
       if (!questions.length) {
@@ -148,6 +153,8 @@
       if (error) { err(error.message); return; }
       cur = Array.isArray(data) ? data[0] : data;
       answers = cur.answers || {};
+      const firstUnanswered = questions.findIndex(q => !String(answers[q.id] || "").trim());
+      currentQuestionIndex = firstUnanswered < 0 ? questions.length - 1 : firstUnanswered;
       renderForm();
     }
 
@@ -157,36 +164,66 @@
     }
 
     function renderForm() {
+      quiz.classList.add("quiz-taking");
       quiz.innerHTML = "";
       const head = el("div", "card");
       head.appendChild(el("h2", "", "Try #" + cur.attempt_no));
       head.appendChild(el("p", "hint", "Your answers save automatically. You can leave and continue later."));
       quiz.appendChild(head);
 
-      questions.forEach((q, i) => {
-        const card = el("div", "card qcard");
-        card.appendChild(el("h3", "", (i + 1) + ". " + q.prompt));
-        if (q.qtype === "mcq") {
-          const opts = el("div", "opts");
-          (q.options || []).forEach(o => {
-            const lab = document.createElement("label");
-            const r = document.createElement("input");
-            r.type = "radio"; r.name = "q" + q.id; r.value = o;
-            r.checked = answers[q.id] === o;
-            r.onchange = () => { answers[q.id] = o; changed(); };
-            lab.append(r, el("span", "", o));
-            opts.appendChild(lab);
-          });
-          card.appendChild(opts);
-        } else {
-          const inp = document.createElement("input");
-          inp.type = "text"; inp.placeholder = "Type your answer";
-          inp.value = answers[q.id] || "";
-          inp.oninput = () => { answers[q.id] = inp.value; changed(); };
-          card.appendChild(inp);
-        }
-        quiz.appendChild(card);
-      });
+      const q = questions[currentQuestionIndex];
+      if (!q) return;
+      const card = el("div", "card qcard");
+      card.appendChild(el("p", "notebook-count", "Question " + (currentQuestionIndex + 1) + " of " + questions.length));
+      card.appendChild(el("h3", "", q.prompt));
+      if (q.qtype === "mcq") {
+        const opts = el("div", "opts");
+        (q.options || []).forEach(o => {
+          const lab = document.createElement("label");
+          const r = document.createElement("input");
+          r.type = "radio"; r.name = "q" + q.id; r.value = o;
+          r.checked = answers[q.id] === o;
+          r.onchange = () => {
+            answers[q.id] = o;
+            changed();
+            clearInterval(advanceTimer);
+            advanceSeconds = 0;
+            if (currentQuestionIndex < questions.length - 1) {
+              const answeredIndex = currentQuestionIndex;
+              advanceSeconds = 3;
+              updateProgress();
+              advanceTimer = setInterval(() => {
+                advanceSeconds -= 1;
+                if (advanceSeconds <= 0) {
+                  clearInterval(advanceTimer);
+                  advanceTimer = null;
+                  advanceSeconds = 0;
+                  if (currentQuestionIndex === answeredIndex && answers[q.id] === o) showQuestion(answeredIndex + 1);
+                  return;
+                }
+                updateProgress();
+              }, 1000);
+            }
+          };
+          lab.append(r, el("span", "", o));
+          opts.appendChild(lab);
+        });
+        card.appendChild(opts);
+      } else {
+        const inp = document.createElement("input");
+        inp.type = "text"; inp.placeholder = "Type your answer";
+        inp.value = answers[q.id] || "";
+        inp.oninput = () => { answers[q.id] = inp.value; changed(); };
+        inp.onkeydown = event => {
+          if (event.key === "Enter" && inp.value.trim() && currentQuestionIndex < questions.length - 1) {
+            event.preventDefault();
+            showQuestion(currentQuestionIndex + 1);
+          }
+        };
+        card.appendChild(inp);
+      }
+      renderMath(card);
+      quiz.appendChild(card);
 
       const bar = el("div", "stickybar");
       const info = el("span", "", "");
@@ -195,19 +232,41 @@
       state.id = "savestate";
       const left = el("div"); left.append(info, document.createTextNode("  "), state);
       const btns = el("div");
+      const prev = el("button", "ghost", "Previous");
+      prev.disabled = currentQuestionIndex === 0;
+      prev.onclick = () => showQuestion(currentQuestionIndex - 1);
+      btns.appendChild(prev);
+      if (currentQuestionIndex < questions.length - 1) {
+        const next = el("button", "ghost", "Next question");
+        next.onclick = () => showQuestion(currentQuestionIndex + 1);
+        btns.appendChild(next);
+      } else {
+        const sub = el("button", "", "Submit quiz");
+        sub.onclick = submit;
+        btns.appendChild(sub);
+      }
       const exit = el("button", "ghost", "Save & exit");
       exit.onclick = async () => { await saveNow(); await loadQuiz(); };
-      const sub = el("button", "", "Submit");
-      sub.onclick = submit;
-      btns.append(exit, document.createTextNode(" "), sub);
+      btns.appendChild(exit);
       bar.append(left, btns);
       quiz.appendChild(bar);
       updateProgress();
     }
 
+    function showQuestion(index) {
+      if (index < 0 || index >= questions.length) return;
+      clearInterval(advanceTimer);
+      advanceTimer = null;
+      advanceSeconds = 0;
+      const scrollPosition = window.scrollY;
+      currentQuestionIndex = index;
+      renderForm();
+      window.scrollTo(0, scrollPosition);
+    }
+
     function updateProgress() {
       const p = document.getElementById("progress");
-      if (p) p.textContent = answeredCount() + "/" + questions.length + " answered";
+      if (p) p.textContent = "Question " + (currentQuestionIndex + 1) + " of " + questions.length + " · " + answeredCount() + " answered" + (advanceSeconds ? " · Next in " + advanceSeconds + "s" : "");
     }
     function setState(t) { const s = document.getElementById("savestate"); if (s) s.textContent = t; }
 
@@ -240,6 +299,7 @@
 
     /* ---------- results ---------- */
     function renderResult(r, tryNo, justSubmitted) {
+      quiz.classList.remove("quiz-taking");
       quiz.innerHTML = "";
       window.scrollTo(0, 0);
       const card = el("div", "card");
@@ -261,9 +321,17 @@
         d.appendChild(el("b", "", (x.ok ? "\u2713 Correct" : "\u2717 Wrong")));
         d.appendChild(document.createTextNode((i + 1) + ". " + x.prompt));
         if (!x.ok) {
-          d.appendChild(el("div", "", "Your answer: " + (String(x.given).trim() || "(blank)")));
-          d.appendChild(el("div", "", "Correct answer: " + x.correct));
-        } else d.appendChild(el("div", "", "Answer: " + x.correct));
+          const given = el("div");
+          given.append(el("b", "", "Your answer: "), document.createTextNode(String(x.given).trim() || "(blank)"));
+          const correct = el("div");
+          correct.append(el("b", "", "Correct answer: "), document.createTextNode(x.correct));
+          d.append(given, correct);
+        } else {
+          const answer = el("div");
+          answer.append(el("b", "", "Answer: "), document.createTextNode(x.correct));
+          d.appendChild(answer);
+        }
+        renderMath(d);
         quiz.appendChild(d);
       });
     }

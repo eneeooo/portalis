@@ -55,6 +55,7 @@
       <p class="hint" id="postHint"></p>
     </div>
 
+    <div id="fundReminder" class="fund-reminder-pin" hidden></div>
     <div id="birthdayGreeting" class="birthday-pin" hidden></div>
     <div id="filters" class="filters"></div>
     <div id="board" class="board"></div>
@@ -67,7 +68,7 @@
   <script src="config.js"></script>
   <script src="common.js"></script>
   <script>
-    let ctx, view = "board", notes = [], filter = "all", pending = [], counts = {}, birthdayDate = "";
+    let ctx, view = "board", notes = [], filter = "all", pending = [], counts = {}, birthdayDate = "", birthdayColorIndex = -1;
     const msg = document.getElementById("msg");
 
     function err(t) { msg.className = "msg err"; msg.textContent = t; }
@@ -79,8 +80,8 @@
       if (!ctx) return;
       renderBar(ctx, "notes");
       document.getElementById("postHint").textContent = ctx.isAdmin
-        ? "Admin notes are posted right away."
-        : "Your note is sent to an admin first. It shows on the public board once approved.";
+        ? "Admin and officer notes are posted right away."
+        : "Your note is sent to an admin or officer first. It shows on the public board once approved.";
       document.getElementById("importanceLabel").style.display = ctx.isAdmin ? "block" : "none";
       document.getElementById("importancePicker").style.display = ctx.isAdmin ? "flex" : "none";
       setView("board");
@@ -105,17 +106,234 @@
     async function loadBirthdayGreeting() {
       const pin = document.getElementById("birthdayGreeting");
       if (view !== "board") { pin.hidden = true; return; }
-      const { data, error } = await sb.rpc("birthdays_today");
+      const { data, error } = await sb.rpc("birthdays_today_with_wishes");
       if (view !== "board") { pin.hidden = true; return; }
       if (error) { err(error.message); pin.hidden = true; return; }
       pin.replaceChildren();
       if (!data || !data.length) { pin.hidden = true; return; }
-      const names = data.map(person => person.full_name).filter(Boolean);
-      const greeting = names.length === 1
-        ? "Happy birthday, " + names[0] + "! We hope you have a wonderful day!"
-        : "Happy birthday to " + names.slice(0, -1).join(", ") + " and " + names[names.length - 1] + "! We hope you have a wonderful day!";
-      pin.appendChild(el("strong", "", "🎂 Birthday today!"));
-      pin.appendChild(el("p", "", greeting));
+      const colors = ["birthday-note-yellow", "birthday-note-pink", "birthday-note-blue", "birthday-note-green"];
+      pin.className = "birthday-pin " + currentBirthdayColor(colors);
+      const pinDecoration = el("span", "birthday-pushpin");
+      pinDecoration.setAttribute("aria-hidden", "true");
+      const balloonDecoration = el("span", "birthday-balloon", "🎈");
+      balloonDecoration.setAttribute("aria-hidden", "true");
+      pin.append(pinDecoration, balloonDecoration, el("strong", "birthday-title", "🎂 Birthday today!"));
+      const audioStatus = el("span", "birthday-audio-status");
+      audioStatus.setAttribute("aria-live", "polite");
+      const playSong = el("button", "birthday-song-button", "♪ Play birthday song");
+      playSong.type = "button";
+      playSong.onclick = async () => {
+        playSong.disabled = true;
+        try {
+          const duration = await playBirthdaySong();
+          pin.className = "birthday-pin " + nextBirthdayColor(colors);
+          throwBirthdayConfetti();
+          audioStatus.textContent = "Playing a birthday melody";
+          window.setTimeout(() => { audioStatus.textContent = ""; playSong.disabled = false; }, duration);
+        } catch (songError) {
+          audioStatus.textContent = songError.message || "Audio is unavailable in this browser.";
+          playSong.disabled = false;
+        }
+      };
+      pin.append(playSong, audioStatus);
+      const people = new Map();
+      data.forEach(row => {
+        if (!people.has(row.recipient_id)) {
+          people.set(row.recipient_id, { name: row.recipient_name, message: row.birthday_message || "", wishes: [] });
+        }
+        if (row.wish_id) people.get(row.recipient_id).wishes.push(row);
+      });
+      people.forEach((person, recipientId) => {
+        const isBirthdayUser = recipientId === ctx.user.id;
+        const card = el("section", "birthday-person");
+        card.append(
+          el("h3", "", "Happy birthday, " + person.name + "!"),
+          el("p", "birthday-subtitle", "We hope you have a wonderful day!")
+        );
+        const publicMessage = el("div", "birthday-public-message");
+        if (person.message) {
+          publicMessage.append(
+            el("strong", "", person.name + " says:"),
+            el("p", "", person.message)
+          );
+        } else if (!isBirthdayUser) {
+          publicMessage.appendChild(el("p", "birthday-no-message", "No public birthday message yet."));
+        }
+        if (person.message || !isBirthdayUser) card.appendChild(publicMessage);
+        if (isBirthdayUser) {
+          const messageForm = el("form", "birthday-message-form");
+          const messageInput = el("textarea", "birthday-message-input");
+          messageInput.maxLength = 500;
+          messageInput.rows = 2;
+          messageInput.placeholder = "Share a birthday wish or thank-you with everyone...";
+          messageInput.setAttribute("aria-label", "Your public birthday message");
+          messageInput.value = person.message;
+          const messageSubmit = el("button", "birthday-message-submit", person.message ? "Update public message" : "Share with everyone");
+          messageSubmit.type = "submit";
+          messageForm.append(messageInput, messageSubmit);
+          messageForm.onsubmit = async event => {
+            event.preventDefault();
+            const content = messageInput.value.trim();
+            if (!content) { err("Write a message before sharing it."); return; }
+            messageSubmit.disabled = true;
+            const { error: messageError } = await sb.rpc("post_my_birthday_message", { p_content: content });
+            messageSubmit.disabled = false;
+            if (messageError) { err(messageError.message); return; }
+            ok("Your birthday message is now visible to everyone.");
+            await loadBirthdayGreeting();
+          };
+          card.appendChild(messageForm);
+        }
+        if (isBirthdayUser) {
+          const wishList = el("div", "birthday-wish-list");
+          if (person.wishes.length) {
+            person.wishes.forEach(wish => {
+              const note = el("article", "birthday-wish");
+              note.append(
+                el("strong", "", wish.author_name || "Classmate"),
+                el("p", "", wish.content),
+                el("small", "", fmtDate(wish.created_at))
+              );
+              wishList.appendChild(note);
+            });
+          } else wishList.appendChild(el("p", "birthday-no-wishes", "Your birthday wishes will appear here."));
+          card.appendChild(wishList);
+        } else {
+          card.appendChild(el("p", "birthday-private-wishes", "Birthday wishes are private to the student celebrating today."));
+        }
+        if (!isBirthdayUser) {
+          const form = el("form", "birthday-wish-form");
+          const input = el("textarea", "birthday-wish-input");
+          input.maxLength = 500;
+          input.rows = 2;
+          input.placeholder = "Write a birthday wish...";
+          input.setAttribute("aria-label", "Birthday wish for " + person.name);
+          const submit = el("button", "birthday-wish-submit", "Send wish");
+          submit.type = "submit";
+          form.append(input, submit);
+          form.onsubmit = async event => {
+            event.preventDefault();
+            const content = input.value.trim();
+            if (!content) return;
+            submit.disabled = true;
+            const { error: wishError } = await sb.rpc("post_birthday_wish", {
+              p_recipient_id: recipientId,
+              p_content: content
+            });
+            submit.disabled = false;
+            if (wishError) { err(wishError.message); return; }
+            ok("Your birthday wish was sent.");
+            await loadBirthdayGreeting();
+          };
+          card.appendChild(form);
+        }
+        pin.appendChild(card);
+      });
+      pin.hidden = false;
+    }
+
+    function nextBirthdayColor(colors) {
+      if (birthdayColorIndex < 0) currentBirthdayColor(colors);
+      birthdayColorIndex = (birthdayColorIndex + 1) % colors.length;
+      try { localStorage.setItem("portalis_birthday_color", String(birthdayColorIndex)); } catch (_) {}
+      return colors[birthdayColorIndex];
+    }
+
+    function currentBirthdayColor(colors) {
+      if (birthdayColorIndex >= 0) return colors[birthdayColorIndex];
+      try {
+        const savedIndex = Number(localStorage.getItem("portalis_birthday_color"));
+        if (Number.isInteger(savedIndex) && savedIndex >= 0 && savedIndex < colors.length) {
+          birthdayColorIndex = savedIndex;
+        }
+      } catch (_) {}
+      if (birthdayColorIndex < 0) birthdayColorIndex = 0;
+      return colors[birthdayColorIndex];
+    }
+
+    async function playBirthdaySong() {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error("Audio is unavailable in this browser.");
+      const audio = new AudioContextClass();
+      await audio.resume();
+      const melody = [
+        [392, .28], [392, .16], [440, .44], [392, .44], [523.25, .44], [493.88, .8],
+        [392, .28], [392, .16], [440, .44], [392, .44], [587.33, .44], [523.25, .8],
+        [392, .28], [392, .16], [783.99, .44], [659.25, .44], [523.25, .44], [493.88, .44], [440, .8],
+        [698.46, .28], [698.46, .16], [659.25, .44], [523.25, .44], [587.33, .44], [523.25, .9]
+      ];
+      let startAt = audio.currentTime + .05;
+      melody.forEach(([frequency, duration]) => {
+        const oscillator = audio.createOscillator();
+        const volume = audio.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.value = frequency;
+        volume.gain.setValueAtTime(.0001, startAt);
+        volume.gain.exponentialRampToValueAtTime(.12, startAt + .025);
+        volume.gain.setValueAtTime(.12, startAt + duration * .72);
+        volume.gain.exponentialRampToValueAtTime(.0001, startAt + duration);
+        oscillator.connect(volume).connect(audio.destination);
+        oscillator.start(startAt);
+        oscillator.stop(startAt + duration);
+        startAt += duration + .035;
+      });
+      const duration = Math.ceil((startAt - audio.currentTime) * 1000);
+      window.setTimeout(() => audio.close(), duration);
+      return duration;
+    }
+
+    function throwBirthdayConfetti() {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const layer = el("div", "birthday-confetti");
+      layer.setAttribute("aria-hidden", "true");
+      const colors = ["#f6b8dc", "#fff3a0", "#cde8ff", "#cdeec7", "#ff8f8f"];
+      for (let i = 0; i < 48; i++) {
+        const piece = el("i", "confetti-piece");
+        piece.style.left = Math.random() * 100 + "%";
+        piece.style.backgroundColor = colors[i % colors.length];
+        piece.style.setProperty("--confetti-drift", (Math.random() * 220 - 110) + "px");
+        piece.style.setProperty("--confetti-delay", (Math.random() * .8) + "s");
+        piece.style.setProperty("--confetti-spin", (Math.random() * 900 - 450) + "deg");
+        layer.appendChild(piece);
+      }
+      document.body.appendChild(layer);
+      window.setTimeout(() => layer.remove(), 3200);
+    }
+
+    async function loadFundReminder() {
+      const pin = document.getElementById("fundReminder");
+      if (view !== "board" || ctx.role !== "user") { pin.hidden = true; return; }
+      const { data: funds, error: fundsError } = await sb.from("funds")
+        .select("id,title")
+        .ilike("title", "Class Fund")
+        .limit(1);
+      if (view !== "board") { pin.hidden = true; return; }
+      if (fundsError) { err(fundsError.message); pin.hidden = true; return; }
+      const classFund = funds && funds[0];
+      if (!classFund) { pin.hidden = true; return; }
+
+      const { data, error } = await sb.rpc("get_my_fund_balance", { p_fund_id: classFund.id });
+      if (view !== "board") { pin.hidden = true; return; }
+      if (error) { err(error.message); pin.hidden = true; return; }
+      const balance = Array.isArray(data) ? data[0] : data;
+      const outstanding = Number(balance && balance.outstanding);
+      if (!balance || !Number.isFinite(outstanding) || outstanding <= 0) {
+        pin.hidden = true;
+        return;
+      }
+
+      pin.replaceChildren();
+      const pushpin = el("span", "fund-reminder-pushpin");
+      pushpin.setAttribute("aria-hidden", "true");
+      pin.append(
+        pushpin,
+        el("span", "fund-reminder-label", "Pinned reminder"),
+        el("h3", "", "Class Fund outstanding"),
+        el("p", "", "You still have ₱" + outstanding.toFixed(2) + " in unpaid contributions.")
+      );
+      const link = el("a", "fund-reminder-link", "View your fund balance");
+      link.href = "funds.html";
+      pin.appendChild(link);
       pin.hidden = false;
     }
 
@@ -124,7 +342,10 @@
       document.getElementById("tabBoard").classList.toggle("on", v === "board");
       document.getElementById("tabMine").classList.toggle("on", v === "mine");
       document.getElementById("composer").style.display = v === "mine" ? "block" : "none";
-      if (v !== "board") document.getElementById("birthdayGreeting").hidden = true;
+      if (v !== "board") {
+        document.getElementById("birthdayGreeting").hidden = true;
+        document.getElementById("fundReminder").hidden = true;
+      }
       loadNotes();
     }
     document.getElementById("tabBoard").onclick = () => setView("board");
@@ -136,7 +357,7 @@
       const { data, error } = await q;
       if (error) { err(error.message); return; }
       notes = data;
-      if (view === "board") await loadBirthdayGreeting();
+      if (view === "board") await Promise.all([loadFundReminder(), loadBirthdayGreeting()]);
       counts = {};
       const ids = notes.filter(n => n.status === "approved").map(n => n.id);
       if (ids.length) {
@@ -334,7 +555,7 @@
       pending = [];
       renderPending();
       await loadNotes();
-      ok(ctx.isAdmin ? "Posted." : "Sent! An admin will review it before it appears on the public board.");
+      ok(ctx.isAdmin ? "Posted." : "Sent! An admin or officer will review it before it appears on the public board.");
     };
 
     init();

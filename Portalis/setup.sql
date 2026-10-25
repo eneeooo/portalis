@@ -9,10 +9,12 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text,
   full_name text,
-  role text not null default 'user' check (role in ('user','admin')),
+  role text not null default 'user' check (role in ('user','officer','admin')),
   created_at timestamptz default now()
 );
 alter table public.profiles add column if not exists full_name text;
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check check (role in ('user','officer','admin'));
 alter table public.profiles enable row level security;
 
 create or replace function public.is_admin()
@@ -22,7 +24,7 @@ security definer
 set search_path = public
 stable
 as $$
-  select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin');
+  select exists (select 1 from public.profiles where id = auth.uid() and role in ('admin','officer'));
 $$;
 
 -- Full name shown as the author of notes and comments.
@@ -99,7 +101,7 @@ alter table public.notes add constraint notes_status_check check (status in ('pe
 update public.notes n set author_name = public.author_of(n.user_id) where n.author_name is null;
 update public.notes n set status = 'approved'
   from public.profiles p
-  where p.id = n.user_id and p.role = 'admin' and n.status = 'pending';
+  where p.id = n.user_id and p.role in ('admin','officer') and n.status = 'pending';
 
 -- guard: users cannot approve their own notes; admin notes post right away
 create or replace function public.notes_guard()
@@ -371,7 +373,7 @@ set search_path = public
 as $$
 declare it jsonb; qid bigint; n int := 0; pos int;
 begin
-  if not public.is_admin() then raise exception 'Admins only'; end if;
+  if not public.is_admin() then raise exception 'Admin or officer access required'; end if;
   select coalesce(max(position), 0) into pos from public.questions where topic_id = p_topic;
   for it in select * from jsonb_array_elements(p_items) loop
     pos := pos + 1;

@@ -10,7 +10,7 @@
   <div class="wrap">
     <div id="bar"></div>
     <h2>Class funds</h2>
-    <p class="hint">Weekly class fund: ₱10 per student. Unpaid weeks are counted toward each student's balance.</p>
+    <p class="hint">Class Fund collection starts Aug 31–Sept 6, 2026, then continues weekly at ₱10 per student. Admins can enter each student's total received; payments cover the oldest weeks first and carry forward as advance credit. Payment records are visible only to admins.</p>
     <p id="msg" class="msg"></p>
     <div id="adminTools" class="card" style="display:none">
       <h3>Admin fund tools</h3>
@@ -37,12 +37,19 @@
       <div id="periods" class="week-list"></div>
       <div id="summary"></div>
     </div>
-    <div class="scroll">
-      <table class="fund-table">
-        <thead><tr><th>Student number</th><th>Full name</th><th>This period</th><th>All unpaid periods</th><th>Status</th></tr></thead>
-        <tbody id="roster"></tbody>
-      </table>
+    <div id="adminRoster" style="display:none">
+      <div class="fund-actions">
+        <button id="exportCsv" class="ghost">Export whole fund as CSV</button>
+        <button id="printFund" class="ghost">Print fund report</button>
+      </div>
+      <div class="scroll">
+        <table class="fund-table">
+          <thead><tr><th>Student number</th><th>Full name</th><th>This period</th><th>Total paid</th><th>Advance credit</th><th>Outstanding</th><th>Status / edit</th></tr></thead>
+          <tbody id="roster"></tbody>
+        </table>
+      </div>
     </div>
+    <div id="fundPrint"></div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
@@ -55,6 +62,7 @@
       ctx = await requireAuth(); if (!ctx) return;
       renderBar(ctx, "funds");
       $("adminTools").style.display = ctx.isAdmin ? "block" : "none";
+      $("adminRoster").style.display = ctx.isAdmin ? "block" : "none";
       await loadFunds();
     }
     async function loadFunds() {
@@ -86,22 +94,67 @@
         box.appendChild(b);
       });
       selectedPeriod = periods.find(p => selectedPeriod && p.id === selectedPeriod.id) || periods[periods.length - 1] || null;
-      if (selectedPeriod) await loadRoster();
-      else { $("summary").textContent = "No collection periods yet."; $("roster").innerHTML = ""; }
+      if (selectedPeriod && ctx.isAdmin) await loadRoster();
+      else if (ctx.isAdmin) {
+        $("summary").textContent = "No collection periods yet.";
+        $("roster").innerHTML = "";
+      } else await loadMyBalance();
+    }
+    async function loadMyBalance() {
+      $("roster").innerHTML = "";
+      const { data, error } = await sb.rpc("get_my_fund_balance", { p_fund_id: selectedFund.id });
+      if (error) { message(error.message, true); return; }
+      const balance = Array.isArray(data) ? data[0] : data;
+      if (!balance) {
+        $("summary").textContent = selectedFund.title + " has no collection periods yet.";
+        return;
+      }
+      $("summary").innerHTML = "";
+      $("summary").appendChild(el("h3", "", "Your " + selectedFund.title + " balance"));
+      $("summary").appendChild(el("p", "hint", selectedPeriod
+        ? "Current period: " + selectedPeriod.label + " · ₱" + Number(selectedPeriod.amount_due).toFixed(2) + " due."
+        : "No collection periods have been added yet."));
+      const totals = el("div", "fund-balance-cards");
+      totals.append(
+        balanceCard("Outstanding", balance.outstanding, "balance-outstanding"),
+        balanceCard("Advance credit", balance.advance_credit, "balance-advance")
+      );
+      $("summary").appendChild(totals);
+    }
+    function balanceCard(label, amount, className) {
+      const card = el("div", "fund-balance-card " + className);
+      card.append(el("span", "fund-balance-label", label), el("strong", "fund-balance-amount", "₱" + Number(amount).toFixed(2)));
+      return card;
     }
     async function loadRoster() {
-      if (!selectedPeriod) return;
-      const [periodResult, debtResult] = await Promise.all([
+      if (!ctx.isAdmin || !selectedPeriod) return;
+      const [periodResult, debtResult, myBalanceResult] = await Promise.all([
         sb.rpc("get_fund_roster", { p_period_id: selectedPeriod.id }),
-        sb.rpc("get_fund_debt_summary", { p_fund_id: selectedFund.id })
+        sb.rpc("get_fund_debt_summary", { p_fund_id: selectedFund.id }),
+        sb.rpc("get_my_fund_balance", { p_fund_id: selectedFund.id })
       ]);
-      if (periodResult.error || debtResult.error) { message((periodResult.error || debtResult.error).message, true); return; }
+      if (periodResult.error || debtResult.error || myBalanceResult.error) {
+        message((periodResult.error || debtResult.error || myBalanceResult.error).message, true);
+        return;
+      }
       roster = periodResult.data || [];
-      const debtByUser = Object.fromEntries((debtResult.data || []).map(x => [x.user_id, x]));
-      const total = (debtResult.data || []).reduce((sum, x) => sum + Number(x.total_debt), 0);
-      const debtors = (debtResult.data || []).filter(x => Number(x.total_debt) > 0).length;
+      const debtRows = debtResult.data || [];
+      const myBalance = Array.isArray(myBalanceResult.data) ? myBalanceResult.data[0] : myBalanceResult.data;
+      const debtByUser = Object.fromEntries(debtRows.map(x => [x.user_id, x]));
+      const totalFunds = debtRows.reduce((sum, user) => sum + Number(user.total_paid), 0);
+      const debtors = debtRows.filter(x => Number(x.total_debt) > 0).length;
       $("summary").innerHTML = "";
-      $("summary").append(el("p", "fund-total", "Total outstanding: ₱" + total.toFixed(2)));
+      $("summary").appendChild(el("h3", "", selectedFund.title + " payment summary"));
+      const balanceCards = el("div", "fund-balance-cards");
+      balanceCards.append(balanceCard("Total funds collected", totalFunds, "balance-paid"));
+      $("summary").appendChild(balanceCards);
+      $("summary").appendChild(el("h3", "", "Your balance"));
+      const myBalanceCards = el("div", "fund-balance-cards");
+      myBalanceCards.append(
+        balanceCard("Outstanding", myBalance ? myBalance.outstanding : 0, "balance-outstanding"),
+        balanceCard("Advance credit", myBalance ? myBalance.advance_credit : 0, "balance-advance")
+      );
+      $("summary").appendChild(myBalanceCards);
       $("summary").append(el("p", "hint", debtors + " student(s) still have an unpaid balance across " + selectedFund.title + "."));
       const body = $("roster"); body.innerHTML = "";
       roster.forEach(student => {
@@ -110,26 +163,203 @@
         tr.append(
           el("td", "", student.student_number || "Not assigned"),
           el("td", "", student.full_name || "Student"),
-          el("td", "", "₱" + Number(student.amount_due).toFixed(2)),
+          el("td", "", "Due ₱" + Number(student.amount_due).toFixed(2) + " · paid ₱" + Number(student.amount_paid).toFixed(2)),
+          el("td", "", "₱" + Number(debt ? debt.total_paid : 0).toFixed(2)),
+          el("td", "", "₱" + Number(debt ? debt.advance_credit : 0).toFixed(2)),
           el("td", "", "₱" + Number(debt ? debt.total_debt : 0).toFixed(2))
         );
         const status = el("td");
-        if (ctx.isAdmin) {
-          const button = el("button", student.is_paid ? "ghost small" : "small", student.is_paid ? "Paid ✓" : "Mark paid");
-          button.onclick = () => setPaid(student, !student.is_paid);
-          status.appendChild(button);
-        } else status.textContent = student.is_paid ? "Paid" : "Unpaid";
+        const isPartial = Number(student.amount_paid) > 0 && !student.is_paid;
+        const statusLabel = student.is_paid ? "✓" : isPartial ? "Partial" : "✗";
+        const statusBadge = el("span", "fund-status " + (student.is_paid ? "paid" : isPartial ? "partial" : "unpaid"), statusLabel);
+        statusBadge.setAttribute("aria-label", student.is_paid ? "Paid" : isPartial ? "Partial payment" : "Unpaid");
+        statusBadge.title = student.is_paid ? "Paid" : isPartial ? "Partial payment" : "Unpaid";
+        status.appendChild(statusBadge);
+        const button = el("button", "ghost small", "Edit total");
+        button.onclick = () => editPayment(student, debt);
+        status.appendChild(button);
         tr.appendChild(status); body.appendChild(tr);
       });
     }
-    async function setPaid(student, is_paid) {
-      const { error } = await sb.from("fund_payments").upsert({
-        period_id: selectedPeriod.id, user_id: student.user_id, is_paid,
-        amount_due: student.amount_due, paid_at: is_paid ? new Date().toISOString() : null
-      }, { onConflict: "period_id,user_id" });
+    async function editPayment(student, debt) {
+      const current = Number(debt ? debt.total_paid : 0);
+      const input = prompt(
+        "Total amount received from " + (student.full_name || "this student") +
+          " across " + selectedFund.title + " (₱). Amount is allocated to the oldest unpaid weeks first:",
+        current.toFixed(2)
+      );
+      if (input === null) return;
+      const amount = Number(input.trim());
+      if (!Number.isFinite(amount) || amount < 0 || amount > 99999999.99 || !/^\d+(?:\.\d{1,2})?$/.test(input.trim())) {
+        message("Enter a valid amount with no more than two decimal places.", true);
+        return;
+      }
+      const { error } = await sb.rpc("set_fund_total_paid", {
+        p_fund_id: selectedFund.id, p_user_id: student.user_id, p_total_paid: amount
+      });
       if (error) { message(error.message, true); return; }
+      message("Payment updated. Weekly dues and any advance credit were recalculated.", false);
       await loadRoster();
     }
+    async function loadExportData() {
+      const rows = [], pageSize = 1000;
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await sb.rpc("get_fund_export", { p_fund_id: selectedFund.id })
+          .range(offset, offset + pageSize - 1);
+        if (error) { message(error.message, true); return null; }
+        rows.push(...(data || []));
+        if (!data || data.length < pageSize) break;
+      }
+      return rows;
+    }
+    function csvCell(value) {
+      let text = value === null || value === undefined ? "" : String(value);
+      if (/^[\s]*[=+\-@]/.test(text)) text = "'" + text;
+      return '"' + text.replace(/"/g, '""') + '"';
+    }
+    function csvPeriodLabel(period) {
+      const formatDate = value => new Date(value + "T12:00:00").toLocaleDateString("en-US", {
+        month: "short", day: "numeric", year: "numeric"
+      });
+      return formatDate(period.starts_on) + " – " + formatDate(period.ends_on);
+    }
+    function periodWeekLabel(label) {
+      return label.replace(/\s*\([^)]*\)\s*$/, "").trim();
+    }
+    function buildFundCsvRows(rows) {
+      const periodsById = new Map();
+      const studentsById = new Map();
+      rows.forEach(row => {
+        if (!periodsById.has(row.period_label)) {
+          periodsById.set(row.period_label, {
+            label: row.period_label, starts_on: row.starts_on, ends_on: row.ends_on
+          });
+        }
+        if (!studentsById.has(row.user_id)) {
+          studentsById.set(row.user_id, {
+            student_number: row.student_number,
+            full_name: row.full_name,
+            total_paid: Number(row.total_paid),
+            total_due: Number(row.total_due),
+            outstanding: Number(row.outstanding),
+            advance_credit: Number(row.advance_credit),
+            statuses: new Map()
+          });
+        }
+        studentsById.get(row.user_id).statuses.set(row.period_label,
+          row.is_paid ? "Paid" : Number(row.amount_paid) > 0
+            ? "Partial ₱" + Number(row.amount_paid).toFixed(2)
+            : "Unpaid");
+      });
+      const periods = Array.from(periodsById.values()).sort((a, b) => a.starts_on.localeCompare(b.starts_on));
+      const header = [
+        "Student number", "Student name",
+        ...periods.map(csvPeriodLabel),
+        "Total paid", "Outstanding", "Advance credit", "Overall status"
+      ];
+      const studentRows = Array.from(studentsById.values())
+        .sort((a, b) => String(a.student_number || "").localeCompare(String(b.student_number || "")))
+        .map(student => [
+          student.student_number,
+          student.full_name,
+          ...periods.map(period => student.statuses.get(period.label) || "Unpaid"),
+          student.total_paid.toFixed(2),
+          student.outstanding.toFixed(2),
+          student.advance_credit.toFixed(2),
+          student.total_due > 0 && student.outstanding === 0 ? "Paid" :
+            student.total_paid > 0 ? "Partial" : "Unpaid"
+        ]);
+      return [header, ...studentRows];
+    }
+    function exportCsv(rows) {
+      const lines = buildFundCsvRows(rows).map(line => line.map(csvCell).join(","));
+      const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = (selectedFund.title.replace(/[^a-z0-9_-]+/gi, "-") || "fund") + "-payments.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      message("Whole-fund CSV exported.", false);
+    }
+    function printReport(rows) {
+      const report = $("fundPrint"); report.innerHTML = "";
+      report.appendChild(el("h1", "", selectedFund.title + " · Payment report"));
+      report.appendChild(el("p", "", "Generated " + new Date().toLocaleString()));
+      const periodsByLabel = new Map();
+      const studentsById = new Map();
+      rows.forEach(row => {
+        if (!periodsByLabel.has(row.period_label)) {
+          periodsByLabel.set(row.period_label, {
+            label: row.period_label,
+            starts_on: row.starts_on
+          });
+        }
+        if (!studentsById.has(row.user_id)) {
+          studentsById.set(row.user_id, {
+            student_number: row.student_number,
+            full_name: row.full_name,
+            total_due: Number(row.total_due),
+            total_paid: Number(row.total_paid),
+            outstanding: Number(row.outstanding),
+            advance_credit: Number(row.advance_credit),
+            statuses: new Map()
+          });
+        }
+        studentsById.get(row.user_id).statuses.set(row.period_label,
+          row.is_paid ? "Paid" : Number(row.amount_paid) > 0
+            ? "Partial ₱" + Number(row.amount_paid).toFixed(2)
+            : "Unpaid");
+      });
+      const periods = Array.from(periodsByLabel.values()).sort((a, b) => a.starts_on.localeCompare(b.starts_on));
+      const students = Array.from(studentsById.values())
+        .sort((a, b) => String(a.student_number || "").localeCompare(String(b.student_number || "")));
+      const totals = students;
+      const totalPaid = totals.reduce((sum, student) => sum + student.total_paid, 0);
+      const totalAdvance = totals.reduce((sum, student) => sum + student.advance_credit, 0);
+      const totalOutstanding = totals.reduce((sum, student) => sum + student.outstanding, 0);
+      report.appendChild(el("p", "print-summary", "Total received: ₱" + totalPaid.toFixed(2) + " · Outstanding: ₱" + totalOutstanding.toFixed(2) + " · Advance credit: ₱" + totalAdvance.toFixed(2)));
+      const table = document.createElement("table");
+      const thead = document.createElement("thead"), head = document.createElement("tr");
+      [
+        "Student number", "Student name",
+        ...periods.map(period => periodWeekLabel(period.label)),
+        "Total paid", "Outstanding", "Advance credit", "Overall status"
+      ].forEach(text => head.appendChild(el("th", "", text)));
+      thead.appendChild(head); table.appendChild(thead);
+      const tbody = document.createElement("tbody");
+      students.forEach(student => {
+        const tr = document.createElement("tr");
+        tr.append(
+          el("td", "", student.student_number || "—"),
+          el("td", "", student.full_name || "Student")
+        );
+        periods.forEach(period => tr.appendChild(el("td", "", student.statuses.get(period.label) || "Unpaid")));
+        tr.append(
+          el("td", "", "₱" + student.total_paid.toFixed(2)),
+          el("td", "", "₱" + student.outstanding.toFixed(2)),
+          el("td", "", "₱" + student.advance_credit.toFixed(2)),
+          el("td", "", student.total_due > 0 && student.outstanding === 0 ? "Paid" : student.total_paid > 0 ? "Partial" : "Unpaid")
+        );
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody); report.appendChild(table);
+      document.body.classList.add("fund-printing");
+      window.addEventListener("afterprint", () => document.body.classList.remove("fund-printing"), { once: true });
+      window.print();
+    }
+    $("exportCsv").onclick = async () => {
+      if (!selectedFund) return;
+      const rows = await loadExportData();
+      if (rows) exportCsv(rows);
+    };
+    $("printFund").onclick = async () => {
+      if (!selectedFund) return;
+      const rows = await loadExportData();
+      if (rows) printReport(rows);
+    };
     $("createFund").onclick = async () => {
       const title = $("fundTitle").value.trim();
       const label = $("firstPeriod").value.trim();

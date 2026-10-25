@@ -67,20 +67,37 @@
       data.forEach(u => {
         const tr = document.createElement("tr");
         const tdRole = document.createElement("td");
-        const resetCell = document.createElement("td");
-        const sel = document.createElement("select");
-        ["user", "admin"].forEach(r => {
-          const o = el("option", "", r);
+        const actionCell = document.createElement("td");
+        const actions = el("div", "user-actions");
+        const sel = el("select", "role-select");
+        sel.setAttribute("aria-label", "Role for " + (u.full_name || u.email || "user"));
+        ["user", "officer", "admin"].forEach(r => {
+          const roleLabels = { user: "Student", officer: "Officer", admin: "Admin" };
+          const o = el("option", "", roleLabels[r]);
           o.value = r;
           if (u.role === r) o.selected = true;
           sel.appendChild(o);
         });
         if (u.id === ctx.user.id) sel.disabled = true; // can't demote yourself
         sel.onchange = async () => {
+          const nextRole = sel.value;
+          const roleName = role => ({ user: "Student", officer: "Officer", admin: "Admin" })[role] || role;
+          if (!confirm("Change " + (u.full_name || u.email || "this account") + "'s role from " + roleName(u.role) + " to " + roleName(nextRole) + "?")) {
+            sel.value = u.role;
+            return;
+          }
+          sel.disabled = true;
           const { error } = await sb.from("profiles").update({ role: sel.value }).eq("id", u.id);
-          if (error) err(error.message); else ok("Role updated.");
+          sel.disabled = u.id === ctx.user.id;
+          if (error) {
+            sel.value = u.role;
+            err(error.message);
+          } else {
+            u.role = nextRole;
+            ok("Role updated.");
+          }
         };
-        const identity = el("button", "ghost small", "Edit student #");
+        const identity = el("button", "ghost small edit-student-button", "Edit student number");
         identity.title = "Set student number for this account";
         identity.onclick = async () => {
           const student_number = prompt("Student number (00-00-000):", u.student_number || "");
@@ -89,18 +106,19 @@
           if (!/^\d{2}-\d{2}-\d{3}$/.test(number)) {
             err("Enter a student number in the format 00-00-000."); return;
           }
+          if (!confirm("Save student number " + number + " for " + (u.full_name || u.email || "this account") + "?")) return;
           const { error } = await sb.from("profiles").update({ student_number: number }).eq("id", u.id);
           if (error) err(/duplicate|unique/i.test(error.message) ? "That student number is already taken." : error.message);
           else { ok("Student identity updated."); await loadUsers(); }
         };
-        resetCell.appendChild(identity);
-        const remove = el("button", "danger small", "Delete user");
+        actions.appendChild(identity);
+        const remove = el("button", "danger small delete-user-button", "Delete user");
         remove.disabled = u.id === ctx.user.id;
         remove.title = remove.disabled ? "You cannot delete the currently signed-in admin account." : "Permanently delete this account and its Portalis data.";
         remove.onclick = async () => {
           if (u.id === ctx.user.id) return;
-          const label = u.student_number || u.id;
-          if (!confirm("Permanently delete " + label + " and their profile, notes, comments, quiz attempts, funds records, suggestions, and confessions? This cannot be undone.")) return;
+          const label = [u.full_name, u.student_number, u.email].filter(Boolean).join(" · ") || u.id;
+          if (!confirm("Permanently delete " + label + " and all associated Portalis data? This cannot be undone.")) return;
           remove.disabled = true;
           const { data, error } = await sb.functions.invoke("admin-delete-user", { body: { userId: u.id } });
           if (error) {
@@ -127,10 +145,11 @@
             : "User and associated Portalis data deleted.");
           await Promise.all([loadUsers(), loadSuggestions(), loadNotes()]);
         };
-        resetCell.appendChild(remove);
+        actions.appendChild(remove);
+        actionCell.appendChild(actions);
         tdRole.appendChild(sel);
         const shownEmail = u.email || "Not set";
-        tr.append(el("td", "", u.student_number || "—"), el("td", "", u.full_name || "—"), el("td", "", shownEmail), tdRole, resetCell);
+        tr.append(el("td", "", u.student_number || "—"), el("td", "", u.full_name || "—"), el("td", "", shownEmail), tdRole, actionCell);
         body.appendChild(tr);
       });
     }
@@ -147,16 +166,23 @@
       data.forEach(s => {
         const item = el("div", "suggestion-item");
         const p = byId[s.user_id] || {};
-        item.append(el("b", "", (p.full_name || "Student") + (p.student_number ? " · " + p.student_number : "")),
-          el("small", "", " · " + fmtDate(s.created_at)),
-          el("p", "", s.content));
+        const header = el("div", "suggestion-header");
+        header.append(
+          el("b", "suggestion-name", p.full_name || "Student"),
+          el("span", "suggestion-student-number", p.student_number || "No student number")
+        );
+        const content = el("p", "suggestion-content", s.content);
+        const footer = el("div", "suggestion-footer");
+        footer.appendChild(el("small", "suggestion-date", fmtDate(s.created_at)));
         const remove = el("button", "ghost small", "Delete");
         remove.onclick = async () => {
           if (!confirm("Delete this suggestion?")) return;
           const { error } = await sb.from("suggestions").delete().eq("id", s.id);
           if (error) err(error.message); else loadSuggestions();
         };
-        item.appendChild(remove); box.appendChild(item);
+        footer.appendChild(remove);
+        item.append(header, content, footer);
+        box.appendChild(item);
       });
     }
 

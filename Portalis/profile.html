@@ -10,35 +10,45 @@
   <div class="wrap">
     <div id="bar"></div>
     <h2>My profile</h2>
-    <p class="hint">Use your student number to sign in. Email is optional: it stays empty until you add one here, and it is not used for login.</p>
+    <p class="hint profile-intro">Update your profile details and picture. Your student number remains your sign-in ID; email is optional and is not used for login.</p>
     <p id="msg" class="msg"></p>
-    <div class="card profile-grid">
-      <div>
+    <section class="profile-sticky profile-grid" aria-labelledby="profileDetailsTitle">
+      <div class="profile-photo">
         <img id="avatar" class="profile-preview" alt="Profile picture">
         <input id="photo" class="file-input" type="file" accept="image/*">
         <label for="photo">Choose profile picture</label>
         <small id="fileName" class="file-hint">Image only, up to 3 MB</small>
       </div>
-      <div>
-        <label for="fullName">Full name</label>
-        <input id="fullName" maxlength="100" autocomplete="name" placeholder="First and last name">
-        <label for="email">Email (optional)</label>
-        <input id="email" type="email" maxlength="254" placeholder="Not set">
-        <label for="contacts">Other contacts (optional)</label>
-        <input id="contacts" maxlength="240" placeholder="Phone, social link, etc.">
-        <label for="about">About me (optional)</label>
-        <textarea id="about" maxlength="500"></textarea>
+      <div class="profile-fields">
+        <h3 id="profileDetailsTitle">Profile details</h3>
+        <div class="profile-field">
+          <label for="fullName">Full name</label>
+          <input id="fullName" maxlength="100" autocomplete="name" placeholder="First and last name">
+        </div>
+        <div class="profile-field">
+          <label for="email">Email (optional)</label>
+          <input id="email" type="email" maxlength="254" placeholder="Not set">
+        </div>
+        <div class="profile-field">
+          <label for="contacts">Other contacts (optional)</label>
+          <input id="contacts" maxlength="240" placeholder="Phone, social link, etc.">
+        </div>
+        <div class="profile-field profile-field-wide">
+          <label for="about">About me (optional)</label>
+          <textarea id="about" maxlength="500"></textarea>
+        </div>
         <button id="save">Save profile</button>
       </div>
-    </div>
-    <div class="card">
-      <h3>Change password</h3>
+    </section>
+    <section class="profile-sticky profile-password" aria-labelledby="passwordTitle">
+      <h3 id="passwordTitle">Change password</h3>
+      <p class="hint">Choose a new password with at least 6 characters.</p>
       <label for="newPassword">New password</label>
       <input id="newPassword" type="password" autocomplete="new-password">
       <label for="confirmPassword">Confirm new password</label>
       <input id="confirmPassword" type="password" autocomplete="new-password">
       <button id="changePassword">Update password</button>
-    </div>
+    </section>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="config.js"></script>

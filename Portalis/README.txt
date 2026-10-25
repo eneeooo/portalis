@@ -4,13 +4,15 @@ FEATURES
   - Login using student number only (format 00-00-000).
   - Signup with student number, full name, birthdate, and password.
   - Profile full name, contact details, about text, and avatar.
-  - Notes with admin-controlled importance, including a pink Neutral color.
+  - Notes with admin- and officer-controlled importance, including a pink Neutral color.
   - KaTeX math in reviewer text: use $...$ or \( ... \) inline and $$...$$ or
     \[ ... \] for displayed math.
-  - Weekly class fund (₱10 per student), cumulative unpaid totals, and admin
-    collection tracking. Admins can create other funds and add periods.
-  - Anonymous confessions and a suggestion button; admins can see suggestion
+  - Weekly class fund (₱10 per student), cumulative unpaid totals, and admin/
+    officer collection tracking. Admins and officers can create other funds and add periods.
+  - Anonymous confessions and a suggestion button; admins and officers can see suggestion
     authors and manage submissions.
+  - Public birthday sticky notes with an on-demand birthday melody, animated
+    confetti, private received wishes, and birthday-student greetings visible to everyone.
   - Reviewer quizzes, saved attempts, score summaries, and admin attempt graph.
 
 SETUP
@@ -20,6 +22,27 @@ SETUP
      Do not rerun migration_features.sql after this migration; it restores
      legacy username fields. If setup.sql
      is reapplied later, rerun the remaining migrations in order afterward.
+  3a. Run migration_birthday_wishes.sql after
+      migration_student_number_birthdays.sql to enable public birthday wishes.
+  3b. Run migration_birthday_wishes_privacy.sql after
+      migration_birthday_wishes.sql. It limits wish visibility to the student
+      celebrating their birthday and prevents the celebrant from sending
+      themselves a wish; they can share a public birthday message instead.
+  3c. Run migration_birthday_public_message.sql after
+      migration_birthday_wishes_privacy.sql. It lets the birthday student
+      share a public greeting or thank-you while keeping received wishes private.
+  3d. Run migration_confession_feelings_fund_admin.sql after
+      migration_student_number_birthdays.sql. It adds confession feelings,
+      restricts fund payment rosters to admins and officers, and seeds the ₱10 weekly
+      Class Fund from Aug 31–Sept 6, 2026 through the current week.
+  3e. Run migration_fund_advance_payments.sql after
+      migration_confession_feelings_fund_admin.sql. It enables editable
+      cumulative payments, automatic oldest-week-first allocation, and
+      whole-fund CSV and print reports. The CSV lists each student once, with one
+      date-range column per collection period and payment status in each cell.
+  3f. Run migration_officer_role.sql after migration_fund_advance_payments.sql.
+      It enables the Officer role, which has the same access as Admin. Deploy
+      the updated admin-delete-user Edge Function for Officer user deletion.
   4. For a standard Supabase Auth setup, run migration_optional_email.sql,
      then migration_supabase_auth_restore.sql. If migration_custom_auth.sql
      was already applied, run only migration_supabase_auth_restore.sql.
@@ -63,6 +86,7 @@ SETUP
      migration_custom_auth.sql for this Auth setup.
   7. Create an account, then make it admin in SQL (replace the student number):
        update public.profiles set role = 'admin' where student_number = '00-00-000';
+     Admins can assign the Officer role from the Users and roles section.
   8. Upload the Portalis folder to GitHub Pages and configure config.js with the
      project's Supabase URL and anon key. Never put a service-role key there.
 
@@ -90,7 +114,7 @@ EMAIL CHANGE FROM PROFILE
     Edge Function, so it must be deployed (and config.js needs the sb_publishable_ key).
 
 EXISTING USERS
-  Admins should use Admin -> Edit student # to assign a unique student number
+  Admins and officers should use Admin -> Edit student number to assign a unique student number
   to each existing account that does not already have one. Student-number
   login resolves the account's current Supabase Auth email, so a confirmed
   email change does not alter the login identifier. Signed-in users can
@@ -102,22 +126,63 @@ EXISTING USERS
   Birthdays are shown as a pinned greeting on the public Notes board for the
   current calendar day in Asia/Manila. Only names whose birthday is today are
   returned to the authenticated client; full birthdates are not exposed there.
+  Classmates can leave wishes on the birthday card, and the birthday song plays
+  when its button is pressed.
 
 FUND COLLECTIONS
-  The migration creates Class Fund at ₱10 and backfills every weekly period
-  from Week 1 (Aug 31–Sept 6, 2026) through the current week. Re-run
-  migration_student_number_birthdays.sql to add newly elapsed weeks; existing periods are
-  preserved. Admins can also add other funds and periods in Class funds.
-  Unpaid amounts accumulate automatically across periods. Mark payments per
-  student and period.
+  Run migration_confession_feelings_fund_admin.sql to create Class Fund at ₱10
+  and backfill every weekly period from Week 1 (Aug 31–Sept 6, 2026) through the
+  current week. Re-run it to add newly elapsed weeks; existing periods are
+  preserved and kept at ₱10. Admins and officers can also add other funds and periods in
+  Class funds. Only admins and officers can view or update student payment records.
+  Admins and officers can edit each student's total amount received; the app allocates it
+  to the oldest unpaid weeks first, tracks partial payments and advance credit,
+  and marks fully covered weeks paid automatically. Adding a period also
+  recalculates existing advance balances. Use Export whole fund as CSV or
+  Print fund report for a complete student-by-week report. Users can see only
+  their own outstanding balance and advance credit. Admins and officers can see total funds
+  collected across all users and manage individual payment records. Students
+  with an unpaid Class Fund balance also see a pinned reminder at the top of
+  the public Notes board.
 
 ADMIN RULES
-  - Only admins can change note importance, approve/reject/delete notes,
+  - Only admins and officers can change note importance, approve/reject/delete notes,
     delete comments/confessions/suggestions/users, change roles, or manage funds.
     Deleting a user removes their Supabase Auth account and cascades to their
     Portalis data, freeing the student number for a new account.
   - Confessions show no author identity to other users.
   - Quiz answer keys remain server-side; grading is performed by Supabase.
+
+REVIEWER TEXT FORMAT
+  Enter reviewer content in Manage reviewers. The text is formatted on the
+  topic's Reviewer tab:
+  - # Heading, ## Section, and ### Subsection create progressively smaller
+    headings with clear spacing.
+  - - bullet or * bullet creates a bulleted list. Use 1. item or 2. item for
+    a numbered list.
+  - Consecutive Term - definition or Term: definition lines become responsive
+    definition cards. These can also be used to generate quiz questions.
+  - Example: explanation or Example 2: explanation creates a highlighted
+    example callout with an EXAMPLE label. Example - explanation is also
+    labeled and highlighted as an example card. A heading written as
+    # Example or ## Examples also gets an example indicator.
+  - Use **important text** for bold emphasis and ==highlighted text== for a
+    colored highlight.
+  - Start a line with > to make a callout.
+  - Inline math uses $x^2$ or \(x^2\). Display math uses $$\frac{a}{b}$$ or
+    \[ \frac{a}{b} \]. Math is rendered with KaTeX.
+
+  Example:
+    # Fractions
+    A fraction represents **part of a whole**.
+
+    ## Key terms
+    Numerator - The top number in a fraction.
+    Denominator - The bottom number in a fraction.
+
+    Example: In \(\frac{3}{4}\), 3 is the numerator and 4 is the denominator.
+    - Fractions can represent equal parts.
+    - The denominator cannot be zero.
 
 BULK QUESTION FORMAT (blank line between questions)
   Q: What is the capital of the Philippines?

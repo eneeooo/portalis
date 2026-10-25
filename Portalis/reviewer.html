@@ -13,7 +13,7 @@
     <p class="hint">Pick a topic to read its reviewer, then take the quiz. Unfinished quizzes are saved so you can continue later.</p>
     <p id="msg" class="msg"></p>
     <div id="subjects" class="cardgrid"></div>
-    <p id="empty" class="empty" style="display:none">No topics yet. An admin can add them under "Manage reviewers".</p>
+    <p id="empty" class="empty" style="display:none">No topics yet. An admin or officer can add them under "Manage reviewers".</p>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -37,33 +37,39 @@
       const subjects = s.data, topics = t.data, attempts = a.data;
       document.getElementById("empty").style.display = topics.length ? "none" : "block";
 
+      let subjectIndex = 0;
       subjects.forEach(sub => {
         const mine = topics.filter(x => x.subject_id === sub.id);
         if (!mine.length && !ctx.isAdmin) return;
-        const card = el("div", "card");
-        const h = el("h3", "");
-        h.appendChild(el("span", "code", sub.code));
-        h.appendChild(document.createTextNode(sub.title));
-        card.appendChild(h);
+        const card = el("section", "card reviewer-subject-note subject-note-" + (subjectIndex++ % 4));
+        const header = el("div", "reviewer-subject-header");
+        header.append(
+          el("span", "code reviewer-subject-code", sub.code),
+          el("h3", "reviewer-subject-title", sub.title)
+        );
+        card.appendChild(header);
 
         if (!mine.length) card.appendChild(el("p", "hint", "No topics yet."));
         const ul = el("ul", "topics");
         mine.forEach(tp => {
           const li = el("li");
-          const link = el("a", "", tp.title);
+          const link = el("a", "topic-card");
           link.href = "topic.html?id=" + tp.id;
-          li.appendChild(link);
 
           const tries = attempts.filter(x => x.topic_id === tp.id);
           const done = tries.filter(x => x.status === "submitted");
           const draft = tries.some(x => x.status === "in_progress");
+          const details = el("span", "topic-card-details");
+          details.appendChild(el("span", "topic-card-title", tp.title));
           let pill;
           if (done.length) {
             const best = done.reduce((m, x) => (x.score > m.score ? x : m), done[0]);
             pill = el("span", "pill done", "Best " + best.score + "/" + best.total + " \u00b7 " + done.length + (done.length === 1 ? " try" : " tries"));
           } else if (draft) pill = el("span", "pill draft", "Draft saved");
           else pill = el("span", "pill", "Not started");
-          li.appendChild(pill);
+          details.appendChild(pill);
+          link.append(details, el("span", "topic-card-arrow", "\u2192"));
+          li.appendChild(link);
           ul.appendChild(li);
         });
         card.appendChild(ul);

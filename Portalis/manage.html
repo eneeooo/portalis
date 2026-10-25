@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portalis - Manage reviewers</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 </head>
 <body>
   <div class="wrap">
@@ -21,7 +22,7 @@
       </div>
       <label for="newReviewer">Reviewer text (optional, you can edit it later)</label>
       <textarea id="newReviewer" style="min-height:120px" placeholder="# Heading&#10;- bullet point&#10;Algorithm - a step-by-step procedure for solving a problem"></textarea>
-      <p class="hint">Format: "# Heading", "- bullet", or plain paragraphs. Lines written as <b>Term - definition</b> can be turned into quiz questions automatically. Use $x^2$ inline or $$\frac{a}{b}$$ for displayed math.</p>
+      <p class="hint">Use "# Heading", "- bullet", "1. numbered item", or plain paragraphs. Consecutive "Term - definition" or "Term: definition" lines appear in responsive highlight cards and can be turned into quiz questions. Highlight text with **bold** or ==mark==. Start a line with &gt; for a callout. Use $x^2$ inline or $$\frac{a}{b}$$ for displayed math.</p>
       <button id="createTopic">Create topic</button>
     </div>
 
@@ -112,6 +113,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
   <script src="config.js"></script>
   <script src="common.js"></script>
   <script>
@@ -338,7 +341,7 @@
         body.appendChild(ul);
       } else body.appendChild(el("div", "hint", "Answer: " + q.answer));
       row.appendChild(body);
-      return row;
+      return renderMath(row);
     }
 
     /* ---------- existing questions ---------- */

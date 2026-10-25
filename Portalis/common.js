@@ -104,37 +104,63 @@ async function requireAuth(adminOnly) {
     return null;
   }
   const role = prof.role;
-  if (adminOnly && role !== "admin") { location.href = "dashboard.html"; return null; }
+  const isAdmin = role === "admin" || role === "officer";
+  if (adminOnly && !isAdmin) { location.href = "dashboard.html"; return null; }
   startSessionWatch();
-  return { user: userData.user, profile: prof, role: role, isAdmin: role === "admin" };
+  return { user: userData.user, profile: prof, role: role, isAdmin };
 }
 
 function renderBar(ctx, active) {
   const bar = document.getElementById("bar");
   bar.className = "bar";
   bar.innerHTML = "";
-  bar.appendChild(el("span", "brand", "Portalis"));
+  const identity = el("div", "bar-profile");
+  if (ctx.profile.avatar_url) {
+    const avatar = el("img", "bar-avatar");
+    avatar.src = ctx.profile.avatar_url;
+    avatar.alt = "";
+    identity.appendChild(avatar);
+  } else {
+    const initials = (ctx.profile.full_name || ctx.profile.student_number || "Student")
+      .split(/\s+/)
+      .map(part => part.charAt(0))
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+    identity.appendChild(el("span", "bar-avatar bar-avatar-fallback", initials));
+  }
+  identity.append(
+    el("span", "bar-name", ctx.profile.full_name || "Student"),
+    el("span", "bar-student-number", ctx.profile.student_number || "Student number not set")
+  );
+  bar.appendChild(identity);
   const nav = el("nav", "nav");
   const links = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"], ["funds.html", "Class funds", "funds"], ["confessions.html", "Confessions", "confessions"], ["profile.html", "Profile", "profile"]];
   if (ctx.isAdmin) links.push(["admin.html", "Admin", "admin"], ["manage.html", "Manage reviewers", "manage"]);
   links.forEach(l => {
-    const a = el("a", "btn ghost" + (active === l[2] ? " on" : ""), l[1]);
+    const a = el("a", "nav-link" + (active === l[2] ? " on" : ""), l[1]);
+    if (active === l[2]) a.setAttribute("aria-current", "page");
     a.href = l[0];
     nav.appendChild(a);
   });
   bar.appendChild(nav);
-  const right = el("div", "right");
-  right.appendChild(el("span", "who", ctx.profile.full_name || ctx.profile.student_number || "Student"));
-  right.appendChild(el("span", "badge", ctx.role));
-  const suggestion = el("button", "suggestion-circle", "?");
-  suggestion.title = "Send a suggestion to the admins";
-  suggestion.setAttribute("aria-label", "Send a suggestion to the admins");
-  suggestion.onclick = () => openSuggestion(ctx);
-  right.appendChild(suggestion);
+  const right = el("div", "right profile-controls");
+  const roleLabel = ctx.role === "user"
+    ? "Student"
+    : ctx.role.charAt(0).toUpperCase() + ctx.role.slice(1);
+  right.appendChild(el("span", "badge profile-role", roleLabel));
   const out = el("button", "ghost", "Log out");
   out.onclick = () => confirmLogout();
   right.appendChild(out);
   bar.appendChild(right);
+
+  document.querySelectorAll(".suggestion-circle").forEach(button => button.remove());
+  const suggestion = el("button", "suggestion-circle", "?");
+  suggestion.type = "button";
+  suggestion.title = "Send a suggestion to the admins and officers";
+  suggestion.setAttribute("aria-label", "Send a suggestion to the admins and officers");
+  suggestion.onclick = () => openSuggestion(ctx);
+  document.body.appendChild(suggestion);
 }
 
 function renderMath(box) {
@@ -179,7 +205,7 @@ function openSuggestion(ctx) {
   const dialog = el("div", "modal-backdrop");
   const box = el("form", "modal-card");
   box.appendChild(el("h2", "", "Send a suggestion"));
-  const label = el("label", "", "Your message (admins will see your student number)");
+  const label = el("label", "", "Your message (admins and officers will see your student number)");
   const input = document.createElement("textarea");
   input.maxLength = 1000;
   input.required = true;
@@ -198,7 +224,7 @@ function openSuggestion(ctx) {
     send.disabled = true;
     const { error } = await sb.from("suggestions").insert({ content, user_id: ctx.user.id });
     if (error) { status.className = "msg err"; status.textContent = error.message; send.disabled = false; return; }
-    status.className = "msg ok"; status.textContent = "Suggestion sent to the admins.";
+    status.className = "msg ok"; status.textContent = "Suggestion sent to the admins and officers.";
     input.disabled = true;
     send.remove();
   };
@@ -222,21 +248,99 @@ function renderContent(n) {
 /* ---------- reviewer text: "# Heading", "- bullet", paragraphs ---------- */
 function renderRich(text) {
   const box = el("div", "rich");
-  let list = null;
+  let list = null, definitions = null;
+  const closeList = () => { list = null; };
+  const closeDefinitions = () => { definitions = null; };
   (text || "").replace(/\r/g, "").split("\n").forEach(raw => {
     const line = raw.trim();
-    if (!line) { list = null; return; }
+    if (!line) { closeList(); return; }
     let m;
-    if ((m = line.match(/^#{1,3}\s+(.+)$/))) { list = null; box.appendChild(el("h3", "", m[1])); return; }
-    if ((m = line.match(/^[-*\u2022]\s+(.+)$/))) {
-      if (!list) { list = el("ul", ""); box.appendChild(list); }
-      list.appendChild(el("li", "", m[1]));
+    if ((m = line.match(/^(#{1,3})\s+(.+)$/))) {
+      closeList(); closeDefinitions();
+      const level = Math.min(m[1].length + 1, 4);
+      const heading = el("h" + level);
+      if (/^examples?(?:\s+\d+)?$/i.test(m[2].trim())) {
+        heading.classList.add("rich-example-heading");
+        heading.appendChild(el("span", "rich-example-badge", "Example"));
+        if (/^examples? \d+$/i.test(m[2].trim())) {
+          heading.appendChild(el("span", "rich-example-number", m[2].match(/\d+/)[0]));
+        }
+      } else {
+        appendRichText(heading, m[2]);
+      }
+      box.appendChild(heading);
       return;
     }
-    list = null;
-    box.appendChild(el("p", "", line));
+    if ((m = line.match(/^[-*\u2022]\s+(.+)$/))) {
+      closeDefinitions();
+      if (!list || list.tagName !== "UL") { list = el("ul", "rich-list"); box.appendChild(list); }
+      const item = el("li");
+      appendRichText(item, m[1]);
+      list.appendChild(item);
+      return;
+    }
+    if ((m = line.match(/^\d+[.)]\s+(.+)$/))) {
+      closeDefinitions();
+      if (!list || list.tagName !== "OL") { list = el("ol", "rich-list"); box.appendChild(list); }
+      const item = el("li");
+      appendRichText(item, m[1]);
+      list.appendChild(item);
+      return;
+    }
+    closeList();
+    if ((m = line.match(/^examples?(?:\s+(\d+))?\s*:\s*(.+)$/i))) {
+      closeDefinitions();
+      const example = el("aside", "rich-example");
+      example.appendChild(el("span", "rich-example-badge", "Example" + (m[1] ? " " + m[1] : "")));
+      const content = el("p", "rich-example-content");
+      appendRichText(content, m[2]);
+      example.appendChild(content);
+      box.appendChild(example);
+      return;
+    }
+    if ((m = line.match(/^(.{2,60}?)\s*(?::|\s[-\u2013\u2014]\s)\s*(.{5,})$/))) {
+      if (!definitions) {
+        definitions = el("div", "rich-grid");
+        box.appendChild(definitions);
+      }
+      const item = el("article", "rich-definition");
+      if (/^examples?(?:\s+\d+)?$/i.test(m[1].trim())) {
+        item.classList.add("rich-definition-example");
+        item.appendChild(el("span", "rich-example-badge", m[1].trim()));
+      }
+      const term = el("h3", "rich-term");
+      if (item.classList.contains("rich-definition-example")) term.textContent = "";
+      else appendRichText(term, m[1].trim());
+      const definition = el("p", "rich-description");
+      appendRichText(definition, m[2].trim());
+      item.append(term, definition);
+      definitions.appendChild(item);
+      return;
+    }
+    closeDefinitions();
+    if ((m = line.match(/^>\s*(.+)$/))) {
+      const callout = el("blockquote", "rich-callout");
+      appendRichText(callout, m[1]);
+      box.appendChild(callout);
+      return;
+    }
+    const paragraph = el("p");
+    appendRichText(paragraph, line);
+    box.appendChild(paragraph);
   });
   return renderMath(box);
+}
+
+function appendRichText(parent, text) {
+  const pattern = /\*\*(.+?)\*\*|==(.+?)==/g;
+  let last = 0, match;
+  while ((match = pattern.exec(text))) {
+    parent.appendChild(document.createTextNode(text.slice(last, match.index)));
+    const highlighted = el(match[1] ? "strong" : "mark", match[1] ? "rich-emphasis" : "rich-highlight", match[1] || match[2]);
+    parent.appendChild(highlighted);
+    last = pattern.lastIndex;
+  }
+  parent.appendChild(document.createTextNode(text.slice(last)));
 }
 
 /* ---------- sticky note card ----------

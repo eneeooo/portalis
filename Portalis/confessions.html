@@ -14,10 +14,20 @@
     <div class="card">
       <label for="content">Your confession</label>
       <textarea id="content" maxlength="1500" placeholder="Share something with the class..."></textarea>
+      <label for="feeling">How are you feeling?</label>
+      <select id="feeling">
+        <option value="in-love">In love</option>
+        <option value="happy">Happy</option>
+        <option value="sad">Sad</option>
+        <option value="anxious">Anxious</option>
+        <option value="grateful">Grateful</option>
+        <option value="hopeful">Hopeful</option>
+        <option value="other" selected>Other</option>
+      </select>
       <button id="post">Post anonymously</button>
       <p id="msg" class="msg"></p>
     </div>
-    <div id="feed"></div>
+    <div id="feed" class="confession-feed"></div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
@@ -31,13 +41,17 @@
       await load();
     }
     async function load() {
-      const { data, error } = await sb.from("confessions").select("id,content,created_at").order("created_at", { ascending: false });
+      const { data, error } = await sb.from("confessions").select("id,content,feeling,created_at").order("created_at", { ascending: false });
       if (error) { $("msg").className = "msg err"; $("msg").textContent = error.message; return; }
       const feed = $("feed"); feed.innerHTML = "";
       if (!data.length) feed.appendChild(el("p", "empty", "No confessions yet."));
       data.forEach(item => {
-        const card = el("div", "card");
-        card.append(el("p", "confession", item.content), el("small", "", fmtDate(item.created_at)));
+        const card = el("article", "note confession-note feeling-" + (item.feeling || "other"));
+        card.append(
+          el("span", "feeling-label", feelingLabel(item.feeling)),
+          el("p", "confession", item.content),
+          el("small", "", fmtDate(item.created_at))
+        );
         if (ctx.isAdmin) {
           const remove = el("button", "ghost small", "Delete");
           remove.onclick = async () => {
@@ -51,10 +65,17 @@
         feed.appendChild(card);
       });
     }
+    function feelingLabel(feeling) {
+      const labels = {
+        "in-love": "In love", happy: "Happy", sad: "Sad",
+        anxious: "Anxious", grateful: "Grateful", hopeful: "Hopeful", other: "Other"
+      };
+      return labels[feeling] || labels.other;
+    }
     $("post").onclick = async () => {
       const content = $("content").value.trim();
       if (!content) { $("msg").className = "msg err"; $("msg").textContent = "Write a confession first."; return; }
-      const { error } = await sb.from("confessions").insert({ content });
+      const { error } = await sb.from("confessions").insert({ content, feeling: $("feeling").value });
       if (error) { $("msg").className = "msg err"; $("msg").textContent = error.message; return; }
       $("content").value = ""; $("msg").className = "msg ok"; $("msg").textContent = "Posted anonymously.";
       await load();

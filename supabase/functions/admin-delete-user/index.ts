@@ -42,7 +42,9 @@ Deno.serve(async request => {
       .eq("id", authData.user.id)
       .maybeSingle();
     if (profileError) throw new Error("Could not verify admin permissions: " + profileError.message);
-    if (!profile || profile.role !== "admin") return json({ error: "Only admins can delete users." }, 403);
+    if (!profile || !["admin", "officer"].includes(profile.role)) {
+      return json({ error: "Only admins and officers can delete users." }, 403);
+    }
 
     const { data: target, error: targetError } = await admin.auth.admin.getUserById(userId);
     if (targetError) throw new Error("Could not load the selected account: " + targetError.message);
