@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalis - Sign up</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="auth">
+    <h1>Portalis</h1>
+    <p class="sub">Make an account and start sticking notes.</p>
+    <div class="note">
+      <h2>Sign up</h2>
+      <label for="email">Email</label>
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
+      <label for="password">Password</label>
+      <input id="password" type="password" placeholder="At least 6 characters" autocomplete="new-password">
+      <label for="password2">Confirm password</label>
+      <input id="password2" type="password" placeholder="Type it again" autocomplete="new-password">
+      <button id="signup" class="full">Create account</button>
+      <p id="msg" class="msg"></p>
+      <p class="switch">Already have an account? <a href="index.html">Log in</a></p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script>
+    const msg = document.getElementById("msg");
+    const btn = document.getElementById("signup");
+
+    function show(text, isErr) { msg.className = "msg" + (isErr ? " err" : ""); msg.textContent = text; }
+
+    btn.onclick = async () => {
+      show("", false);
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      const password2 = document.getElementById("password2").value;
+      if (!email || !password) return show("Fill in all fields.", true);
+      if (password.length < 6) return show("Password must be at least 6 characters.", true);
+      if (password !== password2) return show("Passwords do not match.", true);
+
+      btn.disabled = true;
+      const { data, error } = await sb.auth.signUp({ email, password });
+      btn.disabled = false;
+
+      if (error) return show(error.message, true);
+      if (data.session) { location.href = "dashboard.html"; return; }
+      // Email confirmation is on: no session yet
+      show("Account created! Check your email to confirm, then log in.", false);
+    };
+  </script>
+</body>
+</html>

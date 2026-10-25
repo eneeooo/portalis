@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalis - Manage reviewers</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="bar"></div>
+    <h2>Manage reviewers</h2>
+    <p id="msg" class="msg"></p>
+
+    <!-- 1. open a topic -->
+    <div class="card">
+      <h3>1. Open a new topic</h3>
+      <div class="cols2">
+        <div><label for="newSubject">Subject</label><select id="newSubject"></select></div>
+        <div><label for="newTitle">Topic title</label><input id="newTitle" placeholder="e.g. Variables and data types" maxlength="120"></div>
+      </div>
+      <label for="newReviewer">Reviewer text (optional, you can edit it later)</label>
+      <textarea id="newReviewer" style="min-height:120px" placeholder="# Heading&#10;- bullet point&#10;Algorithm - a step-by-step procedure for solving a problem"></textarea>
+      <p class="hint">Format: "# Heading", "- bullet", or plain paragraphs. Lines written as <b>Term - definition</b> can be turned into quiz questions automatically.</p>
+      <button id="createTopic">Create topic</button>
+    </div>
+
+    <!-- 2. pick a topic -->
+    <div class="card">
+      <h3>2. Choose a topic to manage</h3>
+      <select id="topicPick"></select>
+    </div>
+
+    <div id="editor" style="display:none">
+      <div class="card">
+        <h3>Topic and reviewer text</h3>
+        <label for="edTitle">Title</label>
+        <input id="edTitle" maxlength="120">
+        <label for="edReviewer">Reviewer text</label>
+        <textarea id="edReviewer" style="min-height:220px"></textarea>
+        <button id="saveTopic">Save changes</button>
+        <a id="previewLink" class="btn ghost">View as student</a>
+        <button id="delTopic" class="ghost">Delete topic</button>
+      </div>
+
+      <div class="card">
+        <h3>Add quiz questions</h3>
+        <div class="tabs" style="margin-bottom:12px">
+          <button class="tab on" data-mode="manual">Type one</button>
+          <button class="tab" data-mode="bulk">Bulk paste</button>
+          <button class="tab" data-mode="gen">Auto-generate</button>
+        </div>
+
+        <!-- manual -->
+        <div id="mode-manual">
+          <label for="mType">Question type</label>
+          <select id="mType">
+            <option value="mcq">Multiple choice (also use for True/False)</option>
+            <option value="identification">Identification (student types the answer)</option>
+          </select>
+          <label for="mPrompt">Question</label>
+          <textarea id="mPrompt" style="min-height:70px"></textarea>
+          <div id="mMcq">
+            <label>Options (tick the correct one; blank options are ignored)</label>
+            <div id="mOptions"></div>
+          </div>
+          <div id="mId" style="display:none">
+            <label for="mAnswer">Correct answer (not case sensitive)</label>
+            <input id="mAnswer">
+          </div>
+          <button id="mAdd">Add question</button>
+        </div>
+
+        <!-- bulk -->
+        <div id="mode-bulk" style="display:none">
+          <p class="hint">Separate questions with a blank line. Multiple choice has options A) B) C)... and an "Answer:" letter. Without options it becomes identification.</p>
+          <textarea id="bText" style="min-height:220px" placeholder="Q: What is the capital of the Philippines?&#10;A) Cebu&#10;B) Manila&#10;C) Davao&#10;Answer: B&#10;&#10;Q: Keyword used to declare an integer in Java?&#10;Answer: int"></textarea>
+          <button id="bParse">Check questions</button>
+          <div id="bPreview"></div>
+        </div>
+
+        <!-- generate -->
+        <div id="mode-gen" style="display:none">
+          <p class="hint">Builds questions from lines in the reviewer text written as <b>Term - definition</b> or <b>Term: definition</b>. This is rule-based, not AI, so check the preview before saving.</p>
+          <div class="cols2">
+            <div><label for="gStyle">Style</label>
+              <select id="gStyle">
+                <option value="mcq">Multiple choice (pick the term)</option>
+                <option value="identification">Identification (type the term)</option>
+              </select></div>
+            <div><label for="gCount">How many</label><input id="gCount" type="number" min="1" max="100" value="10"></div>
+          </div>
+          <button id="gRun">Generate from reviewer text</button>
+          <div id="gPreview"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Questions <span id="qCount" class="badge"></span></h3>
+        <div id="qList"></div>
+      </div>
+
+      <div class="card">
+        <h3>Student results</h3>
+        <div class="scroll"><table>
+          <thead><tr><th>Student</th><th>Try</th><th>Status</th><th>Score</th><th>Last activity</th></tr></thead>
+          <tbody id="results"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+    let ctx, subjects = [], topics = [], current = null, emails = {}, parsed = [], generated = [];
+    const msg = document.getElementById("msg");
+    const $ = id => document.getElementById(id);
+    function err(t) { msg.className = "msg err"; msg.textContent = t; window.scrollTo(0, 0); }
+    function ok(t) { msg.className = "msg ok"; msg.textContent = t; }
+    function clearMsg() { msg.className = "msg"; msg.textContent = ""; }
+
+    async function init() {
+      ctx = await requireAuth(true);
+      if (!ctx) return;
+      renderBar(ctx, "manage");
+      const { data: ps } = await sb.from("profiles").select("id,email");
+      (ps || []).forEach(p => { emails[p.id] = p.email; });
+      buildOptionInputs();
+      await loadBase();
+      const pre = Number(new URLSearchParams(location.search).get("topic"));
+      if (pre) selectTopic(pre);
+    }
+
+    async function loadBase() {
+      const [s, t] = await Promise.all([
+        sb.from("subjects").select("*").order("code"),
+        sb.from("topics").select("*").order("created_at")
+      ]);
+      if (s.error || t.error) { err((s.error || t.error).message); return; }
+      subjects = s.data; topics = t.data;
+
+      const ns = $("newSubject");
+      ns.innerHTML = "";
+      subjects.forEach(x => { const o = el("option", "", x.code + " - " + x.title); o.value = x.id; ns.appendChild(o); });
+
+      const pick = $("topicPick");
+      pick.innerHTML = "";
+      const first = el("option", "", "-- choose a topic --"); first.value = ""; pick.appendChild(first);
+      subjects.forEach(sub => {
+        const mine = topics.filter(t => t.subject_id === sub.id);
+        if (!mine.length) return;
+        const g = document.createElement("optgroup");
+        g.label = sub.code + " - " + sub.title;
+        mine.forEach(t => { const o = el("option", "", t.title); o.value = t.id; g.appendChild(o); });
+        pick.appendChild(g);
+      });
+      if (current) pick.value = current.id;
+    }
+    $("topicPick").onchange = e => { const v = Number(e.target.value); if (v) selectTopic(v); else { current = null; $("editor").style.display = "none"; } };
+
+    /* ---------- create / edit / delete topic ---------- */
+    $("createTopic").onclick = async () => {
+      clearMsg();
+      const title = $("newTitle").value.trim();
+      if (!title) return err("Give the topic a title.");
+      const { data, error } = await sb.from("topics").insert({
+        subject_id: Number($("newSubject").value), title: title, reviewer: $("newReviewer").value
+      }).select().single();
+      if (error) return err(error.message);
+      $("newTitle").value = ""; $("newReviewer").value = "";
+      await loadBase();
+      await selectTopic(data.id);
+      ok("Topic created. Now add quiz questions below.");
+    };
+
+    async function selectTopic(id) {
+      current = topics.find(t => t.id === id);
+      if (!current) return;
+      $("topicPick").value = id;
+      $("editor").style.display = "block";
+      $("edTitle").value = current.title;
+      $("edReviewer").value = current.reviewer;
+      $("previewLink").href = "topic.html?id=" + id;
+      $("bPreview").innerHTML = ""; $("gPreview").innerHTML = ""; parsed = []; generated = [];
+      await Promise.all([loadQuestions(), loadResults()]);
+    }
+
+    $("saveTopic").onclick = async () => {
+      clearMsg();
+      const title = $("edTitle").value.trim();
+      if (!title) return err("Title cannot be empty.");
+      const { error } = await sb.from("topics").update({ title: title, reviewer: $("edReviewer").value }).eq("id", current.id);
+      if (error) return err(error.message);
+      current.title = title; current.reviewer = $("edReviewer").value;
+      await loadBase();
+      ok("Saved.");
+    };
+
+    $("delTopic").onclick = async () => {
+      if (!confirm("Delete this topic, its questions, and all student tries? This cannot be undone.")) return;
+      const { error } = await sb.from("topics").delete().eq("id", current.id);
+      if (error) return err(error.message);
+      current = null; $("editor").style.display = "none";
+      await loadBase();
+      ok("Topic deleted.");
+    };
+
+    /* ---------- add questions ---------- */
+    document.querySelectorAll(".tab[data-mode]").forEach(b => {
+      b.onclick = () => {
+        document.querySelectorAll(".tab[data-mode]").forEach(x => x.classList.toggle("on", x === b));
+        ["manual", "bulk", "gen"].forEach(m => { $("mode-" + m).style.display = m === b.dataset.mode ? "block" : "none"; });
+      };
+    });
+
+    async function addItems(items) {
+      clearMsg();
+      const { data, error } = await sb.rpc("add_questions", { p_topic: current.id, p_items: items });
+      if (error) { err(error.message); return false; }
+      ok(data + " question(s) added.");
+      await loadQuestions();
+      return true;
+    }
+
+    // manual
+    function buildOptionInputs() {
+      const box = $("mOptions");
+      box.innerHTML = "";
+      for (let i = 0; i < 4; i++) {
+        const row = el("div", "optrow");
+        const r = document.createElement("input");
+        r.type = "radio"; r.name = "mCorrect"; r.value = i; r.id = "mc" + i;
+        if (i === 0) r.checked = true;
+        const lab = el("label", "", String.fromCharCode(65 + i));
+        lab.htmlFor = "mc" + i;
+        const t = document.createElement("input");
+        t.type = "text"; t.id = "mo" + i; t.placeholder = "Option " + String.fromCharCode(65 + i);
+        row.append(r, lab, t);
+        box.appendChild(row);
+      }
+    }
+    $("mType").onchange = () => {
+      const mcq = $("mType").value === "mcq";
+      $("mMcq").style.display = mcq ? "block" : "none";
+      $("mId").style.display = mcq ? "none" : "block";
+    };
+    $("mAdd").onclick = async () => {
+      const prompt = $("mPrompt").value.trim();
+      if (!prompt) return err("Type the question.");
+      let item;
+      if ($("mType").value === "mcq") {
+        const opts = [];
+        let correct = null;
+        const sel = Number(document.querySelector('input[name="mCorrect"]:checked').value);
+        for (let i = 0; i < 4; i++) {
+          const v = $("mo" + i).value.trim();
+          if (!v) continue;
+          opts.push(v);
+          if (i === sel) correct = v;
+        }
+        if (opts.length < 2) return err("Enter at least 2 options.");
+        if (correct === null) return err("The ticked option is blank. Tick one that has text.");
+        item = { qtype: "mcq", prompt: prompt, options: opts, answer: correct };
+      } else {
+        const a = $("mAnswer").value.trim();
+        if (!a) return err("Enter the correct answer.");
+        item = { qtype: "identification", prompt: prompt, options: [], answer: a };
+      }
+      if (await addItems([item])) {
+        $("mPrompt").value = ""; $("mAnswer").value = "";
+        for (let i = 0; i < 4; i++) $("mo" + i).value = "";
+        $("mc0").checked = true;
+      }
+    };
+
+    // bulk
+    $("bParse").onclick = () => {
+      clearMsg();
+      const r = parseBulk($("bText").value);
+      parsed = r.items;
+      const box = $("bPreview");
+      box.innerHTML = "";
+      box.appendChild(el("p", "hint", r.items.length + " question(s) ready" + (r.errors.length ? ", " + r.errors.length + " problem(s):" : ".")));
+      if (r.errors.length) {
+        const ul = el("ul", "errlist");
+        r.errors.forEach(e => ul.appendChild(el("li", "", e)));
+        box.appendChild(ul);
+      }
+      r.items.forEach((q, i) => box.appendChild(previewRow(q, i + 1)));
+      if (r.items.length) {
+        const save = el("button", "", "Save " + r.items.length + " question(s)");
+        save.onclick = async () => { if (await addItems(parsed)) { $("bText").value = ""; box.innerHTML = ""; parsed = []; } };
+        box.appendChild(save);
+      }
+    };
+
+    // generate
+    $("gRun").onclick = () => {
+      clearMsg();
+      const text = $("edReviewer").value;
+      const pairs = extractPairs(text);
+      const box = $("gPreview");
+      box.innerHTML = "";
+      if (pairs.length < 2) { box.appendChild(el("p", "hint", "Found " + pairs.length + " 'Term - definition' line(s). Add at least 2 to the reviewer text first.")); return; }
+      generated = generateQuestions(text, $("gStyle").value, Number($("gCount").value) || 10);
+      if (!generated.length) { box.appendChild(el("p", "hint", "Could not build questions from that text.")); return; }
+      box.appendChild(el("p", "hint", "Found " + pairs.length + " terms. Untick any you do not want:"));
+      generated.forEach((q, i) => {
+        const row = previewRow(q, i + 1);
+        const cb = document.createElement("input");
+        cb.type = "checkbox"; cb.checked = true; cb.dataset.i = i;
+        cb.style.marginRight = "10px";
+        row.insertBefore(cb, row.firstChild);
+        box.appendChild(row);
+      });
+      const save = el("button", "", "Save selected");
+      save.onclick = async () => {
+        const picked = Array.from(box.querySelectorAll("input[type=checkbox]:checked")).map(c => generated[Number(c.dataset.i)]);
+        if (!picked.length) return err("Nothing selected.");
+        if (await addItems(picked)) { box.innerHTML = ""; generated = []; }
+      };
+      const again = el("button", "ghost", "Generate again");
+      again.onclick = () => $("gRun").click();
+      box.append(save, document.createTextNode(" "), again);
+    };
+
+    function previewRow(q, n) {
+      const row = el("div", "qrow");
+      const body = el("div", "qbody");
+      body.appendChild(el("div", "", n + ". " + q.prompt));
+      if (q.qtype === "mcq") {
+        const ul = el("ul", "");
+        q.options.forEach(o => ul.appendChild(el("li", o === q.answer ? "key" : "", (o === q.answer ? "\u2713 " : "") + o)));
+        body.appendChild(ul);
+      } else body.appendChild(el("div", "hint", "Answer: " + q.answer));
+      row.appendChild(body);
+      return row;
+    }
+
+    /* ---------- existing questions ---------- */
+    async function loadQuestions() {
+      const { data: qs, error } = await sb.from("questions").select("*").eq("topic_id", current.id).order("position").order("id");
+      if (error) return err(error.message);
+      const keys = {};
+      if (qs.length) {
+        const { data: ks } = await sb.from("question_keys").select("*").in("question_id", qs.map(q => q.id));
+        (ks || []).forEach(k => { keys[k.question_id] = k.answer; });
+      }
+      $("qCount").textContent = qs.length;
+      const list = $("qList");
+      list.innerHTML = "";
+      if (!qs.length) list.appendChild(el("p", "hint", "No questions yet."));
+      qs.forEach((q, i) => {
+        const row = previewRow({ qtype: q.qtype, prompt: q.prompt, options: q.options || [], answer: keys[q.id] || "" }, i + 1);
+        const del = el("button", "ghost small", "Delete");
+        del.onclick = async () => {
+          if (!confirm("Delete this question?")) return;
+          const { error } = await sb.from("questions").delete().eq("id", q.id);
+          if (error) err(error.message); else loadQuestions();
+        };
+        row.appendChild(del);
+        list.appendChild(row);
+      });
+    }
+
+    /* ---------- results ---------- */
+    async function loadResults() {
+      const { data, error } = await sb.from("attempts").select("*").eq("topic_id", current.id).order("updated_at", { ascending: false });
+      const body = $("results");
+      body.innerHTML = "";
+      if (error) return err(error.message);
+      if (!data.length) {
+        const tr = document.createElement("tr");
+        const td = el("td", "", "No one has tried this quiz yet.");
+        td.colSpan = 5; tr.appendChild(td); body.appendChild(tr);
+        return;
+      }
+      data.forEach(a => {
+        const tr = document.createElement("tr");
+        tr.append(
+          el("td", "", emails[a.user_id] || a.user_id),
+          el("td", "", "#" + a.attempt_no),
+          el("td", "", a.status === "submitted" ? "Submitted" : "In progress"),
+          el("td", "", a.status === "submitted" ? a.score + "/" + a.total : "-"),
+          el("td", "", fmtDate(a.updated_at))
+        );
+        body.appendChild(tr);
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>

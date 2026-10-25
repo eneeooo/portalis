@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalis - Notes</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="bar"></div>
+
+    <div class="tabs">
+      <button id="tabBoard" class="tab on">Public board</button>
+      <button id="tabMine" class="tab">My notes</button>
+    </div>
+    <p id="msg" class="msg"></p>
+
+    <!-- New note (My notes tab only) -->
+    <div id="composer" class="note composer" style="display:none;background:#fff">
+      <h2>New note</h2>
+
+      <label for="title">Title</label>
+      <input id="title" placeholder="e.g. Bring valid ID tomorrow" maxlength="80">
+
+      <label>Importance</label>
+      <div class="prio-pick">
+        <label class="p-low"><input type="radio" name="prio" value="low"><span>Low</span></label>
+        <label class="p-medium"><input type="radio" name="prio" value="medium" checked><span>Medium</span></label>
+        <label class="p-high"><input type="radio" name="prio" value="high"><span>High</span></label>
+        <label class="p-urgent"><input type="radio" name="prio" value="urgent"><span>Urgent</span></label>
+      </div>
+
+      <label>Format</label>
+      <div class="fmt-pick">
+        <label><input type="radio" name="fmt" value="text" checked><span>Plain</span></label>
+        <label><input type="radio" name="fmt" value="bullets"><span>&bull; Bullets</span></label>
+        <label><input type="radio" name="fmt" value="numbered"><span>1. Numbered</span></label>
+      </div>
+
+      <label for="content">Details (optional)</label>
+      <textarea id="content" placeholder="Write something..."></textarea>
+      <p id="fmtHint" class="hint"></p>
+
+      <label for="subInput">Subnotes (optional)</label>
+      <div class="subrow">
+        <input id="subInput" placeholder="Add a subnote, press Enter">
+        <button id="subAdd" type="button">+</button>
+      </div>
+      <ul id="pending" class="chips"></ul>
+
+      <button id="add" class="full">Submit note</button>
+      <p class="hint" id="postHint"></p>
+    </div>
+
+    <div id="filters" class="filters"></div>
+    <div id="board" class="board"></div>
+    <p id="empty" class="empty" style="display:none"></p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+    let ctx, view = "board", notes = [], filter = "all", pending = [], counts = {};
+    const msg = document.getElementById("msg");
+
+    function err(t) { msg.className = "msg err"; msg.textContent = t; }
+    function ok(t) { msg.className = "msg ok"; msg.textContent = t; }
+    function clearMsg() { msg.className = "msg"; msg.textContent = ""; }
+
+    async function init() {
+      ctx = await requireAuth();
+      if (!ctx) return;
+      renderBar(ctx, "notes");
+      document.getElementById("postHint").textContent = ctx.isAdmin
+        ? "Admin notes are posted right away."
+        : "Your note is sent to an admin first. It shows on the public board once approved.";
+      setView("board");
+    }
+
+    function setView(v) {
+      view = v; filter = "all"; clearMsg();
+      document.getElementById("tabBoard").classList.toggle("on", v === "board");
+      document.getElementById("tabMine").classList.toggle("on", v === "mine");
+      document.getElementById("composer").style.display = v === "mine" ? "block" : "none";
+      loadNotes();
+    }
+    document.getElementById("tabBoard").onclick = () => setView("board");
+    document.getElementById("tabMine").onclick = () => setView("mine");
+
+    async function loadNotes() {
+      let q = sb.from("notes").select("*").order("created_at", { ascending: false });
+      q = view === "mine" ? q.eq("user_id", ctx.user.id) : q.eq("status", "approved");
+      const { data, error } = await q;
+      if (error) { err(error.message); return; }
+      notes = data;
+      counts = {};
+      const ids = notes.filter(n => n.status === "approved").map(n => n.id);
+      if (ids.length) {
+        const { data: cs } = await sb.from("comments").select("note_id").in("note_id", ids);
+        (cs || []).forEach(c => { counts[c.note_id] = (counts[c.note_id] || 0) + 1; });
+      }
+      render();
+    }
+
+    function renderFilters() {
+      const box = document.getElementById("filters");
+      box.innerHTML = "";
+      const all = el("button", "fbtn" + (filter === "all" ? " active" : ""), "All (" + notes.length + ")");
+      all.onclick = () => { filter = "all"; render(); };
+      box.appendChild(all);
+      ORDER.forEach(p => {
+        const count = notes.filter(n => n.priority === p).length;
+        const b = el("button", "fbtn p-" + p + (filter === p ? " active" : ""), LABEL[p] + " (" + count + ")");
+        b.onclick = () => { filter = p; render(); };
+        box.appendChild(b);
+      });
+    }
+
+    function render() {
+      renderFilters();
+      const board = document.getElementById("board");
+      board.innerHTML = "";
+      const shown = notes
+        .filter(n => filter === "all" || n.priority === filter)
+        .sort((a, b) => ORDER.indexOf(a.priority) - ORDER.indexOf(b.priority));
+      const empty = document.getElementById("empty");
+      empty.style.display = shown.length ? "none" : "block";
+      empty.textContent = view === "mine" ? "You have no notes here yet. Write one above." : "No approved notes yet.";
+      shown.forEach(n => {
+        const mine = n.user_id === ctx.user.id;
+        board.appendChild(noteCard(n, {
+          canEdit: mine,
+          showStatus: true,
+          onPriority: setPriority,
+          onSubs: saveSubs,
+          actions: ctx.isAdmin ? [deleteBtn(n)] : [],
+          footer: n.status === "approved" ? commentsFooter(n) : null
+        }));
+      });
+    }
+
+    function deleteBtn(n) {
+      const b = el("button", "", "Delete");
+      b.onclick = async () => {
+        if (!confirm("Delete this note for everyone?")) return;
+        const { error } = await sb.from("notes").delete().eq("id", n.id);
+        if (error) err(error.message);
+        else { notes = notes.filter(x => x.id !== n.id); render(); }
+      };
+      return b;
+    }
+
+    async function saveSubs(n, arr) {
+      const { error } = await sb.from("notes").update({ subnotes: arr }).eq("id", n.id);
+      if (error) { err(error.message); return; }
+      n.subnotes = arr; render();
+    }
+    async function setPriority(n, p) {
+      if (n.priority === p) return;
+      const { error } = await sb.from("notes").update({ priority: p }).eq("id", n.id);
+      if (error) { err(error.message); return; }
+      n.priority = p; render();
+    }
+
+    /* ---------- public comments ---------- */
+    function commentsFooter(n) {
+      return function (card) {
+        const wrap = el("div", "comments");
+        const toggle = el("button", "ghost small", "Comments (" + (counts[n.id] || 0) + ")");
+        const body = el("div", "cbody");
+        body.style.display = "none";
+        const list = el("div", "clist");
+        const row = el("div", "addsub");
+        const inp = el("input", "mini");
+        inp.placeholder = "Ask what it's for...";
+        inp.maxLength = 500;
+        const post = el("button", "plus", "Post");
+        post.style.fontSize = "18px";
+
+        async function load() {
+          const { data, error } = await sb.from("comments").select("*").eq("note_id", n.id).order("created_at");
+          list.innerHTML = "";
+          if (error) { list.textContent = error.message; return; }
+          counts[n.id] = data.length;
+          toggle.textContent = "Comments (" + data.length + ")";
+          if (!data.length) list.appendChild(el("p", "hint", "No comments yet. Ask a question!"));
+          data.forEach(c => {
+            const d = el("div", "comment");
+            const h = el("div", "chead");
+            h.appendChild(el("b", "", c.author_name || "user"));
+            h.appendChild(el("small", "", fmtDate(c.created_at)));
+            if (ctx.isAdmin) {
+              const x = el("button", "x", "\u00d7");
+              x.title = "Delete comment";
+              x.onclick = async () => {
+                if (!confirm("Delete this comment?")) return;
+                const { error } = await sb.from("comments").delete().eq("id", c.id);
+                if (error) alert(error.message); else load();
+              };
+              h.appendChild(x);
+            }
+            d.appendChild(h);
+            d.appendChild(el("div", "ctext", c.content));
+            list.appendChild(d);
+          });
+        }
+        async function add() {
+          const t = inp.value.trim();
+          if (!t) return;
+          const { error } = await sb.from("comments").insert({ note_id: n.id, content: t });
+          if (error) { alert(error.message); return; }
+          inp.value = "";
+          load();
+        }
+        toggle.onclick = () => {
+          const open = body.style.display === "none";
+          body.style.display = open ? "block" : "none";
+          if (open) load();
+        };
+        post.onclick = add;
+        inp.addEventListener("keydown", e => { if (e.key === "Enter") add(); });
+        row.append(inp, post);
+        body.append(list, row);
+        wrap.append(toggle, body);
+        card.appendChild(wrap);
+      };
+    }
+
+    /* ---------- new note form ---------- */
+    const HINTS = {
+      text: "Write it however you like.",
+      bullets: "One item per line. Each line becomes a bullet.",
+      numbered: "One item per line. Lines are numbered automatically."
+    };
+    function updateHint() {
+      document.getElementById("fmtHint").textContent = HINTS[document.querySelector('input[name="fmt"]:checked').value];
+    }
+    document.querySelectorAll('input[name="fmt"]').forEach(r => r.addEventListener("change", updateHint));
+    updateHint();
+
+    function renderPending() {
+      const ul = document.getElementById("pending");
+      ul.innerHTML = "";
+      pending.forEach((t, i) => {
+        const li = el("li");
+        li.appendChild(el("span", "", t));
+        const x = el("button", "x", "\u00d7");
+        x.onclick = () => { pending.splice(i, 1); renderPending(); };
+        li.appendChild(x);
+        ul.appendChild(li);
+      });
+    }
+    function addPending() {
+      const inp = document.getElementById("subInput");
+      const t = inp.value.trim();
+      if (!t) return;
+      pending.push(t);
+      inp.value = "";
+      renderPending();
+      inp.focus();
+    }
+    document.getElementById("subAdd").onclick = addPending;
+    document.getElementById("subInput").addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); addPending(); }
+    });
+
+    document.getElementById("add").onclick = async () => {
+      clearMsg();
+      const title = document.getElementById("title").value.trim();
+      const content = document.getElementById("content").value.trim();
+      const priority = document.querySelector('input[name="prio"]:checked').value;
+      const format = document.querySelector('input[name="fmt"]:checked').value;
+      const leftover = document.getElementById("subInput").value.trim();
+      if (leftover) pending.push(leftover);
+      if (!title && !content && !pending.length) { err("Write a title, details, or a subnote first."); return; }
+
+      const { error } = await sb.from("notes").insert({
+        title, content, priority, format,
+        subnotes: pending.map(t => ({ text: t, done: false }))
+      });
+      if (error) { err(error.message); return; }
+
+      document.getElementById("title").value = "";
+      document.getElementById("content").value = "";
+      document.getElementById("subInput").value = "";
+      document.querySelector('input[name="prio"][value="medium"]').checked = true;
+      document.querySelector('input[name="fmt"][value="text"]').checked = true;
+      updateHint();
+      pending = [];
+      renderPending();
+      await loadNotes();
+      ok(ctx.isAdmin ? "Posted." : "Sent! An admin will review it before it appears on the public board.");
+    };
+
+    init();
+  </script>
+</body>
+</html>

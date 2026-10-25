@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalis - Reviewers</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="bar"></div>
+    <h2>Reviewers</h2>
+    <p class="hint">Pick a topic to read its reviewer, then take the quiz. Unfinished quizzes are saved so you can continue later.</p>
+    <p id="msg" class="msg"></p>
+    <div id="subjects" class="cardgrid"></div>
+    <p id="empty" class="empty" style="display:none">No topics yet. An admin can add them under "Manage reviewers".</p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+    async function init() {
+      const ctx = await requireAuth();
+      if (!ctx) return;
+      renderBar(ctx, "reviewers");
+      const msg = document.getElementById("msg");
+
+      const [s, t, a] = await Promise.all([
+        sb.from("subjects").select("*").order("code"),
+        sb.from("topics").select("id,subject_id,title").order("created_at"),
+        sb.from("attempts").select("topic_id,status,score,total").eq("user_id", ctx.user.id)
+      ]);
+      const failed = s.error || t.error || a.error;
+      if (failed) { msg.className = "msg err"; msg.textContent = failed.message; return; }
+
+      const subjects = s.data, topics = t.data, attempts = a.data;
+      document.getElementById("empty").style.display = topics.length ? "none" : "block";
+
+      subjects.forEach(sub => {
+        const mine = topics.filter(x => x.subject_id === sub.id);
+        if (!mine.length && !ctx.isAdmin) return;
+        const card = el("div", "card");
+        const h = el("h3", "");
+        h.appendChild(el("span", "code", sub.code));
+        h.appendChild(document.createTextNode(sub.title));
+        card.appendChild(h);
+
+        if (!mine.length) card.appendChild(el("p", "hint", "No topics yet."));
+        const ul = el("ul", "topics");
+        mine.forEach(tp => {
+          const li = el("li");
+          const link = el("a", "", tp.title);
+          link.href = "topic.html?id=" + tp.id;
+          li.appendChild(link);
+
+          const tries = attempts.filter(x => x.topic_id === tp.id);
+          const done = tries.filter(x => x.status === "submitted");
+          const draft = tries.some(x => x.status === "in_progress");
+          let pill;
+          if (done.length) {
+            const best = done.reduce((m, x) => (x.score > m.score ? x : m), done[0]);
+            pill = el("span", "pill done", "Best " + best.score + "/" + best.total + " \u00b7 " + done.length + (done.length === 1 ? " try" : " tries"));
+          } else if (draft) pill = el("span", "pill draft", "Draft saved");
+          else pill = el("span", "pill", "Not started");
+          li.appendChild(pill);
+          ul.appendChild(li);
+        });
+        card.appendChild(ul);
+        document.getElementById("subjects").appendChild(card);
+      });
+    }
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalis - Topic</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="bar"></div>
+    <p><a href="reviewer.html">&larr; All reviewers</a> <a id="manageLink" class="btn ghost small" style="display:none">Manage this topic</a></p>
+    <p id="subject" class="hint" style="font-size:19px"></p>
+    <h1 id="title" style="font-family:'Permanent Marker',cursive;font-weight:normal;margin:0 0 16px"></h1>
+
+    <div class="tabs">
+      <button id="tabRev" class="tab on">Reviewer</button>
+      <button id="tabQuiz" class="tab">Quiz</button>
+    </div>
+    <p id="msg" class="msg"></p>
+
+    <div id="reviewer" class="card"></div>
+    <div id="quiz" style="display:none"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const topicId = Number(new URLSearchParams(location.search).get("id"));
+    let ctx, topic, questions = [], attempts = [], cur = null, answers = {}, saveTimer = null;
+    const msg = document.getElementById("msg");
+    const quiz = document.getElementById("quiz");
+
+    function err(t) { msg.className = "msg err"; msg.textContent = t; }
+    function clearMsg() { msg.className = "msg"; msg.textContent = ""; }
+
+    async function init() {
+      ctx = await requireAuth();
+      if (!ctx) return;
+      renderBar(ctx, "reviewers");
+      if (!topicId) { location.href = "reviewer.html"; return; }
+
+      const { data: t, error } = await sb.from("topics").select("*, subjects(code,title)").eq("id", topicId).single();
+      if (error || !t) { document.getElementById("title").textContent = "Topic not found"; return; }
+      topic = t;
+      document.getElementById("subject").textContent = t.subjects.code + " \u00b7 " + t.subjects.title;
+      document.getElementById("title").textContent = t.title;
+      document.title = "Portalis - " + t.title;
+      if (ctx.isAdmin) {
+        const m = document.getElementById("manageLink");
+        m.href = "manage.html?topic=" + t.id;
+        m.style.display = "inline-block";
+      }
+      const rev = document.getElementById("reviewer");
+      rev.appendChild(t.reviewer.trim() ? renderRich(t.reviewer) : el("p", "hint", "No reviewer text yet."));
+
+      await loadQuiz();
+      document.getElementById("tabRev").onclick = () => showTab("rev");
+      document.getElementById("tabQuiz").onclick = () => showTab("quiz");
+      showTab(location.hash === "#quiz" ? "quiz" : "rev");
+    }
+
+    function showTab(which) {
+      document.getElementById("tabRev").classList.toggle("on", which === "rev");
+      document.getElementById("tabQuiz").classList.toggle("on", which === "quiz");
+      document.getElementById("reviewer").style.display = which === "rev" ? "block" : "none";
+      quiz.style.display = which === "quiz" ? "block" : "none";
+      clearMsg();
+    }
+
+    async function loadQuiz() {
+      const [q, a] = await Promise.all([
+        sb.from("questions").select("id,qtype,prompt,options,position").eq("topic_id", topicId).order("position").order("id"),
+        sb.from("attempts").select("*").eq("topic_id", topicId).eq("user_id", ctx.user.id).order("attempt_no")
+      ]);
+      if (q.error || a.error) { err((q.error || a.error).message); return; }
+      questions = q.data; attempts = a.data;
+      renderHome();
+    }
+
+    /* ---------- quiz home: tries, history, start / continue / retry ---------- */
+    function renderHome() {
+      quiz.innerHTML = "";
+      const card = el("div", "card");
+      if (!questions.length) {
+        card.appendChild(el("p", "", "No quiz for this topic yet."));
+        quiz.appendChild(card);
+        return;
+      }
+      const done = attempts.filter(a => a.status === "submitted");
+      const draft = attempts.find(a => a.status === "in_progress");
+
+      card.appendChild(el("h2", "", "Quiz (" + questions.length + (questions.length === 1 ? " question)" : " questions)")));
+      const stats = el("div", "stats");
+      stats.appendChild(el("span", "pill", "Tries: " + done.length));
+      if (done.length) {
+        const best = done.reduce((m, x) => (x.score > m.score ? x : m), done[0]);
+        stats.appendChild(el("span", "pill done", "Best: " + best.score + "/" + best.total));
+      }
+      if (draft) stats.appendChild(el("span", "pill draft", "Draft saved"));
+      card.appendChild(stats);
+
+      let label;
+      if (draft) {
+        const n = Object.values(draft.answers || {}).filter(v => String(v).trim() !== "").length;
+        label = "Continue quiz (" + n + "/" + questions.length + " answered)";
+      } else label = done.length ? "Retry quiz" : "Start quiz";
+      const go = el("button", "", label);
+      go.onclick = startQuiz;
+      card.appendChild(go);
+
+      if (done.length) {
+        card.appendChild(el("h3", "", "Your tries"));
+        const wrap = el("div", "scroll");
+        const table = document.createElement("table");
+        const head = document.createElement("tr");
+        ["Try", "Score", "Date", ""].forEach(h => head.appendChild(el("th", "", h)));
+        const thead = document.createElement("thead"); thead.appendChild(head);
+        table.appendChild(thead);
+        const tb = document.createElement("tbody");
+        done.slice().reverse().forEach(a => {
+          const tr = document.createElement("tr");
+          tr.appendChild(el("td", "", "#" + a.attempt_no));
+          tr.appendChild(el("td", "", a.score + "/" + a.total));
+          tr.appendChild(el("td", "", fmtDate(a.submitted_at)));
+          const td = document.createElement("td");
+          const rv = el("button", "ghost small", "Review");
+          rv.style.marginTop = "0";
+          rv.onclick = () => renderResult({ score: a.score, total: a.total, results: a.results }, a.attempt_no);
+          td.appendChild(rv);
+          tr.appendChild(td);
+          tb.appendChild(tr);
+        });
+        table.appendChild(tb);
+        wrap.appendChild(table);
+        card.appendChild(wrap);
+      }
+      quiz.appendChild(card);
+    }
+
+    async function startQuiz() {
+      clearMsg();
+      const { data, error } = await sb.rpc("start_attempt", { p_topic: topicId });
+      if (error) { err(error.message); return; }
+      cur = Array.isArray(data) ? data[0] : data;
+      answers = cur.answers || {};
+      renderForm();
+    }
+
+    /* ---------- taking the quiz (answers autosave to your account) ---------- */
+    function answeredCount() {
+      return questions.filter(q => String(answers[q.id] || "").trim() !== "").length;
+    }
+
+    function renderForm() {
+      quiz.innerHTML = "";
+      const head = el("div", "card");
+      head.appendChild(el("h2", "", "Try #" + cur.attempt_no));
+      head.appendChild(el("p", "hint", "Your answers save automatically. You can leave and continue later."));
+      quiz.appendChild(head);
+
+      questions.forEach((q, i) => {
+        const card = el("div", "card qcard");
+        card.appendChild(el("h3", "", (i + 1) + ". " + q.prompt));
+        if (q.qtype === "mcq") {
+          const opts = el("div", "opts");
+          (q.options || []).forEach(o => {
+            const lab = document.createElement("label");
+            const r = document.createElement("input");
+            r.type = "radio"; r.name = "q" + q.id; r.value = o;
+            r.checked = answers[q.id] === o;
+            r.onchange = () => { answers[q.id] = o; changed(); };
+            lab.append(r, el("span", "", o));
+            opts.appendChild(lab);
+          });
+          card.appendChild(opts);
+        } else {
+          const inp = document.createElement("input");
+          inp.type = "text"; inp.placeholder = "Type your answer";
+          inp.value = answers[q.id] || "";
+          inp.oninput = () => { answers[q.id] = inp.value; changed(); };
+          card.appendChild(inp);
+        }
+        quiz.appendChild(card);
+      });
+
+      const bar = el("div", "stickybar");
+      const info = el("span", "", "");
+      info.id = "progress";
+      const state = el("span", "savestate", "");
+      state.id = "savestate";
+      const left = el("div"); left.append(info, document.createTextNode("  "), state);
+      const btns = el("div");
+      const exit = el("button", "ghost", "Save & exit");
+      exit.onclick = async () => { await saveNow(); await loadQuiz(); };
+      const sub = el("button", "", "Submit");
+      sub.onclick = submit;
+      btns.append(exit, document.createTextNode(" "), sub);
+      bar.append(left, btns);
+      quiz.appendChild(bar);
+      updateProgress();
+    }
+
+    function updateProgress() {
+      const p = document.getElementById("progress");
+      if (p) p.textContent = answeredCount() + "/" + questions.length + " answered";
+    }
+    function setState(t) { const s = document.getElementById("savestate"); if (s) s.textContent = t; }
+
+    function changed() {
+      updateProgress();
+      setState("Saving...");
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveNow, 700);
+    }
+
+    async function saveNow() {
+      clearTimeout(saveTimer);
+      if (!cur) return true;
+      const { error } = await sb.rpc("save_answers", { p_attempt: cur.id, p_answers: answers });
+      if (error) { setState("Could not save: " + error.message); return false; }
+      setState("Saved \u2713");
+      return true;
+    }
+
+    async function submit() {
+      const left = questions.length - answeredCount();
+      if (left > 0 && !confirm(left + " question(s) are unanswered. Submit anyway?")) return;
+      if (!(await saveNow())) return;
+      const { data, error } = await sb.rpc("submit_quiz", { p_attempt: cur.id });
+      if (error) { err(error.message); return; }
+      const no = cur.attempt_no;
+      cur = null;
+      renderResult(data, no, true);
+    }
+
+    /* ---------- results ---------- */
+    function renderResult(r, tryNo, justSubmitted) {
+      quiz.innerHTML = "";
+      window.scrollTo(0, 0);
+      const card = el("div", "card");
+      card.appendChild(el("h2", "", "Try #" + tryNo + " result"));
+      card.appendChild(el("p", "score", r.score + "/" + r.total));
+      const pct = r.total ? Math.round((r.score / r.total) * 100) : 0;
+      card.appendChild(el("p", "hint", pct + "% correct" + (pct < 100 ? ". Read the reviewer again and retry to improve." : ". Perfect!")));
+      const retry = el("button", "", "Retry quiz");
+      retry.onclick = async () => { await loadQuiz(); startQuiz(); };
+      const back = el("button", "ghost", "Back");
+      back.onclick = async () => { await loadQuiz(); };
+      const rev = el("button", "ghost", "Read reviewer");
+      rev.onclick = () => showTab("rev");
+      card.append(retry, document.createTextNode(" "), rev, document.createTextNode(" "), back);
+      quiz.appendChild(card);
+
+      (r.results || []).forEach((x, i) => {
+        const d = el("div", "res" + (x.ok ? "" : " bad"));
+        d.appendChild(el("b", "", (x.ok ? "\u2713 Correct" : "\u2717 Wrong")));
+        d.appendChild(document.createTextNode((i + 1) + ". " + x.prompt));
+        if (!x.ok) {
+          d.appendChild(el("div", "", "Your answer: " + (String(x.given).trim() || "(blank)")));
+          d.appendChild(el("div", "", "Correct answer: " + x.correct));
+        } else d.appendChild(el("div", "", "Answer: " + x.correct));
+        quiz.appendChild(d);
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
