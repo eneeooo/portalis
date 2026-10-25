@@ -33,7 +33,7 @@ jobs:
       - name: Upload Portalis folder
         uses: actions/upload-pages-artifact@v3
         with:
-          path: Portalis
+          path: ./Portalis
 
       - name: Deploy website
         id: deployment
