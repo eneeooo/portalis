@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Portalis - Connection check</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h2>Connection check</h2>
+        <p class="hint">
+          Open this page on your live website to check the student-number login
+          endpoint and signed-in database access.
+        </p>
+        <button id="run">Run checks again</button>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Check</th>
+                <th>Result</th>
+                <th>What to do</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <h3 style="margin-top: 22px">Still stuck?</h3>
+        <p>
+          <a id="fnLink" target="_blank" rel="noopener"
+            >Open the student login address</a
+          >
+          in a new tab and read the message:
+        </p>
+        <ul>
+          <li>
+            <b>Requested function was not found</b>: deploy
+            <b>username-login</b> from the current repository.
+          </li>
+          <li>
+            <b>Missing authorization header</b> or <b>Invalid JWT</b>: JWT
+            verification is still on. Turn it off.
+          </li>
+          <li>
+            <b>{"error":"Method not allowed."}</b>: the function is fine. Run
+            the checks again.
+          </li>
+          <li>
+            The page does not load at all: the project is paused or the address
+            in config.js is wrong.
+          </li>
+        </ul>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="config.js"></script>
+    <script>
+      const FN = SUPABASE_URL + "/functions/v1/username-login";
+      const rows = document.getElementById("rows");
+      document.getElementById("fnLink").href = FN;
+
+      function cell(text) {
+        const td = document.createElement("td");
+        td.textContent = text;
+        return td;
+      }
+      function row(name) {
+        const tr = document.createElement("tr");
+        const result = cell("Checking..."),
+          advice = cell("");
+        tr.append(cell(name), result, advice);
+        rows.appendChild(tr);
+        return (ok, text, tip) => {
+          result.textContent =
+            (ok === true ? "OK: " : ok === false ? "FAIL: " : "") + text;
+          advice.textContent = tip || "";
+        };
+      }
+
+      async function checkProject() {
+        const set = row("1. Supabase project answers");
+        try {
+          await fetch(SUPABASE_URL + "/auth/v1/health", { mode: "no-cors" });
+          set(true, "the project address responds");
+          return true;
+        } catch (e) {
+          set(
+            false,
+            "no response from " + SUPABASE_URL,
+            "Check SUPABASE_URL in config.js. If it is correct, the project may be paused: open it in the Supabase Dashboard and restore it.",
+          );
+          return false;
+        }
+      }
+
+      async function checkFunction() {
+        const set = row("2. Student-number login answers the browser");
+        let res;
+        try {
+          res = await fetch(FN, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({
+              student_number: "00-00-000",
+              password: "diagnose-check",
+            }),
+          });
+        } catch (e) {
+          set(
+            false,
+            'the browser got no usable answer (this is the "Failed to fetch" error)',
+            "The function is not deployed as username-login, or JWT verification is still on. Redeploy with: supabase functions deploy username-login --no-verify-jwt. Or in the Dashboard open Edge Functions > username-login > Settings and turn off Verify JWT. Use the link below to see the exact message.",
+          );
+          return;
+        }
+        const body = await res.json().catch(() => ({}));
+        if (!body.error && (body.message || body.msg || body.code)) {
+          set(
+            false,
+            "answered by the Supabase gateway, not by username-login (" +
+              res.status +
+              ")",
+            "JWT verification is on, or the function name is wrong. Turn off Verify JWT for username-login.",
+          );
+        } else if (res.status === 500) {
+          set(
+            false,
+            "the function runs but failed (500)",
+            "Check that the SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY function secrets are available. Details: Dashboard > Edge Functions > username-login > Logs.",
+          );
+        } else if ([400, 401, 409].includes(res.status)) {
+          set(true, "the function answered: " + (body.error || res.status));
+        } else {
+          set(
+            null,
+            "unexpected answer " + res.status,
+            "Open the function logs in the Dashboard.",
+          );
+        }
+      }
+
+      async function checkData() {
+        const set = row("3. Signed-in access to the database");
+        const { data: sessionData, error: sessionError } =
+          await sb.auth.getSession();
+        if (sessionError) {
+          set(false, sessionError.message);
+          return;
+        }
+        if (!sessionData.session) {
+          set(null, "skipped", "Log in first, then run this page again.");
+          return;
+        }
+        const { error } = await sb.from("profiles").select("id").limit(1);
+        if (error) {
+          set(
+            false,
+            error.message,
+            /jwt|signature|token/i.test(error.message)
+              ? "The Auth session is invalid. Sign in again."
+              : "Check the database policies and migration order.",
+          );
+        } else set(true, "the database accepted your session");
+      }
+
+      async function run() {
+        rows.innerHTML = "";
+        if (await checkProject()) {
+          await checkFunction();
+          await checkData();
+        }
+      }
+      document.getElementById("run").onclick = run;
+      run();
+    </script>
+  </body>
+</html>

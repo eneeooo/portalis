@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalis - Profile</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="bar"></div>
+    <h2>My profile</h2>
+    <p class="hint">Use your student number to sign in. Email is optional: it stays empty until you add one here, and it is not used for login.</p>
+    <p id="msg" class="msg"></p>
+    <div class="card profile-grid">
+      <div>
+        <img id="avatar" class="profile-preview" alt="Profile picture">
+        <input id="photo" class="file-input" type="file" accept="image/*">
+        <label for="photo">Choose profile picture</label>
+        <small id="fileName" class="file-hint">Image only, up to 3 MB</small>
+      </div>
+      <div>
+        <label for="fullName">Full name</label>
+        <input id="fullName" maxlength="100" autocomplete="name" placeholder="First and last name">
+        <label for="email">Email (optional)</label>
+        <input id="email" type="email" maxlength="254" placeholder="Not set">
+        <label for="contacts">Other contacts (optional)</label>
+        <input id="contacts" maxlength="240" placeholder="Phone, social link, etc.">
+        <label for="about">About me (optional)</label>
+        <textarea id="about" maxlength="500"></textarea>
+        <button id="save">Save profile</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Change password</h3>
+      <label for="newPassword">New password</label>
+      <input id="newPassword" type="password" autocomplete="new-password">
+      <label for="confirmPassword">Confirm new password</label>
+      <input id="confirmPassword" type="password" autocomplete="new-password">
+      <button id="changePassword">Update password</button>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+    let ctx, avatarUrl = "", currentEmail = "";
+    const $ = id => document.getElementById(id);
+    const msg = $("msg");
+    function show(text, error) { msg.className = "msg" + (error ? " err" : " ok"); msg.textContent = text; }
+    async function init() {
+      ctx = await requireAuth();
+      if (!ctx) return;
+      renderBar(ctx, "profile");
+      const { data, error } = await sb.from("profiles").select("email,full_name,contacts,about,avatar_url").eq("id", ctx.user.id).single();
+      if (error) { show(error.message, true); return; }
+      $("fullName").value = data.full_name || "";
+      currentEmail = (data.email && !data.email.endsWith("@login.portalis.invalid")) ? data.email : "";
+      $("email").value = currentEmail;
+      if (ctx.user.new_email) {
+        show("Waiting for you to confirm " + ctx.user.new_email + ". Open the link in the email Supabase sent there. Until then your saved email does not change.", false);
+      }
+      $("contacts").value = data.contacts || "";
+      $("about").value = data.about || "";
+      avatarUrl = data.avatar_url || "";
+      $("avatar").src = avatarUrl || "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="100%" height="100%" fill="#f6b8dc"/><text x="50%" y="56%" text-anchor="middle" font-size="48">?</text></svg>');
+    }
+    $("photo").onchange = async () => {
+      if (!ctx) { show("Profile is still loading. Try again in a moment.", true); return; }
+      const file = $("photo").files[0];
+      if (!file) return;
+      $("fileName").textContent = file.name;
+      if (!file.type.startsWith("image/") || file.size > 3 * 1024 * 1024) {
+        show("Choose an image under 3 MB.", true); $("photo").value = "";
+        $("fileName").textContent = "Image only, up to 3 MB";
+        return;
+      }
+      show("Uploading picture...", false);
+      const path = ctx.user.id + "/profile";
+      const { error } = await sb.storage.from("avatars").upload(path, file, { upsert: true, contentType: file.type });
+      if (error) { show(error.message, true); return; }
+      const { data } = sb.storage.from("avatars").getPublicUrl(path);
+      avatarUrl = data.publicUrl + "?v=" + Date.now();
+      $("avatar").src = avatarUrl;
+      show("Picture uploaded. Save your profile to apply it.", false);
+    };
+    $("save").onclick = async () => {
+      try {
+        const fullName = $("fullName").value.trim();
+        if (!fullName) { show("Enter your full name.", true); return; }
+        const enteredEmail = $("email").value.trim().toLowerCase();
+        if (enteredEmail && (!$("email").validity.valid || enteredEmail.endsWith(".invalid"))) {
+          show("Enter a valid email address.", true); return;
+        }
+        if (!enteredEmail && currentEmail) {
+          show("A confirmed email cannot be removed here. Ask an admin, or enter a different email.", true); return;
+        }
+        $("save").disabled = true;
+        show("Saving...", false);
+
+        // 1) Normal profile fields. The email column is protected: it only changes after the
+        //    student confirms the new address from the email Supabase sends.
+        const { data: saved, error } = await sb.from("profiles").update({
+          full_name: fullName,
+          contacts: $("contacts").value.trim() || null,
+          about: $("about").value.trim() || null,
+          avatar_url: avatarUrl || null
+        }).eq("id", ctx.user.id).select("id");
+        if (error) { show("Could not save your profile: " + error.message, true); return; }
+        if (!saved || saved.length === 0) {
+          show("Nothing was saved: the database refused the update. Run migration_profile_email_confirm.sql in the Supabase SQL Editor.", true);
+          return;
+        }
+        ctx.profile.full_name = fullName;
+
+        // 2) New email: Supabase emails a confirmation link to the NEW address.
+        if (enteredEmail && enteredEmail !== currentEmail) {
+          const redirect = location.origin + location.pathname;
+          const { error: emailError } = await sb.auth.updateUser({ email: enteredEmail }, { emailRedirectTo: redirect });
+          if (emailError) {
+            let msgText = emailError.message || "Could not request the email change.";
+            if (/rate limit|too many|seconds/i.test(msgText)) msgText += " (Supabase limits how often confirmation emails can be sent. Wait a bit and try again.)";
+            else if (/not authorized/i.test(msgText)) msgText += " (Supabase's built-in mailer only sends to your team. Set up custom SMTP in Supabase.)";
+            else if (/already.*registered|already been|exists/i.test(msgText)) msgText = "That email address is already used by another account.";
+            show("Profile saved, but the email change failed: " + msgText, true);
+            return;
+          }
+          show("Profile saved. A confirmation email was sent to " + enteredEmail + ". Open the link in it to finish; your email only changes after you confirm. Check spam too.", false);
+          return;
+        }
+        show("Profile saved.", false);
+      } catch (e) {
+        show("Unexpected error: " + (e && e.message ? e.message : e), true);
+      } finally { $("save").disabled = false; }
+    };
+    $("changePassword").onclick = async () => {
+      const password = $("newPassword").value;
+      if (password.length < 6) { show("Password must be at least 6 characters.", true); return; }
+      if (password !== $("confirmPassword").value) { show("Passwords do not match.", true); return; }
+      const { error } = await sb.auth.updateUser({ password });
+      if (error) { show(error.message, true); return; }
+      $("newPassword").value = ""; $("confirmPassword").value = "";
+      show("Password updated.", false);
+    };
+    init();
+  </script>
+</body>
+</html>

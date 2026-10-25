@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalis - Class funds</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="bar"></div>
+    <h2>Class funds</h2>
+    <p class="hint">Weekly class fund: ₱10 per student. Unpaid weeks are counted toward each student's balance.</p>
+    <p id="msg" class="msg"></p>
+    <div id="adminTools" class="card" style="display:none">
+      <h3>Admin fund tools</h3>
+      <div class="cols2">
+        <div><label for="fundTitle">New fund title</label><input id="fundTitle" maxlength="100" placeholder="e.g. Event fund"></div>
+        <div><label for="fundAmount">Amount per period (₱)</label><input id="fundAmount" type="number" min="0" step="0.01" value="10"></div>
+      </div>
+      <label for="firstPeriod">First collection period</label>
+      <input id="firstPeriod" maxlength="100" placeholder="e.g. One-time collection">
+      <button id="createFund">Create fund</button>
+      <hr>
+      <h3>Add collection week / period</h3>
+      <div class="cols2">
+        <div><label for="periodLabel">Period label</label><input id="periodLabel" maxlength="100" placeholder="Week 2 (Sept 7–13)"></div>
+        <div><label for="periodStart">Start date</label><input id="periodStart" type="date"></div>
+      </div>
+      <label for="periodEnd">End date</label>
+      <input id="periodEnd" type="date">
+      <button id="addPeriod">Add period</button>
+    </div>
+    <div class="card">
+      <label for="fundPick">Choose a fund</label>
+      <select id="fundPick"></select>
+      <div id="periods" class="week-list"></div>
+      <div id="summary"></div>
+    </div>
+    <div class="scroll">
+      <table class="fund-table">
+        <thead><tr><th>Student number</th><th>Full name</th><th>This period</th><th>All unpaid periods</th><th>Status</th></tr></thead>
+        <tbody id="roster"></tbody>
+      </table>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+    let ctx, funds = [], periods = [], selectedFund = null, selectedFundId = null, selectedPeriod = null, roster = [];
+    const $ = id => document.getElementById(id);
+    function message(text, bad) { $("msg").className = "msg" + (bad ? " err" : " ok"); $("msg").textContent = text; }
+    async function init() {
+      ctx = await requireAuth(); if (!ctx) return;
+      renderBar(ctx, "funds");
+      $("adminTools").style.display = ctx.isAdmin ? "block" : "none";
+      await loadFunds();
+    }
+    async function loadFunds() {
+      const { data, error } = await sb.from("funds").select("id,title,amount_per_period").order("created_at");
+      if (error) { message(error.message, true); return; }
+      funds = data || [];
+      const pick = $("fundPick"); pick.innerHTML = "";
+      funds.forEach(f => { const o = el("option", "", f.title); o.value = f.id; pick.appendChild(o); });
+      if (!funds.length) { $("summary").textContent = "No funds have been set up yet."; $("roster").innerHTML = ""; return; }
+      selectedFund = funds.find(f => f.id === selectedFundId) || funds[0];
+      selectedFundId = selectedFund.id;
+      pick.value = selectedFund.id;
+      await loadPeriods();
+    }
+    $("fundPick").onchange = async () => {
+      selectedFund = funds.find(f => String(f.id) === $("fundPick").value);
+      selectedFundId = selectedFund.id;
+      await loadPeriods();
+    };
+    async function loadPeriods() {
+      if (!selectedFund) return;
+      const { data, error } = await sb.from("fund_periods").select("*").eq("fund_id", selectedFund.id).order("starts_on");
+      if (error) { message(error.message, true); return; }
+      periods = data || [];
+      const box = $("periods"); box.innerHTML = "";
+      periods.forEach(p => {
+        const b = el("button", "ghost" + (selectedPeriod && p.id === selectedPeriod.id ? " on" : ""), p.label);
+        b.onclick = () => { selectedPeriod = p; loadPeriods(); };
+        box.appendChild(b);
+      });
+      selectedPeriod = periods.find(p => selectedPeriod && p.id === selectedPeriod.id) || periods[periods.length - 1] || null;
+      if (selectedPeriod) await loadRoster();
+      else { $("summary").textContent = "No collection periods yet."; $("roster").innerHTML = ""; }
+    }
+    async function loadRoster() {
+      if (!selectedPeriod) return;
+      const [periodResult, debtResult] = await Promise.all([
+        sb.rpc("get_fund_roster", { p_period_id: selectedPeriod.id }),
+        sb.rpc("get_fund_debt_summary", { p_fund_id: selectedFund.id })
+      ]);
+      if (periodResult.error || debtResult.error) { message((periodResult.error || debtResult.error).message, true); return; }
+      roster = periodResult.data || [];
+      const debtByUser = Object.fromEntries((debtResult.data || []).map(x => [x.user_id, x]));
+      const total = (debtResult.data || []).reduce((sum, x) => sum + Number(x.total_debt), 0);
+      const debtors = (debtResult.data || []).filter(x => Number(x.total_debt) > 0).length;
+      $("summary").innerHTML = "";
+      $("summary").append(el("p", "fund-total", "Total outstanding: ₱" + total.toFixed(2)));
+      $("summary").append(el("p", "hint", debtors + " student(s) still have an unpaid balance across " + selectedFund.title + "."));
+      const body = $("roster"); body.innerHTML = "";
+      roster.forEach(student => {
+        const debt = debtByUser[student.user_id];
+        const tr = document.createElement("tr");
+        tr.append(
+          el("td", "", student.student_number || "Not assigned"),
+          el("td", "", student.full_name || "Student"),
+          el("td", "", "₱" + Number(student.amount_due).toFixed(2)),
+          el("td", "", "₱" + Number(debt ? debt.total_debt : 0).toFixed(2))
+        );
+        const status = el("td");
+        if (ctx.isAdmin) {
+          const button = el("button", student.is_paid ? "ghost small" : "small", student.is_paid ? "Paid ✓" : "Mark paid");
+          button.onclick = () => setPaid(student, !student.is_paid);
+          status.appendChild(button);
+        } else status.textContent = student.is_paid ? "Paid" : "Unpaid";
+        tr.appendChild(status); body.appendChild(tr);
+      });
+    }
+    async function setPaid(student, is_paid) {
+      const { error } = await sb.from("fund_payments").upsert({
+        period_id: selectedPeriod.id, user_id: student.user_id, is_paid,
+        amount_due: student.amount_due, paid_at: is_paid ? new Date().toISOString() : null
+      }, { onConflict: "period_id,user_id" });
+      if (error) { message(error.message, true); return; }
+      await loadRoster();
+    }
+    $("createFund").onclick = async () => {
+      const title = $("fundTitle").value.trim();
+      const label = $("firstPeriod").value.trim();
+      const amount_per_period = Number($("fundAmount").value);
+      if (!title || !label || !Number.isFinite(amount_per_period) || amount_per_period < 0) { message("Enter a title, first period, and valid amount.", true); return; }
+      const { data, error } = await sb.from("funds").insert({ title, amount_per_period }).select().single();
+      if (error) { message(error.message, true); return; }
+      const { error: periodError } = await sb.from("fund_periods").insert({
+        fund_id: data.id, label, starts_on: new Date().toISOString().slice(0, 10),
+        ends_on: new Date().toISOString().slice(0, 10), amount_due: amount_per_period
+      });
+      if (periodError) { message(periodError.message, true); return; }
+      $("fundTitle").value = ""; $("firstPeriod").value = "";
+      message("Fund created.", false); selectedFundId = data.id; selectedPeriod = null; await loadFunds();
+    };
+    $("addPeriod").onclick = async () => {
+      if (!selectedFund) return message("Choose a fund first.", true);
+      const label = $("periodLabel").value.trim(), starts_on = $("periodStart").value, ends_on = $("periodEnd").value;
+      if (!label || !starts_on || !ends_on || ends_on < starts_on) return message("Enter a label and valid date range.", true);
+      const { error } = await sb.from("fund_periods").insert({ fund_id: selectedFund.id, label, starts_on, ends_on, amount_due: selectedFund.amount_per_period });
+      if (error) { message(error.message, true); return; }
+      $("periodLabel").value = ""; $("periodStart").value = ""; $("periodEnd").value = "";
+      selectedPeriod = null; await loadPeriods(); message("Collection period added.", false);
+    };
+    init();
+  </script>
+</body>
+</html>

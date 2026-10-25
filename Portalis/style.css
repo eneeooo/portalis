@@ -3,11 +3,13 @@
 :root{
   --low:#b9f0b0;      /* green  */
   --medium:#fff3a0;   /* yellow */
+  --neutral:#f6b8dc;  /* pink */
   --high:#ffc17a;     /* orange */
   --urgent:#ff8f8f;   /* red    */
 }
 .p-low{--c:var(--low)}
 .p-medium{--c:var(--medium)}
+.p-neutral{--c:var(--neutral)}
 .p-high{--c:var(--high)}
 .p-urgent{--c:var(--urgent)}
 
@@ -62,6 +64,8 @@ button,.btn{
 button:hover,.btn:hover{background:#fff;color:#000;box-shadow:3px 3px 0 #000}
 button.ghost,.btn.ghost{background:#fff;color:#000;margin-top:0}
 button.ghost:hover,.btn.ghost:hover{background:#000;color:#fff}
+button.danger{background:#b00020;border-color:#000;color:#fff}
+button.danger:hover{background:#fff;color:#b00020;box-shadow:3px 3px 0 #000}
 button.full{width:100%}
 .msg{min-height:24px;margin:10px 0 0;font-size:18px}
 .msg.err{font-weight:bold}
@@ -155,9 +159,36 @@ button.small{padding:3px 12px;font-size:17px;margin-top:8px}
 .chead small{margin:0;font-size:14px}
 .chead button.x{margin-left:auto}
 .ctext{white-space:pre-wrap;word-wrap:break-word}
+.suggestion-circle{width:38px;height:38px;padding:0;margin:0;border-radius:50%;font-weight:bold}
+.modal-backdrop{position:fixed;inset:0;background:#0009;display:grid;place-items:center;padding:20px;z-index:1000}
+.modal-card{max-width:420px;width:100%;background:#fff;border:3px solid #000;box-shadow:7px 7px 0 #000;padding:22px;text-align:center}
+.modal-card textarea{text-align:left}
+.sad-duck{font-size:58px;animation:duck-sad .8s ease-in-out infinite alternate}
+@keyframes duck-sad{from{transform:translateY(0) rotate(-7deg)}to{transform:translateY(7px) rotate(7deg)}}
+.neutral-tag{background:var(--neutral)}
+.profile-preview{width:120px;height:120px;border:3px solid #000;object-fit:cover;border-radius:50%;background:#f6b8dc}
+.file-input{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;clip-path:inset(50%);border:0}
+.file-input:focus-visible + label[for=photo]{outline:3px solid #f6b8dc;outline-offset:3px}
+.file-hint{display:block;margin-top:8px;font-size:16px;opacity:.75}
+label[for=photo]{display:inline-block;margin:12px 0 0;padding:8px 14px;background:#000;color:#fff;border:2px solid #000;cursor:pointer}
+label[for=photo]:hover{background:#fff;color:#000;box-shadow:3px 3px 0 #000}
+.profile-grid{display:grid;grid-template-columns:140px 1fr;gap:20px;align-items:start}
+.week-list{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.week-list button{margin:0}
+.fund-table td,.fund-table th{text-align:center}
+.fund-table td:first-child,.fund-table th:first-child{text-align:left}
+.fund-total{font-size:22px;font-weight:bold}
+.bar-track{height:18px;background:#eee;border:2px solid #000;min-width:100px}
+.bar-fill{height:100%;background:#f6b8dc}
+.chart-row{display:grid;grid-template-columns:minmax(80px,1fr) 3fr 70px;gap:10px;align-items:center;margin:8px 0}
+.confession{font-size:20px;white-space:pre-wrap;word-break:break-word}
+.suggestion-item{border:2px solid #000;background:#fff;padding:10px;margin:8px 0}
+@media(max-width:600px){.profile-grid{grid-template-columns:1fr}.bar .right{gap:6px}.chart-row{grid-template-columns:70px 1fr 54px}}
 
 /* plain white cards (reviewers, quiz) */
 .card{background:#fff;border:3px solid #000;box-shadow:6px 6px 0 #000;padding:18px 20px;margin:0 0 26px}
+.birthday-pin{background:#ffe0f0;border:3px solid #000;box-shadow:5px 5px 0 #000;padding:16px 20px;margin:0 0 26px;text-align:center}
+.birthday-pin p{margin:8px 0 0;font-size:18px}
 .cardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:30px;margin-top:20px}
 .cardgrid .card{margin:0}
 .code{display:inline-block;background:#000;color:#fff;padding:0 8px;font-size:16px;margin-right:6px}

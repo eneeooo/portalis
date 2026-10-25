@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portalis - Admin</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 </head>
 <body>
   <div class="wrap">
@@ -26,14 +27,21 @@
       <h2>Users and roles</h2>
       <div class="scroll">
         <table>
-          <thead><tr><th>Email</th><th style="width:160px">Role</th></tr></thead>
+          <thead><tr><th>Student number</th><th>Full name</th><th>Email</th><th style="width:160px">Role</th><th>Actions</th></tr></thead>
           <tbody id="users"></tbody>
         </table>
       </div>
     </div>
+
+    <div class="section">
+      <h2>Suggestions</h2>
+      <div id="suggestions"></div>
+    </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
   <script src="config.js"></script>
   <script src="common.js"></script>
   <script>
@@ -47,17 +55,19 @@
       if (!ctx) return;
       renderBar(ctx, "admin");
       await loadUsers();
+      await loadSuggestions();
       await loadNotes();
     }
 
     async function loadUsers() {
-      const { data, error } = await sb.from("profiles").select("*").order("created_at");
+      const { data, error } = await sb.from("profiles").select("id,email,student_number,full_name,role").order("created_at");
       const body = document.getElementById("users");
       body.innerHTML = "";
       if (error) { err(error.message); return; }
       data.forEach(u => {
         const tr = document.createElement("tr");
         const tdRole = document.createElement("td");
+        const resetCell = document.createElement("td");
         const sel = document.createElement("select");
         ["user", "admin"].forEach(r => {
           const o = el("option", "", r);
@@ -70,9 +80,83 @@
           const { error } = await sb.from("profiles").update({ role: sel.value }).eq("id", u.id);
           if (error) err(error.message); else ok("Role updated.");
         };
+        const identity = el("button", "ghost small", "Edit student #");
+        identity.title = "Set student number for this account";
+        identity.onclick = async () => {
+          const student_number = prompt("Student number (00-00-000):", u.student_number || "");
+          if (student_number === null) return;
+          const number = student_number.trim();
+          if (!/^\d{2}-\d{2}-\d{3}$/.test(number)) {
+            err("Enter a student number in the format 00-00-000."); return;
+          }
+          const { error } = await sb.from("profiles").update({ student_number: number }).eq("id", u.id);
+          if (error) err(/duplicate|unique/i.test(error.message) ? "That student number is already taken." : error.message);
+          else { ok("Student identity updated."); await loadUsers(); }
+        };
+        resetCell.appendChild(identity);
+        const remove = el("button", "danger small", "Delete user");
+        remove.disabled = u.id === ctx.user.id;
+        remove.title = remove.disabled ? "You cannot delete the currently signed-in admin account." : "Permanently delete this account and its Portalis data.";
+        remove.onclick = async () => {
+          if (u.id === ctx.user.id) return;
+          const label = u.student_number || u.id;
+          if (!confirm("Permanently delete " + label + " and their profile, notes, comments, quiz attempts, funds records, suggestions, and confessions? This cannot be undone.")) return;
+          remove.disabled = true;
+          const { data, error } = await sb.functions.invoke("admin-delete-user", { body: { userId: u.id } });
+          if (error) {
+            let detail = error.message || "Could not delete this user.";
+            if (error.context instanceof Response) {
+              try {
+                const response = await error.context.clone().json();
+                if (response.error) detail = response.error;
+              } catch {
+                detail = error.message || "Could not read the deletion function response.";
+              }
+            }
+            if (/not found|404/i.test(detail)) {
+              detail += " Deploy the latest admin-delete-user Edge Function, then reload this page.";
+            } else if (error.name === "FunctionsFetchError") {
+              detail += " Check that admin-delete-user is deployed in the same Supabase project.";
+            }
+            err(detail);
+            remove.disabled = false;
+            return;
+          }
+          ok(data && data.warning
+            ? data.warning
+            : "User and associated Portalis data deleted.");
+          await Promise.all([loadUsers(), loadSuggestions(), loadNotes()]);
+        };
+        resetCell.appendChild(remove);
         tdRole.appendChild(sel);
-        tr.append(el("td", "", u.email), tdRole);
+        const shownEmail = u.email || "Not set";
+        tr.append(el("td", "", u.student_number || "—"), el("td", "", u.full_name || "—"), el("td", "", shownEmail), tdRole, resetCell);
         body.appendChild(tr);
+      });
+    }
+
+    async function loadSuggestions() {
+      const box = document.getElementById("suggestions");
+      const { data, error } = await sb.from("suggestions").select("id,user_id,content,created_at").order("created_at", { ascending: false });
+      if (error) { err(error.message); return; }
+      box.innerHTML = "";
+      if (!data.length) { box.appendChild(el("p", "empty", "No suggestions yet.")); return; }
+      const { data: profiles, error: profileError } = await sb.from("profiles").select("id,full_name,student_number").in("id", data.map(x => x.user_id));
+      if (profileError) { err(profileError.message); return; }
+      const byId = Object.fromEntries(profiles.map(x => [x.id, x]));
+      data.forEach(s => {
+        const item = el("div", "suggestion-item");
+        const p = byId[s.user_id] || {};
+        item.append(el("b", "", (p.full_name || "Student") + (p.student_number ? " · " + p.student_number : "")),
+          el("small", "", " · " + fmtDate(s.created_at)),
+          el("p", "", s.content));
+        const remove = el("button", "ghost small", "Delete");
+        remove.onclick = async () => {
+          if (!confirm("Delete this suggestion?")) return;
+          const { error } = await sb.from("suggestions").delete().eq("id", s.id);
+          if (error) err(error.message); else loadSuggestions();
+        };
+        item.appendChild(remove); box.appendChild(item);
       });
     }
 
@@ -88,6 +172,13 @@
       if (error) { err(error.message); return; }
       n.status = status; n.reject_reason = reason || null;
       ok(status === "approved" ? "Approved. It is now on the public board." : "Rejected.");
+      render();
+    }
+
+    async function setPriority(n, priority) {
+      const { error } = await sb.from("notes").update({ priority }).eq("id", n.id);
+      if (error) { err(error.message); return; }
+      n.priority = priority;
       render();
     }
 
@@ -124,7 +215,7 @@
       const queue = document.getElementById("queue");
       queue.innerHTML = "";
       document.getElementById("qempty").style.display = pend.length ? "none" : "block";
-      pend.forEach(n => queue.appendChild(noteCard(n, { showStatus: true, actions: reviewActions(n) })));
+      pend.forEach(n => queue.appendChild(noteCard(n, { showStatus: true, canPrioritize: true, onPriority: setPriority, actions: reviewActions(n) })));
 
       const box = document.getElementById("filters");
       box.innerHTML = "";
@@ -139,7 +230,7 @@
       notes
         .filter(n => filter === "all" || n.status === filter)
         .sort((a, b) => ORDER.indexOf(a.priority) - ORDER.indexOf(b.priority))
-        .forEach(n => board.appendChild(noteCard(n, { showStatus: true, actions: reviewActions(n) })));
+        .forEach(n => board.appendChild(noteCard(n, { showStatus: true, canPrioritize: true, onPriority: setPriority, actions: reviewActions(n) })));
     }
 
     init();

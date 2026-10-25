@@ -1,0 +1,11 @@
+# These functions perform their own credential or session checks.
+project_id = "portalis"
+
+[functions.username-login]
+verify_jwt = false
+
+[functions.auth-email-update]
+verify_jwt = false
+
+[functions.admin-delete-user]
+verify_jwt = false

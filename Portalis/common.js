@@ -1,6 +1,6 @@
 /* Portalis shared helpers (load after config.js) */
-const LABEL = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" };
-const ORDER = ["urgent", "high", "medium", "low"];
+const LABEL = { urgent: "Urgent", high: "High", medium: "Medium", neutral: "Neutral", low: "Low" };
+const ORDER = ["urgent", "high", "medium", "neutral", "low"];
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -10,13 +10,103 @@ function el(tag, cls, text) {
 }
 function fmtDate(d) { return new Date(d).toLocaleString(); }
 
+/* Reads the real reason out of a supabase-js Edge Function error
+   (our own {error}, or the gateway's {code,message} / plain text). */
+async function functionErrorMessage(error, fallback) {
+  if (!error) return fallback || "Unknown error.";
+  if (error.name === "FunctionsFetchError") {
+    return "the function is not reachable (not deployed in this project, or blocked by CORS).";
+  }
+  if (error.context instanceof Response) {
+    const res = error.context.clone();
+    const status = res.status;
+    let text = "";
+    try { text = await res.text(); } catch (_) {}
+    try {
+      const body = JSON.parse(text);
+      const reason = body.error || body.message || body.msg || body.code;
+      if (reason) return reason + " (HTTP " + status + ")";
+    } catch (_) {}
+    if (text) return text.slice(0, 200) + " (HTTP " + status + ")";
+    return "HTTP " + status + " with no message";
+  }
+  return error.message || fallback || "Unknown error.";
+}
+
+/* ---------- session validity: sign out when the account is removed ---------- */
+function isAccountGone(error) {
+  if (!error) return false;
+  const status = error.status;
+  const code = String(error.code || "");
+  const text = String(error.message || "");
+  if (error.name === "AuthRetryableFetchError" || /failed to fetch|network/i.test(text)) return false; // offline != removed
+  return status === 401 || status === 403 || status === 404 ||
+    /user_not_found|bad_jwt|session_not_found|session_expired|refresh_token/i.test(code) ||
+    /does not exist|not found|invalid jwt|invalid refresh token|refresh token/i.test(text);
+}
+
+async function forceSignOut(reason) {
+  try { await sb.auth.signOut({ scope: "local" }); } catch (_) { /* local cleanup below */ }
+  try { sessionStorage.setItem("portalis_logout_reason", reason || "You have been signed out."); } catch (_) {}
+  location.href = "index.html";
+}
+
+let sessionWatchStarted = false;
+function startSessionWatch() {
+  if (sessionWatchStarted) return;
+  sessionWatchStarted = true;
+  let checking = false;
+  const check = async () => {
+    if (checking || document.hidden) return;
+    checking = true;
+    try {
+      const { data, error } = await sb.auth.getUser(); // asks the server, not just the local token
+      if (error ? isAccountGone(error) : !data.user) {
+        await forceSignOut("Your account was removed or your session expired. Please log in again.");
+      }
+    } finally { checking = false; }
+  };
+  sb.auth.onAuthStateChange(event => {
+    if (event === "SIGNED_OUT") {
+      try { sessionStorage.setItem("portalis_logout_reason", "You have been signed out."); } catch (_) {}
+      location.href = "index.html";
+    }
+  });
+  setInterval(check, 60000);
+  document.addEventListener("visibilitychange", check);
+  window.addEventListener("focus", check);
+}
+
 async function requireAuth(adminOnly) {
-  const { data } = await sb.auth.getSession();
+  const { data, error } = await sb.auth.getSession();
+  if (error) {
+    if (isAccountGone(error)) { await forceSignOut("Your session expired. Please log in again."); return null; }
+    document.body.insertAdjacentText("afterbegin", error.message); return null;
+  }
   if (!data.session) { location.href = "index.html"; return null; }
-  const { data: prof } = await sb.from("profiles").select("role").eq("id", data.session.user.id).single();
-  const role = prof ? prof.role : "user";
+
+  // getSession() only reads the local token, so confirm the account still exists on the server.
+  const { data: userData, error: userError } = await sb.auth.getUser();
+  if (userError) {
+    if (isAccountGone(userError)) { await forceSignOut("Your account was removed. Please contact an admin."); return null; }
+    alert("Cannot reach Supabase: " + userError.message);
+    return null;
+  }
+  if (!userData.user) { await forceSignOut("Your account was removed. Please contact an admin."); return null; }
+
+  const { data: prof, error: profileError } = await sb.from("profiles")
+    .select("role,full_name,student_number,avatar_url")
+    .eq("id", userData.user.id)
+    .maybeSingle();
+  if (profileError) { alert("Unable to load your profile: " + profileError.message); return null; }
+  if (!prof) {
+    await forceSignOut("Your profile no longer exists. Sign up again or contact an admin.");
+    return null;
+  }
+  const role = prof.role;
   if (adminOnly && role !== "admin") { location.href = "dashboard.html"; return null; }
-  return { user: data.session.user, role: role, isAdmin: role === "admin" };
+  startSessionWatch();
+  return { user: userData.user, profile: prof, role: role, isAdmin: role === "admin" };
 }
 
 function renderBar(ctx, active) {
@@ -25,7 +115,7 @@ function renderBar(ctx, active) {
   bar.innerHTML = "";
   bar.appendChild(el("span", "brand", "Portalis"));
   const nav = el("nav", "nav");
-  const links = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"]];
+  const links = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"], ["funds.html", "Class funds", "funds"], ["confessions.html", "Confessions", "confessions"], ["profile.html", "Profile", "profile"]];
   if (ctx.isAdmin) links.push(["admin.html", "Admin", "admin"], ["manage.html", "Manage reviewers", "manage"]);
   links.forEach(l => {
     const a = el("a", "btn ghost" + (active === l[2] ? " on" : ""), l[1]);
@@ -34,12 +124,88 @@ function renderBar(ctx, active) {
   });
   bar.appendChild(nav);
   const right = el("div", "right");
-  right.appendChild(el("span", "who", ctx.user.email));
+  right.appendChild(el("span", "who", ctx.profile.full_name || ctx.profile.student_number || "Student"));
   right.appendChild(el("span", "badge", ctx.role));
+  const suggestion = el("button", "suggestion-circle", "?");
+  suggestion.title = "Send a suggestion to the admins";
+  suggestion.setAttribute("aria-label", "Send a suggestion to the admins");
+  suggestion.onclick = () => openSuggestion(ctx);
+  right.appendChild(suggestion);
   const out = el("button", "ghost", "Log out");
-  out.onclick = async () => { await sb.auth.signOut(); location.href = "index.html"; };
+  out.onclick = () => confirmLogout();
   right.appendChild(out);
   bar.appendChild(right);
+}
+
+function renderMath(box) {
+  if (window.renderMathInElement) {
+    window.renderMathInElement(box, {
+      delimiters: [
+        { left: "$$", right: "$$", display: true },
+        { left: "\\[", right: "\\]", display: true },
+        { left: "$", right: "$", display: false },
+        { left: "\\(", right: "\\)", display: false }
+      ],
+      throwOnError: false
+    });
+  }
+  return box;
+}
+
+function confirmLogout() {
+  const dialog = el("div", "modal-backdrop");
+  const box = el("div", "modal-card");
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.append(el("div", "sad-duck", "\u{1F986}\u{1F622}"), el("h2", "", "You'll leave?"));
+  box.appendChild(el("p", "", "Are you sure you want to log out?"));
+  const stay = el("button", "ghost", "Stay");
+  const leave = el("button", "", "Log out");
+  stay.onclick = () => dialog.remove();
+  leave.onclick = async () => {
+    leave.disabled = true;
+    const { error } = await sb.auth.signOut();
+    if (error) { leave.disabled = false; alert(error.message); return; }
+    location.href = "index.html";
+  };
+  box.append(stay, document.createTextNode(" "), leave);
+  dialog.appendChild(box);
+  dialog.onclick = e => { if (e.target === dialog) dialog.remove(); };
+  document.body.appendChild(dialog);
+  stay.focus();
+}
+
+function openSuggestion(ctx) {
+  const dialog = el("div", "modal-backdrop");
+  const box = el("form", "modal-card");
+  box.appendChild(el("h2", "", "Send a suggestion"));
+  const label = el("label", "", "Your message (admins will see your student number)");
+  const input = document.createElement("textarea");
+  input.maxLength = 1000;
+  input.required = true;
+  input.placeholder = "What could make Portalis better?";
+  const status = el("p", "msg");
+  const close = el("button", "ghost", "Cancel");
+  close.type = "button";
+  close.onclick = () => dialog.remove();
+  const send = el("button", "", "Send");
+  send.type = "submit";
+  box.append(label, input, status, close, document.createTextNode(" "), send);
+  box.onsubmit = async event => {
+    event.preventDefault();
+    const content = input.value.trim();
+    if (!content) { status.className = "msg err"; status.textContent = "Write a suggestion first."; return; }
+    send.disabled = true;
+    const { error } = await sb.from("suggestions").insert({ content, user_id: ctx.user.id });
+    if (error) { status.className = "msg err"; status.textContent = error.message; send.disabled = false; return; }
+    status.className = "msg ok"; status.textContent = "Suggestion sent to the admins.";
+    input.disabled = true;
+    send.remove();
+  };
+  dialog.appendChild(box);
+  dialog.onclick = e => { if (e.target === dialog) dialog.remove(); };
+  document.body.appendChild(dialog);
+  input.focus();
 }
 
 /* ---------- note body in the chosen format ---------- */
@@ -48,9 +214,9 @@ function renderContent(n) {
   if (n.format === "bullets" || n.format === "numbered") {
     const list = el(n.format === "numbered" ? "ol" : "ul", "fmt-list");
     lines.forEach(t => list.appendChild(el("li", "", t)));
-    return list;
+    return renderMath(list);
   }
-  return el("div", "text", n.content);
+  return renderMath(el("div", "text", n.content));
 }
 
 /* ---------- reviewer text: "# Heading", "- bullet", paragraphs ---------- */
@@ -70,7 +236,7 @@ function renderRich(text) {
     list = null;
     box.appendChild(el("p", "", line));
   });
-  return box;
+  return renderMath(box);
 }
 
 /* ---------- sticky note card ----------
@@ -86,9 +252,9 @@ function noteCard(n, o) {
     tags.appendChild(el("span", "tag status " + n.status, n.status === "pending" ? "Awaiting review" : "Rejected"));
   }
   top.appendChild(tags);
-  if (o.canEdit && o.onPriority) {
+  if (o.canPrioritize && o.onPriority) {
     const dots = el("div", "dots");
-    ["low", "medium", "high", "urgent"].forEach(p => {
+    ["low", "neutral", "medium", "high", "urgent"].forEach(p => {
       const d = el("button", "dot p-" + p + (p === n.priority ? " on" : ""));
       d.title = "Set to " + LABEL[p];
       d.onclick = () => o.onPriority(n, p);

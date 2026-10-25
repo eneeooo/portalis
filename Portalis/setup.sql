@@ -8,9 +8,11 @@
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text,
+  full_name text,
   role text not null default 'user' check (role in ('user','admin')),
   created_at timestamptz default now()
 );
+alter table public.profiles add column if not exists full_name text;
 alter table public.profiles enable row level security;
 
 create or replace function public.is_admin()
@@ -23,7 +25,7 @@ as $$
   select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin');
 $$;
 
--- display name shown on notes/comments (the part of the email before @)
+-- Full name shown as the author of notes and comments.
 create or replace function public.author_of(uid uuid)
 returns text
 language sql
@@ -31,7 +33,11 @@ security definer
 set search_path = public
 stable
 as $$
-  select coalesce((select split_part(email, '@', 1) from public.profiles where id = uid), 'user');
+  select coalesce(
+    (select nullif(full_name, '') from public.profiles where id = uid),
+    (select nullif(split_part(email, '@', 1), '') from public.profiles where id = uid),
+    'user'
+  );
 $$;
 
 drop policy if exists "read own profile" on public.profiles;
@@ -83,7 +89,7 @@ alter table public.notes add column if not exists author_name   text;
 alter table public.notes alter column content set default '';
 
 alter table public.notes drop constraint if exists notes_priority_check;
-alter table public.notes add constraint notes_priority_check check (priority in ('low','medium','high','urgent'));
+alter table public.notes add constraint notes_priority_check check (priority in ('low','neutral','medium','high','urgent'));
 alter table public.notes drop constraint if exists notes_format_check;
 alter table public.notes add constraint notes_format_check check (format in ('text','bullets','numbered'));
 alter table public.notes drop constraint if exists notes_status_check;
@@ -106,12 +112,14 @@ declare v_admin boolean := public.is_admin();
 begin
   if tg_op = 'INSERT' then
     new.status := case when v_admin then 'approved' else 'pending' end;
+    if not v_admin then new.priority := 'medium'; end if;
     new.reject_reason := null;
     new.author_name := public.author_of(new.user_id);
   else
     new.user_id := old.user_id;
     new.author_name := old.author_name;
     if not v_admin then
+      new.priority := old.priority;
       new.status := old.status;
       new.reject_reason := old.reject_reason;
       -- editing the text of a note sends it back for review
@@ -386,5 +394,5 @@ grant  execute on function public.save_answers(bigint, jsonb)  to authenticated;
 grant  execute on function public.submit_quiz(bigint)          to authenticated;
 grant  execute on function public.add_questions(bigint, jsonb) to authenticated;
 
--- ---------- 6) MAKE YOURSELF ADMIN (replace the email, run only this line) ----------
--- update public.profiles set role = 'admin' where email = 'your@email.com';
+-- ---------- 6) MAKE YOURSELF ADMIN (after migration_features.sql) ----------
+-- update public.profiles set role = 'admin' where student_number = '00-00-000';

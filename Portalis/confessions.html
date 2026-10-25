@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalis - Confessions</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="bar"></div>
+    <h2>Anonymous confessions</h2>
+    <p class="hint">Posts are shown without names. Please keep posts respectful.</p>
+    <div class="card">
+      <label for="content">Your confession</label>
+      <textarea id="content" maxlength="1500" placeholder="Share something with the class..."></textarea>
+      <button id="post">Post anonymously</button>
+      <p id="msg" class="msg"></p>
+    </div>
+    <div id="feed"></div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+    let ctx;
+    const $ = id => document.getElementById(id);
+    async function init() {
+      ctx = await requireAuth(); if (!ctx) return;
+      renderBar(ctx, "confessions");
+      await load();
+    }
+    async function load() {
+      const { data, error } = await sb.from("confessions").select("id,content,created_at").order("created_at", { ascending: false });
+      if (error) { $("msg").className = "msg err"; $("msg").textContent = error.message; return; }
+      const feed = $("feed"); feed.innerHTML = "";
+      if (!data.length) feed.appendChild(el("p", "empty", "No confessions yet."));
+      data.forEach(item => {
+        const card = el("div", "card");
+        card.append(el("p", "confession", item.content), el("small", "", fmtDate(item.created_at)));
+        if (ctx.isAdmin) {
+          const remove = el("button", "ghost small", "Delete");
+          remove.onclick = async () => {
+            if (!confirm("Delete this confession?")) return;
+            const { error } = await sb.from("confessions").delete().eq("id", item.id);
+            if (error) { $("msg").className = "msg err"; $("msg").textContent = error.message; }
+            else load();
+          };
+          card.appendChild(remove);
+        }
+        feed.appendChild(card);
+      });
+    }
+    $("post").onclick = async () => {
+      const content = $("content").value.trim();
+      if (!content) { $("msg").className = "msg err"; $("msg").textContent = "Write a confession first."; return; }
+      const { error } = await sb.from("confessions").insert({ content });
+      if (error) { $("msg").className = "msg err"; $("msg").textContent = error.message; return; }
+      $("content").value = ""; $("msg").className = "msg ok"; $("msg").textContent = "Posted anonymously.";
+      await load();
+    };
+    init();
+  </script>
+</body>
+</html>

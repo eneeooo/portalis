@@ -21,7 +21,7 @@
       </div>
       <label for="newReviewer">Reviewer text (optional, you can edit it later)</label>
       <textarea id="newReviewer" style="min-height:120px" placeholder="# Heading&#10;- bullet point&#10;Algorithm - a step-by-step procedure for solving a problem"></textarea>
-      <p class="hint">Format: "# Heading", "- bullet", or plain paragraphs. Lines written as <b>Term - definition</b> can be turned into quiz questions automatically.</p>
+      <p class="hint">Format: "# Heading", "- bullet", or plain paragraphs. Lines written as <b>Term - definition</b> can be turned into quiz questions automatically. Use $x^2$ inline or $$\frac{a}{b}$$ for displayed math.</p>
       <button id="createTopic">Create topic</button>
     </div>
 
@@ -102,19 +102,20 @@
 
       <div class="card">
         <h3>Student results</h3>
+        <div id="resultsChart" aria-label="Quiz attempts summary graph"></div>
         <div class="scroll"><table>
-          <thead><tr><th>Student</th><th>Try</th><th>Status</th><th>Score</th><th>Last activity</th></tr></thead>
+          <thead><tr><th>Student number</th><th>Full name</th><th>Try</th><th>Status</th><th>Score</th><th>Last activity</th></tr></thead>
           <tbody id="results"></tbody>
         </table></div>
       </div>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
   <script src="common.js"></script>
   <script>
-    let ctx, subjects = [], topics = [], current = null, emails = {}, parsed = [], generated = [];
+    let ctx, subjects = [], topics = [], current = null, students = {}, parsed = [], generated = [];
     const msg = document.getElementById("msg");
     const $ = id => document.getElementById(id);
     function err(t) { msg.className = "msg err"; msg.textContent = t; window.scrollTo(0, 0); }
@@ -125,8 +126,9 @@
       ctx = await requireAuth(true);
       if (!ctx) return;
       renderBar(ctx, "manage");
-      const { data: ps } = await sb.from("profiles").select("id,email");
-      (ps || []).forEach(p => { emails[p.id] = p.email; });
+      const { data: ps, error: profileError } = await sb.from("profiles").select("id,full_name,student_number");
+      if (profileError) return err(profileError.message);
+      (ps || []).forEach(p => { students[p.id] = p; });
       buildOptionInputs();
       await loadBase();
       const pre = Number(new URLSearchParams(location.search).get("topic"));
@@ -371,16 +373,44 @@
       const body = $("results");
       body.innerHTML = "";
       if (error) return err(error.message);
+      const chart = $("resultsChart");
+      chart.innerHTML = "";
+      const submitted = data.filter(a => a.status === "submitted");
+      if (submitted.length) {
+        const groups = {};
+        submitted.forEach(a => {
+          const group = groups[a.attempt_no] || (groups[a.attempt_no] = { count: 0, percent: 0 });
+          group.count += 1;
+          group.percent += a.total ? (a.score / a.total) * 100 : 0;
+        });
+        const maxCount = Math.max(...Object.values(groups).map(x => x.count), 1);
+        chart.appendChild(el("h3", "", "Students completing each attempt"));
+        Object.keys(groups).map(Number).sort((a, b) => a - b).forEach(no => {
+          const group = groups[no];
+          const row = el("div", "chart-row");
+          row.appendChild(el("span", "", "Try #" + no));
+          const track = el("div", "bar-track");
+          const fill = el("div", "bar-fill");
+          fill.style.width = (group.count / maxCount * 100) + "%";
+          track.appendChild(fill);
+          row.append(track, el("span", "", group.count + " student(s)"));
+          row.title = "Average score: " + Math.round(group.percent / group.count) + "%";
+          chart.appendChild(row);
+        });
+        chart.appendChild(el("p", "hint", "Bar length shows student count; hover a bar for average score."));
+      } else chart.appendChild(el("p", "hint", "No submitted quiz attempts to graph yet."));
       if (!data.length) {
         const tr = document.createElement("tr");
         const td = el("td", "", "No one has tried this quiz yet.");
-        td.colSpan = 5; tr.appendChild(td); body.appendChild(tr);
+        td.colSpan = 6; tr.appendChild(td); body.appendChild(tr);
         return;
       }
       data.forEach(a => {
         const tr = document.createElement("tr");
+        const student = students[a.user_id] || {};
         tr.append(
-          el("td", "", emails[a.user_id] || a.user_id),
+          el("td", "", student.student_number || "—"),
+          el("td", "", student.full_name || "Student"),
           el("td", "", "#" + a.attempt_no),
           el("td", "", a.status === "submitted" ? "Submitted" : "In progress"),
           el("td", "", a.status === "submitted" ? a.score + "/" + a.total : "-"),

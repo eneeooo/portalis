@@ -6,11 +6,13 @@ Built using HTML, CSS, and JavaScript, Portalis uses **Supabase** as its backend
 
 ## Features
 
-- **Responsive Interface** — Designed to work across different screen sizes and devices.
-- **Clean and Intuitive Design** — Prioritizes usability and straightforward navigation.
-- **Supabase Integration** — Uses Supabase for database management and data persistence.
-- **Organized Codebase** — Structured for easier maintenance and future improvements.
-- **Scalable Foundation** — Built to accommodate additional features as the project evolves.
+- Student-number-only login (format `00-00-000`); signup collects full name
+  and birthdate.
+- Editable profiles, class notes, anonymous confessions, and admin suggestions.
+- KaTeX-rendered math in reviewer content and saved quiz attempts.
+- Admin-managed ₱10 weekly class fund, additional collections, and cumulative
+  unpaid balances by student.
+- Responsive static frontend backed by Supabase Auth, Postgres, and Storage.
 
 ## Technologies Used
 
@@ -23,3 +25,17 @@ Built using HTML, CSS, and JavaScript, Portalis uses **Supabase** as its backend
 ## Project Vision
 
 Portalis aims to grow into a reliable and functional web platform through continuous development, thoughtful design, and practical implementation. Its foundation combines frontend technologies with cloud-based database services to support future enhancements and a better overall user experience.
+
+## Supabase setup
+
+Run `Portalis\setup.sql`, `Portalis\migration_features.sql`,
+`Portalis\migration_student_number_birthdays.sql`,
+`Portalis\migration_optional_email.sql`, and
+`Portalis\migration_supabase_auth_restore.sql` in the Supabase SQL Editor.
+The restore script supports the `portalis_auth_users` table if the custom-auth
+migration was applied; it does not undo that migration or recover deleted Auth
+users.
+Do not run `Portalis\migration_custom_auth.sql`. Deploy the
+`username-login`, `auth-email-update`, and `admin-delete-user` Edge Functions
+with `--no-verify-jwt`, then follow the existing-user instructions in
+[`Portalis\README.txt`](Portalis/README.txt).

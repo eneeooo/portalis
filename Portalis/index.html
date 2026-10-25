@@ -1,51 +1,122 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Portalis - Log in</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <div class="auth">
-    <h1>Portalis</h1>
-    <p class="sub">Your sticky notes, safe and sound.</p>
-    <div class="note">
-      <h2>Log in</h2>
-      <label for="email">Email</label>
-      <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
-      <label for="password">Password</label>
-      <input id="password" type="password" placeholder="Your password" autocomplete="current-password">
-      <button id="login" class="full">Log in</button>
-      <p id="msg" class="msg"></p>
-      <p class="switch">No account yet? <a href="signup.html">Sign up</a></p>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Portalis - Log in</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="auth">
+      <h1>Portalis</h1>
+      <p class="sub">Your class space for notes and reviewers.</p>
+      <div class="note">
+        <h2>Log in</h2>
+        <label for="studentNumber">Student number</label>
+        <input id="studentNumber" inputmode="numeric" autocomplete="username" placeholder="00-00-000" />
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="Your password" autocomplete="current-password" />
+        <button id="login" class="full">Log in</button>
+        <p id="msg" class="msg"></p>
+        <p class="switch">No account yet? <a href="signup.html">Sign up</a></p>
+      </div>
     </div>
-  </div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="config.js"></script>
+    <script>
+      const msg = document.getElementById("msg");
+      const btn = document.getElementById("login");
+      const INTERNAL_DOMAIN = "@login.portalis.invalid";
+      const numberInput = document.getElementById("studentNumber");
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
-  <script src="config.js"></script>
-  <script>
-    const msg = document.getElementById("msg");
-    const btn = document.getElementById("login");
+      function show(text, isErr) { msg.className = "msg" + (isErr ? " err" : ""); msg.textContent = text; }
 
-    sb.auth.getSession().then(({ data }) => {
-      if (data.session) location.href = "dashboard.html";
-    });
+      // Auto-format as 00-00-000 while typing
+      numberInput.addEventListener("input", e => {
+        const digits = e.target.value.replace(/\D/g, "").slice(0, 7);
+        e.target.value = digits.length > 4 ? digits.slice(0, 2) + "-" + digits.slice(2, 4) + "-" + digits.slice(4)
+          : digits.length > 2 ? digits.slice(0, 2) + "-" + digits.slice(2) : digits;
+      });
 
-    async function doLogin() {
-      msg.className = "msg"; msg.textContent = "";
-      const email = document.getElementById("email").value.trim();
-      const password = document.getElementById("password").value;
-      if (!email || !password) { msg.className = "msg err"; msg.textContent = "Enter your email and password."; return; }
-      btn.disabled = true;
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      btn.disabled = false;
-      if (error) { msg.className = "msg err"; msg.textContent = error.message; }
-      else location.href = "dashboard.html";
-    }
+      (async () => {
+        let reason = null;
+        try { reason = sessionStorage.getItem("portalis_logout_reason"); sessionStorage.removeItem("portalis_logout_reason"); } catch (_) {}
+        if (reason) show(reason, true);
+        const { data, error } = await sb.auth.getSession();
+        if (error || !data.session) {
+          if (error) { await sb.auth.signOut({ scope: "local" }).catch(() => {}); }
+          return;
+        }
+        // A stored session may belong to a user that was deleted: verify with the server first.
+        const { data: u, error: userError } = await sb.auth.getUser();
+        if (userError || !u.user) {
+          const offline = userError && (userError.name === "AuthRetryableFetchError" || /failed to fetch|network/i.test(userError.message || ""));
+          if (offline) { show("Cannot reach Supabase. Check your connection.", true); return; }
+          await sb.auth.signOut({ scope: "local" }).catch(() => {});
+          if (!reason) show("Your account was removed or your session expired. Please log in again.", true);
+          return;
+        }
+        location.href = "dashboard.html";
+      })();
 
-    btn.onclick = doLogin;
-    document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
-  </script>
-</body>
+      // supabase-js hides the function's own error text behind a generic message.
+      async function functionError(error) {
+        if (error && error.context instanceof Response) {
+          try {
+            const body = await error.context.clone().json();
+            if (body && body.error) return body.error;
+          } catch (_) { /* not JSON */ }
+        }
+        return null;
+      }
+
+      async function doLogin() {
+        show("", false);
+        const student_number = numberInput.value.trim();
+        const password = document.getElementById("password").value;
+        if (!/^\d{2}-\d{2}-\d{3}$/.test(student_number) || !password) {
+          show("Enter your student number in the format 00-00-000 and your password.", true); return;
+        }
+        btn.disabled = true;
+        try {
+          // 1) Normal path: signup creates the Auth account as <student number>@login.portalis.invalid,
+          //    so we can sign in directly. This needs no Edge Function.
+          const direct = await sb.auth.signInWithPassword({ email: student_number + INTERNAL_DOMAIN, password });
+          if (!direct.error && direct.data && direct.data.session) { location.href = "dashboard.html"; return; }
+
+          const directMsg = (direct.error && direct.error.message) || "";
+          if (direct.error && (direct.error.name === "AuthRetryableFetchError" || /failed to fetch|network/i.test(directMsg))) {
+            throw new Error("Cannot reach Supabase. Check your internet connection and that the project is not paused.");
+          }
+          if (/rate limit|too many/i.test(directMsg)) {
+            throw new Error("Too many attempts. Wait a few minutes and try again.");
+          }
+          if (/not confirmed/i.test(directMsg)) {
+            throw new Error("This account's email is not confirmed. In Supabase, turn off Confirm email (Authentication -> Providers -> Email) or confirm the user.");
+          }
+
+          // 2) Fallback: accounts whose Auth email was changed (or created another way).
+          //    The Edge Function looks the real Auth email up from the student number.
+          const { data, error } = await sb.functions.invoke("username-login", { body: { student_number, password } });
+          if (error) {
+            const detail = await functionError(error);
+            if (detail) throw new Error(detail);
+            console.warn("username-login unavailable:", error);
+            throw new Error("Invalid student number or password. (If you confirmed a new email, the username-login function must be deployed to sign in by student number.)");
+          }
+          if (!data || !data.access_token || !data.refresh_token) throw new Error("Login did not return a session.");
+          const { error: sessionError } = await sb.auth.setSession({
+            access_token: data.access_token,
+            refresh_token: data.refresh_token
+          });
+          if (sessionError) throw sessionError;
+          location.href = "dashboard.html";
+        } catch (error) {
+          show(error.message || "Could not log in.", true);
+        } finally { btn.disabled = false; }
+      }
+      btn.onclick = doLogin;
+      document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+    </script>
+  </body>
 </html>

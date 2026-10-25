@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portalis - Notes</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 </head>
 <body>
   <div class="wrap">
@@ -23,9 +24,10 @@
       <label for="title">Title</label>
       <input id="title" placeholder="e.g. Bring valid ID tomorrow" maxlength="80">
 
-      <label>Importance</label>
-      <div class="prio-pick">
+      <label id="importanceLabel">Importance</label>
+      <div id="importancePicker" class="prio-pick">
         <label class="p-low"><input type="radio" name="prio" value="low"><span>Low</span></label>
+        <label class="p-neutral"><input type="radio" name="prio" value="neutral"><span>Neutral</span></label>
         <label class="p-medium"><input type="radio" name="prio" value="medium" checked><span>Medium</span></label>
         <label class="p-high"><input type="radio" name="prio" value="high"><span>High</span></label>
         <label class="p-urgent"><input type="radio" name="prio" value="urgent"><span>Urgent</span></label>
@@ -53,16 +55,19 @@
       <p class="hint" id="postHint"></p>
     </div>
 
+    <div id="birthdayGreeting" class="birthday-pin" hidden></div>
     <div id="filters" class="filters"></div>
     <div id="board" class="board"></div>
     <p id="empty" class="empty" style="display:none"></p>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
   <script src="config.js"></script>
   <script src="common.js"></script>
   <script>
-    let ctx, view = "board", notes = [], filter = "all", pending = [], counts = {};
+    let ctx, view = "board", notes = [], filter = "all", pending = [], counts = {}, birthdayDate = "";
     const msg = document.getElementById("msg");
 
     function err(t) { msg.className = "msg err"; msg.textContent = t; }
@@ -76,7 +81,42 @@
       document.getElementById("postHint").textContent = ctx.isAdmin
         ? "Admin notes are posted right away."
         : "Your note is sent to an admin first. It shows on the public board once approved.";
+      document.getElementById("importanceLabel").style.display = ctx.isAdmin ? "block" : "none";
+      document.getElementById("importancePicker").style.display = ctx.isAdmin ? "flex" : "none";
       setView("board");
+      birthdayDate = manilaDateKey();
+      window.setInterval(() => {
+        const today = manilaDateKey();
+        if (today !== birthdayDate) {
+          birthdayDate = today;
+          if (view === "board") loadBirthdayGreeting();
+        }
+      }, 30000);
+    }
+
+    function manilaDateKey() {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit"
+      }).formatToParts(new Date());
+      const part = type => parts.find(item => item.type === type).value;
+      return part("year") + "-" + part("month") + "-" + part("day");
+    }
+
+    async function loadBirthdayGreeting() {
+      const pin = document.getElementById("birthdayGreeting");
+      if (view !== "board") { pin.hidden = true; return; }
+      const { data, error } = await sb.rpc("birthdays_today");
+      if (view !== "board") { pin.hidden = true; return; }
+      if (error) { err(error.message); pin.hidden = true; return; }
+      pin.replaceChildren();
+      if (!data || !data.length) { pin.hidden = true; return; }
+      const names = data.map(person => person.full_name).filter(Boolean);
+      const greeting = names.length === 1
+        ? "Happy birthday, " + names[0] + "! We hope you have a wonderful day!"
+        : "Happy birthday to " + names.slice(0, -1).join(", ") + " and " + names[names.length - 1] + "! We hope you have a wonderful day!";
+      pin.appendChild(el("strong", "", "🎂 Birthday today!"));
+      pin.appendChild(el("p", "", greeting));
+      pin.hidden = false;
     }
 
     function setView(v) {
@@ -84,6 +124,7 @@
       document.getElementById("tabBoard").classList.toggle("on", v === "board");
       document.getElementById("tabMine").classList.toggle("on", v === "mine");
       document.getElementById("composer").style.display = v === "mine" ? "block" : "none";
+      if (v !== "board") document.getElementById("birthdayGreeting").hidden = true;
       loadNotes();
     }
     document.getElementById("tabBoard").onclick = () => setView("board");
@@ -95,6 +136,7 @@
       const { data, error } = await q;
       if (error) { err(error.message); return; }
       notes = data;
+      if (view === "board") await loadBirthdayGreeting();
       counts = {};
       const ids = notes.filter(n => n.status === "approved").map(n => n.id);
       if (ids.length) {
@@ -132,6 +174,7 @@
         const mine = n.user_id === ctx.user.id;
         board.appendChild(noteCard(n, {
           canEdit: mine,
+          canPrioritize: ctx.isAdmin,
           showStatus: true,
           onPriority: setPriority,
           onSubs: saveSubs,
