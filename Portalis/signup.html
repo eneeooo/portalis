@@ -14,6 +14,8 @@
         <h2>Sign up</h2>
         <label for="studentNumber">Student number</label>
         <input id="studentNumber" inputmode="numeric" autocomplete="off" maxlength="9" placeholder="00-00-000" />
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" />
         <label for="fullName">Full name</label>
         <input id="fullName" autocomplete="name" maxlength="100" placeholder="First and last name" />
         <label for="birthDate">Birthdate</label>
@@ -41,12 +43,14 @@
       btn.onclick = async () => {
         show("", false);
         const student_number = document.getElementById("studentNumber").value.trim();
+        const email = document.getElementById("email").value.trim().toLowerCase();
         const full_name = document.getElementById("fullName").value.trim();
         const birth_date = document.getElementById("birthDate").value;
         const password = document.getElementById("password").value;
         const password2 = document.getElementById("password2").value;
-        if (!student_number || !full_name || !birth_date || !password) return show("Enter your student number, full name, birthdate, and password.", true);
+        if (!student_number || !email || !full_name || !birth_date || !password) return show("Enter your student number, email, full name, birthdate, and password.", true);
         if (!/^\d{2}-\d{2}-\d{3}$/.test(student_number)) return show("Student number must use the format 00-00-000.", true);
+        if (!document.getElementById("email").validity.valid || email.endsWith(".invalid")) return show("Enter a valid email address.", true);
         const todayParts = new Intl.DateTimeFormat("en-US", {
           timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit"
         }).formatToParts(new Date());
@@ -57,25 +61,31 @@
         if (password !== password2) return show("Passwords do not match.", true);
         btn.disabled = true;
         try {
+          const { data: isClassMember, error: membershipError } = await sb.rpc("student_number_is_class_12", { p_student_number: student_number });
+          if (membershipError) throw membershipError;
+          if (!isClassMember) {
+            show("Only students listed in the class 12 roster can sign up.", true); return;
+          }
           const { data: numberTaken, error: numberError } = await sb.rpc("student_number_is_taken", { p_student_number: student_number });
           if (numberError) throw numberError;
           if (numberTaken) {
             show("That student number is already registered.", true); return;
           }
-          const email = student_number + "@login.portalis.invalid";
           const { data, error } = await sb.auth.signUp({
             email, password,
             options: { data: { student_number, full_name, birth_date } }
           });
           if (error) throw error;
           if (data.session) { location.href = "dashboard.html"; return; }
-          show("Account created, but email confirmation is enabled for its internal login address. Disable email confirmations for student-number signup, then sign in.", true);
+          const returnedStudentNumber = data.user && data.user.user_metadata && data.user.user_metadata.student_number;
+          const returnedEmail = data.user && data.user.email;
+          show("Account created for " + (returnedStudentNumber || student_number) + " (" + (returnedEmail || email) + "). Check your email for the confirmation link before signing in.", false);
         } catch (error) {
           const message = error.message || "Could not create the account.";
           if (/rate limit|email.*limit/i.test(message)) {
-            show("Supabase is trying to send a confirmation email to an internal address. In Supabase, open Authentication → Providers → Email and turn off Confirm email for student-number signup. Then wait for the email rate limit to reset before trying again.", true);
+            show("Supabase has temporarily limited signup or confirmation emails. Wait a few minutes before trying again, or configure custom SMTP in Supabase.", true);
           } else {
-            show(/duplicate|unique|already exists|already registered/i.test(message) ? "That student number is already registered." : message, true);
+            show(/duplicate|unique|already exists|already registered/i.test(message) ? "That email address or student number is already registered." : message, true);
           }
         } finally { btn.disabled = false; }
       };

@@ -126,8 +126,9 @@
     function clearMsg() { msg.className = "msg"; msg.textContent = ""; }
 
     async function init() {
-      ctx = await requireAuth(true);
+      ctx = await requireAuth();
       if (!ctx) return;
+      if (!ctx.isAdmin) { location.href = "dashboard.html"; return; }
       renderBar(ctx, "manage");
       const { data: ps, error: profileError } = await sb.from("profiles").select("id,full_name,student_number");
       if (profileError) return err(profileError.message);

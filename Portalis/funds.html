@@ -10,10 +10,10 @@
   <div class="wrap">
     <div id="bar"></div>
     <h2>Class funds</h2>
-    <p class="hint">Class Fund collection starts Aug 31–Sept 6, 2026, then continues weekly at ₱10 per student. Admins can enter each student's total received; payments cover the oldest weeks first and carry forward as advance credit. Payment records are visible only to admins.</p>
+    <p class="hint">Class Fund collection starts Aug 31–Sept 6, 2026, then continues weekly at ₱10 per student. Admins and officers can enter each student's total received; payments cover the oldest weeks first and carry forward as advance credit. Payment records are visible only to admins and officers.</p>
     <p id="msg" class="msg"></p>
     <div id="adminTools" class="card" style="display:none">
-      <h3>Admin fund tools</h3>
+      <h3>Fund and collection period tools</h3>
       <div class="cols2">
         <div><label for="fundTitle">New fund title</label><input id="fundTitle" maxlength="100" placeholder="e.g. Event fund"></div>
         <div><label for="fundAmount">Amount per period (₱)</label><input id="fundAmount" type="number" min="0" step="0.01" value="10"></div>
@@ -21,8 +21,8 @@
       <label for="firstPeriod">First collection period</label>
       <input id="firstPeriod" maxlength="100" placeholder="e.g. One-time collection">
       <button id="createFund">Create fund</button>
-      <hr>
-      <h3>Add collection week / period</h3>
+      <button id="deleteFund" class="danger" type="button">Delete selected fund</button>
+      <p class="hint">Deleting a fund permanently removes its periods and payment records. The Class Fund cannot be deleted.</p>
       <div class="cols2">
         <div><label for="periodLabel">Period label</label><input id="periodLabel" maxlength="100" placeholder="Week 2 (Sept 7–13)"></div>
         <div><label for="periodStart">Start date</label><input id="periodStart" type="date"></div>
@@ -39,9 +39,10 @@
     </div>
     <div id="adminRoster" style="display:none">
       <div class="fund-actions">
-        <button id="exportCsv" class="ghost">Export whole fund as CSV</button>
+        <button id="exportXlsx" class="ghost">Export whole fund as XLSX</button>
         <button id="printFund" class="ghost">Print fund report</button>
       </div>
+      <p class="hint">The workbook follows the class roster layout with student name, number, weekly status, and advance payment.</p>
       <div class="scroll">
         <table class="fund-table">
           <thead><tr><th>Student number</th><th>Full name</th><th>This period</th><th>Total paid</th><th>Advance credit</th><th>Outstanding</th><th>Status / edit</th></tr></thead>
@@ -52,6 +53,7 @@
     <div id="fundPrint"></div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="config.js"></script>
   <script src="common.js"></script>
   <script>
@@ -69,6 +71,15 @@
       const { data, error } = await sb.from("funds").select("id,title,amount_per_period").order("created_at");
       if (error) { message(error.message, true); return; }
       funds = data || [];
+      if (ctx.isAdmin) {
+        const classFund = funds.find(f => f.title.trim().toLowerCase() === "class fund");
+        if (classFund) {
+          const { error: advanceError } = await sb.rpc("maintain_class_fund_advance_weeks", {
+            p_fund_id: classFund.id
+          });
+          if (advanceError) { message(advanceError.message, true); return; }
+        }
+      }
       const pick = $("fundPick"); pick.innerHTML = "";
       funds.forEach(f => { const o = el("option", "", f.title); o.value = f.id; pick.appendChild(o); });
       if (!funds.length) { $("summary").textContent = "No funds have been set up yet."; $("roster").innerHTML = ""; return; }
@@ -87,13 +98,38 @@
       const { data, error } = await sb.from("fund_periods").select("*").eq("fund_id", selectedFund.id).order("starts_on");
       if (error) { message(error.message, true); return; }
       periods = data || [];
+      let visiblePeriods = periods;
+      if (!ctx.isAdmin && periods.length) {
+        const { data: unpaidIds, error: unpaidError } = await sb.rpc("get_my_unpaid_fund_periods", {
+          p_fund_id: selectedFund.id
+        });
+        if (unpaidError) { message(unpaidError.message, true); return; }
+        const unpaidPeriodIds = new Set((unpaidIds || []).map(row => String(row.period_id)));
+        visiblePeriods = periods.filter(period => unpaidPeriodIds.has(String(period.id)));
+      }
       const box = $("periods"); box.innerHTML = "";
-      periods.forEach(p => {
+      visiblePeriods.forEach(p => {
+        const row = el("div", "fund-period-control");
         const b = el("button", "ghost" + (selectedPeriod && p.id === selectedPeriod.id ? " on" : ""), p.label);
         b.onclick = () => { selectedPeriod = p; loadPeriods(); };
-        box.appendChild(b);
+        row.appendChild(b);
+        if (ctx.isAdmin) {
+          const remove = el("button", "danger small", "Remove");
+          remove.type = "button";
+          remove.title = "Remove this collection period";
+          remove.onclick = () => deletePeriod(p);
+          row.appendChild(remove);
+        }
+        box.appendChild(row);
       });
-      selectedPeriod = periods.find(p => selectedPeriod && p.id === selectedPeriod.id) || periods[periods.length - 1] || null;
+      if (!ctx.isAdmin && !visiblePeriods.length) {
+        box.appendChild(el("p", "hint", periods.length
+          ? "All available weeks are paid."
+          : "No collection periods have been added yet."));
+      }
+      $("deleteFund").disabled = selectedFund.title.trim().toLowerCase() === "class fund";
+      selectedPeriod = visiblePeriods.find(p => selectedPeriod && p.id === selectedPeriod.id) ||
+        (ctx.isAdmin ? visiblePeriods[visiblePeriods.length - 1] : visiblePeriods[0]) || null;
       if (selectedPeriod && ctx.isAdmin) await loadRoster();
       else if (ctx.isAdmin) {
         $("summary").textContent = "No collection periods yet.";
@@ -111,9 +147,16 @@
       }
       $("summary").innerHTML = "";
       $("summary").appendChild(el("h3", "", "Your " + selectedFund.title + " balance"));
+      const currentDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).format(new Date());
+      const periodState = selectedPeriod && selectedPeriod.starts_on > currentDate ? "Upcoming period: " : "Current period: ";
       $("summary").appendChild(el("p", "hint", selectedPeriod
-        ? "Current period: " + selectedPeriod.label + " · ₱" + Number(selectedPeriod.amount_due).toFixed(2) + " due."
-        : "No collection periods have been added yet."));
+        ? periodState + selectedPeriod.label + " · ₱" + Number(selectedPeriod.amount_due).toFixed(2) + " due."
+        : periods.length ? "All available weeks are paid." : "No collection periods have been added yet."));
       const totals = el("div", "fund-balance-cards");
       totals.append(
         balanceCard("Outstanding", balance.outstanding, "balance-outstanding"),
@@ -212,27 +255,35 @@
       }
       return rows;
     }
-    function csvCell(value) {
-      let text = value === null || value === undefined ? "" : String(value);
-      if (/^[\s]*[=+\-@]/.test(text)) text = "'" + text;
-      return '"' + text.replace(/"/g, '""') + '"';
-    }
-    function csvPeriodLabel(period) {
-      const formatDate = value => new Date(value + "T12:00:00").toLocaleDateString("en-US", {
-        month: "short", day: "numeric", year: "numeric"
-      });
-      return formatDate(period.starts_on) + " – " + formatDate(period.ends_on);
-    }
     function periodWeekLabel(label) {
       return label.replace(/\s*\([^)]*\)\s*$/, "").trim();
     }
-    function buildFundCsvRows(rows) {
+    function currentManilaWeekStart() {
+      const date = new Date(new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).format(new Date()) + "T12:00:00");
+      const weekday = date.getDay();
+      date.setDate(date.getDate() - ((weekday + 6) % 7));
+      return date.toISOString().slice(0, 10);
+    }
+    function formatWeekHeader(period, index) {
+      const shortDate = value => new Date(value + "T12:00:00").toLocaleDateString("en-US", {
+        month: "short", day: "2-digit"
+      }).replace(/^Sep /, "Sept ");
+      return "Week " + (index + 1) + " (" + shortDate(period.starts_on) + "–" + shortDate(period.ends_on) + ")";
+    }
+    function buildFundXlsxRows(rows) {
       const periodsById = new Map();
       const studentsById = new Map();
+      const currentWeekStart = currentManilaWeekStart();
       rows.forEach(row => {
+        if (row.starts_on > currentWeekStart) return;
         if (!periodsById.has(row.period_label)) {
           periodsById.set(row.period_label, {
-            label: row.period_label, starts_on: row.starts_on, ends_on: row.ends_on
+            id: row.period_label, label: row.period_label, starts_on: row.starts_on, ends_on: row.ends_on
           });
         }
         if (!studentsById.has(row.user_id)) {
@@ -253,36 +304,65 @@
       });
       const periods = Array.from(periodsById.values()).sort((a, b) => a.starts_on.localeCompare(b.starts_on));
       const header = [
-        "Student number", "Student name",
-        ...periods.map(csvPeriodLabel),
-        "Total paid", "Outstanding", "Advance credit", "Overall status"
+        "displayname", "student number",
+        ...periods.map(formatWeekHeader),
+        "Advance Payment"
       ];
       const studentRows = Array.from(studentsById.values())
         .sort((a, b) => String(a.student_number || "").localeCompare(String(b.student_number || "")))
         .map(student => [
-          student.student_number,
           student.full_name,
+          student.student_number || "",
           ...periods.map(period => student.statuses.get(period.label) || "Unpaid"),
-          student.total_paid.toFixed(2),
-          student.outstanding.toFixed(2),
-          student.advance_credit.toFixed(2),
-          student.total_due > 0 && student.outstanding === 0 ? "Paid" :
-            student.total_paid > 0 ? "Partial" : "Unpaid"
+          Math.max(student.total_paid - periods.reduce((sum, period) => {
+            const row = rows.find(item => item.period_label === period.label);
+            return sum + Number(row ? row.amount_due : 0);
+          }, 0), 0)
         ]);
       return [header, ...studentRows];
     }
-    function exportCsv(rows) {
-      const lines = buildFundCsvRows(rows).map(line => line.map(csvCell).join(","));
-      const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = (selectedFund.title.replace(/[^a-z0-9_-]+/gi, "-") || "fund") + "-payments.csv";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      message("Whole-fund CSV exported.", false);
+    function exportXlsx(rows) {
+      if (!window.XLSX) {
+        message("The XLSX export library could not be loaded. Check your internet connection and try again.", true);
+        return;
+      }
+      const values = buildFundXlsxRows(rows);
+      const sheet = XLSX.utils.aoa_to_sheet(values);
+      const border = {
+        top: { style: "thin", color: { indexed: 64 } },
+        bottom: { style: "thin", color: { indexed: 64 } },
+        left: { style: "thin", color: { indexed: 64 } },
+        right: { style: "thin", color: { indexed: 64 } }
+      };
+      const range = XLSX.utils.decode_range(sheet["!ref"]);
+      for (let column = 0; column <= range.e.c; column++) {
+        const cell = sheet[XLSX.utils.encode_cell({ r: 0, c: column })];
+        cell.s = {
+          font: { name: "Aptos Narrow", bold: true, sz: 11 },
+          fill: { patternType: "solid", fgColor: { rgb: "FFFF00" } },
+          alignment: { horizontal: "center" },
+          border
+        };
+      }
+      for (let row = 1; row <= range.e.r; row++) {
+        for (let column = 0; column <= range.e.c; column++) {
+          const cell = sheet[XLSX.utils.encode_cell({ r: row, c: column })];
+          if (cell) {
+            cell.s = { border };
+            if (column === range.e.c) cell.z = '"₱"#,##0.00';
+          }
+        }
+      }
+      sheet["!cols"] = [
+        { wch: 26 },
+        { wch: 15 },
+        ...values[0].slice(2).map(() => ({ wch: 18 }))
+      ];
+      const workbook = XLSX.utils.book_new();
+      const sheetName = selectedFund.title.replace(/[\\/?*[\]:]/g, " ").slice(0, 31).trim() || "Fund";
+      XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+      XLSX.writeFile(workbook, (selectedFund.title.replace(/[^a-z0-9_-]+/gi, "-") || "fund") + "-payments.xlsx");
+      message("Whole-fund XLSX exported.", false);
     }
     function printReport(rows) {
       const report = $("fundPrint"); report.innerHTML = "";
@@ -350,10 +430,10 @@
       window.addEventListener("afterprint", () => document.body.classList.remove("fund-printing"), { once: true });
       window.print();
     }
-    $("exportCsv").onclick = async () => {
+    $("exportXlsx").onclick = async () => {
       if (!selectedFund) return;
       const rows = await loadExportData();
-      if (rows) exportCsv(rows);
+      if (rows) exportXlsx(rows);
     };
     $("printFund").onclick = async () => {
       if (!selectedFund) return;
@@ -375,6 +455,25 @@
       $("fundTitle").value = ""; $("firstPeriod").value = "";
       message("Fund created.", false); selectedFundId = data.id; selectedPeriod = null; await loadFunds();
     };
+    $("deleteFund").onclick = async () => {
+      if (!selectedFund || selectedFund.title.trim().toLowerCase() === "class fund") return;
+      if (!confirm("Permanently delete \"" + selectedFund.title + "\" and all its periods and payment records? This cannot be undone.")) return;
+      const { error } = await sb.from("funds").delete().eq("id", selectedFund.id);
+      if (error) { message(error.message, true); return; }
+      selectedFundId = null;
+      selectedPeriod = null;
+      message("Fund and its related records deleted.", false);
+      await loadFunds();
+    };
+    async function deletePeriod(period) {
+      if (!selectedFund || !period) return;
+      if (!confirm("Remove \"" + period.label + "\" from " + selectedFund.title + "? Any money already collected will be kept and reallocated across the remaining weeks. Advance payments stay as credit and do not add future Class Fund weeks.")) return;
+      const { error } = await sb.from("fund_periods").delete().eq("id", period.id);
+      if (error) { message(error.message, true); return; }
+      selectedPeriod = null;
+      message("Collection period removed. Existing payments were kept and reallocated.", false);
+      await loadPeriods();
+    }
     $("addPeriod").onclick = async () => {
       if (!selectedFund) return message("Choose a fund first.", true);
       const label = $("periodLabel").value.trim(), starts_on = $("periodStart").value, ends_on = $("periodEnd").value;

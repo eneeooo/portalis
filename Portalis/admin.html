@@ -27,7 +27,7 @@
       <h2>Users and roles</h2>
       <div class="scroll">
         <table>
-          <thead><tr><th>Student number</th><th>Full name</th><th>Email</th><th style="width:160px">Role</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Student number</th><th>Full name</th><th>Email</th><th>Class title</th><th style="width:160px">Access role</th><th>Actions</th></tr></thead>
           <tbody id="users"></tbody>
         </table>
       </div>
@@ -49,7 +49,6 @@
     const msg = document.getElementById("msg");
     function err(t) { msg.className = "msg err"; msg.textContent = t; }
     function ok(t) { msg.className = "msg ok"; msg.textContent = t; }
-
     async function init() {
       ctx = await requireAuth(true);
       if (!ctx) return;
@@ -64,6 +63,14 @@
       const body = document.getElementById("users");
       body.innerHTML = "";
       if (error) { err(error.message); return; }
+      const titleOrder = ["President", "Vice President", "Secretary", "Treasurer", "Auditor", "PRO"];
+      const rank = user => {
+        if (user.role === "admin") return 0;
+        const titleIndex = titleOrder.indexOf(profileTitle(user));
+        if (titleIndex !== -1) return titleIndex + 1;
+        return user.role === "officer" ? titleOrder.length + 1 : titleOrder.length + 2;
+      };
+      data.sort((a, b) => rank(a) - rank(b));
       data.forEach(u => {
         const tr = document.createElement("tr");
         const tdRole = document.createElement("td");
@@ -97,22 +104,37 @@
             ok("Role updated.");
           }
         };
-        const identity = el("button", "ghost small edit-student-button", "Edit student number");
-        identity.title = "Set student number for this account";
-        identity.onclick = async () => {
-          const student_number = prompt("Student number (00-00-000):", u.student_number || "");
-          if (student_number === null) return;
-          const number = student_number.trim();
-          if (!/^\d{2}-\d{2}-\d{3}$/.test(number)) {
-            err("Enter a student number in the format 00-00-000."); return;
+        const reset = el("button", "ghost small user-action-circle reset-user-password-button", "↻");
+        reset.setAttribute("aria-label", "Reset password for " + (u.full_name || u.student_number || "user"));
+        reset.disabled = u.role === "admin";
+        reset.title = reset.disabled ? "Admins cannot be reset from this page." : "Set this account's password to @Default.";
+        reset.onclick = async () => {
+          if (u.role === "admin") return;
+          const label = [u.full_name, u.student_number].filter(Boolean).join(" · ") || "this account";
+          if (!confirm("Reset " + label + "'s password to @Default? Their current password will stop working. Tell them to change it after signing in.")) return;
+          reset.disabled = true;
+          try {
+            const { data, error } = await sb.rpc("admin_reset_student_password", { p_user_id: u.id });
+            if (error) {
+              err(error.message + (/admin_reset_student_password|schema cache|function/i.test(error.message)
+                ? " Run migration_admin_reset_password.sql in the Supabase SQL Editor, then reload this page."
+                : ""));
+              return;
+            }
+            if (data !== true) {
+              err("The database did not confirm that the password was reset.");
+              return;
+            }
+            ok(label + "'s password is now @Default. Ask them to change it after signing in.");
+          } catch (resetError) {
+            err(resetError.message || "Could not reset this password.");
+          } finally {
+            reset.disabled = false;
           }
-          if (!confirm("Save student number " + number + " for " + (u.full_name || u.email || "this account") + "?")) return;
-          const { error } = await sb.from("profiles").update({ student_number: number }).eq("id", u.id);
-          if (error) err(/duplicate|unique/i.test(error.message) ? "That student number is already taken." : error.message);
-          else { ok("Student identity updated."); await loadUsers(); }
         };
-        actions.appendChild(identity);
-        const remove = el("button", "danger small delete-user-button", "Delete user");
+        actions.appendChild(reset);
+        const remove = el("button", "danger small user-action-circle delete-user-button", "×");
+        remove.setAttribute("aria-label", "Delete user " + (u.full_name || u.student_number || ""));
         remove.disabled = u.id === ctx.user.id;
         remove.title = remove.disabled ? "You cannot delete the currently signed-in admin account." : "Permanently delete this account and its Portalis data.";
         remove.onclick = async () => {
@@ -149,7 +171,14 @@
         actionCell.appendChild(actions);
         tdRole.appendChild(sel);
         const shownEmail = u.email || "Not set";
-        tr.append(el("td", "", u.student_number || "—"), el("td", "", u.full_name || "—"), el("td", "", shownEmail), tdRole, actionCell);
+        tr.append(
+          el("td", "", u.student_number || "—"),
+          el("td", "", u.full_name || "—"),
+          el("td", "", shownEmail),
+          el("td", "", profileTitle(u)),
+          tdRole,
+          actionCell
+        );
         body.appendChild(tr);
       });
     }
@@ -160,17 +189,17 @@
       if (error) { err(error.message); return; }
       box.innerHTML = "";
       if (!data.length) { box.appendChild(el("p", "empty", "No suggestions yet.")); return; }
-      const { data: profiles, error: profileError } = await sb.from("profiles").select("id,full_name,student_number").in("id", data.map(x => x.user_id));
+      const { data: profiles, error: profileError } = await sb.from("profiles").select("id,full_name,student_number,role").in("id", data.map(x => x.user_id));
       if (profileError) { err(profileError.message); return; }
       const byId = Object.fromEntries(profiles.map(x => [x.id, x]));
       data.forEach(s => {
         const item = el("div", "suggestion-item");
         const p = byId[s.user_id] || {};
         const header = el("div", "suggestion-header");
-        header.append(
-          el("b", "suggestion-name", p.full_name || "Student"),
-          el("span", "suggestion-student-number", p.student_number || "No student number")
-        );
+        header.append(el("b", "suggestion-name", p.full_name || "Student"));
+        const title = staffTitle(p);
+        if (title) header.appendChild(el("span", "staff-title-card", title));
+        header.appendChild(el("span", "suggestion-student-number", p.student_number || "No student number"));
         const content = el("p", "suggestion-content", s.content);
         const footer = el("div", "suggestion-footer");
         footer.appendChild(el("small", "suggestion-date", fmtDate(s.created_at)));
@@ -189,7 +218,13 @@
     async function loadNotes() {
       const { data, error } = await sb.from("notes").select("*").order("created_at", { ascending: false });
       if (error) { err(error.message); return; }
-      notes = data;
+      try {
+        const titles = await loadStaffAuthorTitles(data.map(note => note.user_id));
+        notes = data.map(note => ({ ...note, staff_title: titles[note.user_id] }));
+      } catch (titleError) {
+        err(titleError.message);
+        return;
+      }
       render();
     }
 

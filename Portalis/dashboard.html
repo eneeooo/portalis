@@ -1,564 +1,910 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Portalis - Notes</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-</head>
-<body>
-  <div class="wrap">
-    <div id="bar"></div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Portalis - Notes</title>
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+    />
+  </head>
+  <body>
+    <div class="wrap">
+      <div id="bar"></div>
 
-    <div class="tabs">
-      <button id="tabBoard" class="tab on">Public board</button>
-      <button id="tabMine" class="tab">My notes</button>
+      <div class="tabs">
+        <button id="tabBoard" class="tab on">Public board</button>
+        <button id="tabMine" class="tab">My notes</button>
+      </div>
+      <p id="msg" class="msg"></p>
+
+      <!-- New note (My notes tab only) -->
+      <div
+        id="composer"
+        class="note composer"
+        style="display: none; background: #fff"
+      >
+        <h2>New note</h2>
+
+        <label for="title">Title</label>
+        <input
+          id="title"
+          placeholder="e.g. Bring valid ID tomorrow"
+          maxlength="80"
+        />
+
+        <label id="importanceLabel">Importance</label>
+        <div id="importancePicker" class="prio-pick">
+          <label class="p-low"
+            ><input type="radio" name="prio" value="low" /><span
+              >Low</span
+            ></label
+          >
+          <label class="p-neutral"
+            ><input type="radio" name="prio" value="neutral" /><span
+              >Neutral</span
+            ></label
+          >
+          <label class="p-medium"
+            ><input type="radio" name="prio" value="medium" checked /><span
+              >Medium</span
+            ></label
+          >
+          <label class="p-high"
+            ><input type="radio" name="prio" value="high" /><span
+              >High</span
+            ></label
+          >
+          <label class="p-urgent"
+            ><input type="radio" name="prio" value="urgent" /><span
+              >Urgent</span
+            ></label
+          >
+        </div>
+
+        <label>Format</label>
+        <div class="fmt-pick">
+          <label
+            ><input type="radio" name="fmt" value="text" checked /><span
+              >Plain</span
+            ></label
+          >
+          <label
+            ><input type="radio" name="fmt" value="bullets" /><span
+              >&bull; Bullets</span
+            ></label
+          >
+          <label
+            ><input type="radio" name="fmt" value="numbered" /><span
+              >1. Numbered</span
+            ></label
+          >
+        </div>
+
+        <label for="content">Details (optional)</label>
+        <textarea id="content" placeholder="Write something..."></textarea>
+        <p id="fmtHint" class="hint"></p>
+
+        <label for="subInput">Subnotes (optional)</label>
+        <div class="subrow">
+          <input id="subInput" placeholder="Add a subnote, press Enter" />
+          <button id="subAdd" type="button">+</button>
+        </div>
+        <ul id="pending" class="chips"></ul>
+
+        <button id="add" class="full">Submit note</button>
+        <p class="hint" id="postHint"></p>
+      </div>
+
+      <div id="fundReminder" class="fund-reminder-pin" hidden></div>
+      <div id="birthdayGreeting" class="birthday-pin" hidden></div>
+      <div id="filters" class="filters"></div>
+      <div id="board" class="board"></div>
+      <p id="empty" class="empty" style="display: none"></p>
     </div>
-    <p id="msg" class="msg"></p>
 
-    <!-- New note (My notes tab only) -->
-    <div id="composer" class="note composer" style="display:none;background:#fff">
-      <h2>New note</h2>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+    <script src="config.js"></script>
+    <script src="common.js"></script>
+    <script>
+      let ctx,
+        view = "board",
+        notes = [],
+        filter = "all",
+        pending = [],
+        counts = {},
+        birthdayDate = "",
+        birthdayColorIndex = -1;
+      const msg = document.getElementById("msg");
 
-      <label for="title">Title</label>
-      <input id="title" placeholder="e.g. Bring valid ID tomorrow" maxlength="80">
+      function err(t) {
+        msg.className = "msg err";
+        msg.textContent = t;
+      }
+      function ok(t) {
+        msg.className = "msg ok";
+        msg.textContent = t;
+      }
+      function clearMsg() {
+        msg.className = "msg";
+        msg.textContent = "";
+      }
 
-      <label id="importanceLabel">Importance</label>
-      <div id="importancePicker" class="prio-pick">
-        <label class="p-low"><input type="radio" name="prio" value="low"><span>Low</span></label>
-        <label class="p-neutral"><input type="radio" name="prio" value="neutral"><span>Neutral</span></label>
-        <label class="p-medium"><input type="radio" name="prio" value="medium" checked><span>Medium</span></label>
-        <label class="p-high"><input type="radio" name="prio" value="high"><span>High</span></label>
-        <label class="p-urgent"><input type="radio" name="prio" value="urgent"><span>Urgent</span></label>
-      </div>
+      async function init() {
+        ctx = await requireAuth();
+        if (!ctx) return;
+        renderBar(ctx, "notes");
+        document.getElementById("postHint").textContent = ctx.isAdmin
+          ? "Admin and officer notes are posted right away."
+          : "Your note is sent to an admin or officer first. It shows on the public board once approved.";
+        document.getElementById("importanceLabel").style.display = ctx.isAdmin
+          ? "block"
+          : "none";
+        document.getElementById("importancePicker").style.display = ctx.isAdmin
+          ? "flex"
+          : "none";
+        setView("board");
+        birthdayDate = manilaDateKey();
+        window.setInterval(() => {
+          const today = manilaDateKey();
+          if (today !== birthdayDate) {
+            birthdayDate = today;
+            if (view === "board") loadBirthdayGreeting();
+          }
+        }, 30000);
+      }
 
-      <label>Format</label>
-      <div class="fmt-pick">
-        <label><input type="radio" name="fmt" value="text" checked><span>Plain</span></label>
-        <label><input type="radio" name="fmt" value="bullets"><span>&bull; Bullets</span></label>
-        <label><input type="radio" name="fmt" value="numbered"><span>1. Numbered</span></label>
-      </div>
+      function manilaDateKey() {
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: "Asia/Manila",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).formatToParts(new Date());
+        const part = (type) => parts.find((item) => item.type === type).value;
+        return part("year") + "-" + part("month") + "-" + part("day");
+      }
 
-      <label for="content">Details (optional)</label>
-      <textarea id="content" placeholder="Write something..."></textarea>
-      <p id="fmtHint" class="hint"></p>
-
-      <label for="subInput">Subnotes (optional)</label>
-      <div class="subrow">
-        <input id="subInput" placeholder="Add a subnote, press Enter">
-        <button id="subAdd" type="button">+</button>
-      </div>
-      <ul id="pending" class="chips"></ul>
-
-      <button id="add" class="full">Submit note</button>
-      <p class="hint" id="postHint"></p>
-    </div>
-
-    <div id="fundReminder" class="fund-reminder-pin" hidden></div>
-    <div id="birthdayGreeting" class="birthday-pin" hidden></div>
-    <div id="filters" class="filters"></div>
-    <div id="board" class="board"></div>
-    <p id="empty" class="empty" style="display:none"></p>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
-  <script src="config.js"></script>
-  <script src="common.js"></script>
-  <script>
-    let ctx, view = "board", notes = [], filter = "all", pending = [], counts = {}, birthdayDate = "", birthdayColorIndex = -1;
-    const msg = document.getElementById("msg");
-
-    function err(t) { msg.className = "msg err"; msg.textContent = t; }
-    function ok(t) { msg.className = "msg ok"; msg.textContent = t; }
-    function clearMsg() { msg.className = "msg"; msg.textContent = ""; }
-
-    async function init() {
-      ctx = await requireAuth();
-      if (!ctx) return;
-      renderBar(ctx, "notes");
-      document.getElementById("postHint").textContent = ctx.isAdmin
-        ? "Admin and officer notes are posted right away."
-        : "Your note is sent to an admin or officer first. It shows on the public board once approved.";
-      document.getElementById("importanceLabel").style.display = ctx.isAdmin ? "block" : "none";
-      document.getElementById("importancePicker").style.display = ctx.isAdmin ? "flex" : "none";
-      setView("board");
-      birthdayDate = manilaDateKey();
-      window.setInterval(() => {
-        const today = manilaDateKey();
-        if (today !== birthdayDate) {
-          birthdayDate = today;
-          if (view === "board") loadBirthdayGreeting();
+      async function loadBirthdayGreeting() {
+        const pin = document.getElementById("birthdayGreeting");
+        if (view !== "board") {
+          pin.hidden = true;
+          return;
         }
-      }, 30000);
-    }
-
-    function manilaDateKey() {
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit"
-      }).formatToParts(new Date());
-      const part = type => parts.find(item => item.type === type).value;
-      return part("year") + "-" + part("month") + "-" + part("day");
-    }
-
-    async function loadBirthdayGreeting() {
-      const pin = document.getElementById("birthdayGreeting");
-      if (view !== "board") { pin.hidden = true; return; }
-      const { data, error } = await sb.rpc("birthdays_today_with_wishes");
-      if (view !== "board") { pin.hidden = true; return; }
-      if (error) { err(error.message); pin.hidden = true; return; }
-      pin.replaceChildren();
-      if (!data || !data.length) { pin.hidden = true; return; }
-      const colors = ["birthday-note-yellow", "birthday-note-pink", "birthday-note-blue", "birthday-note-green"];
-      pin.className = "birthday-pin " + currentBirthdayColor(colors);
-      const pinDecoration = el("span", "birthday-pushpin");
-      pinDecoration.setAttribute("aria-hidden", "true");
-      const balloonDecoration = el("span", "birthday-balloon", "🎈");
-      balloonDecoration.setAttribute("aria-hidden", "true");
-      pin.append(pinDecoration, balloonDecoration, el("strong", "birthday-title", "🎂 Birthday today!"));
-      const audioStatus = el("span", "birthday-audio-status");
-      audioStatus.setAttribute("aria-live", "polite");
-      const playSong = el("button", "birthday-song-button", "♪ Play birthday song");
-      playSong.type = "button";
-      playSong.onclick = async () => {
-        playSong.disabled = true;
+        const { data, error } = await sb.rpc("birthdays_today_with_wishes");
+        if (view !== "board") {
+          pin.hidden = true;
+          return;
+        }
+        if (error) {
+          err(error.message);
+          pin.hidden = true;
+          return;
+        }
+        if (!data || !data.length) {
+          pin.hidden = true;
+          return;
+        }
+        let wishTitles;
         try {
-          const duration = await playBirthdaySong();
-          pin.className = "birthday-pin " + nextBirthdayColor(colors);
-          throwBirthdayConfetti();
-          audioStatus.textContent = "Playing a birthday melody";
-          window.setTimeout(() => { audioStatus.textContent = ""; playSong.disabled = false; }, duration);
-        } catch (songError) {
-          audioStatus.textContent = songError.message || "Audio is unavailable in this browser.";
-          playSong.disabled = false;
+          wishTitles = await loadStaffAuthorTitles(data.map((row) => row.author_id));
+        } catch (titleError) {
+          err(titleError.message);
+          pin.hidden = true;
+          return;
         }
-      };
-      pin.append(playSong, audioStatus);
-      const people = new Map();
-      data.forEach(row => {
-        if (!people.has(row.recipient_id)) {
-          people.set(row.recipient_id, { name: row.recipient_name, message: row.birthday_message || "", wishes: [] });
-        }
-        if (row.wish_id) people.get(row.recipient_id).wishes.push(row);
-      });
-      people.forEach((person, recipientId) => {
-        const isBirthdayUser = recipientId === ctx.user.id;
-        const card = el("section", "birthday-person");
-        card.append(
-          el("h3", "", "Happy birthday, " + person.name + "!"),
-          el("p", "birthday-subtitle", "We hope you have a wonderful day!")
+        pin.replaceChildren();
+        const colors = [
+          "birthday-note-yellow",
+          "birthday-note-pink",
+          "birthday-note-blue",
+          "birthday-note-green",
+        ];
+        pin.className = "birthday-pin " + currentBirthdayColor(colors);
+        const pinDecoration = el("span", "birthday-pushpin");
+        pinDecoration.setAttribute("aria-hidden", "true");
+        const balloonDecoration = el("span", "birthday-balloon", "🎈");
+        balloonDecoration.setAttribute("aria-hidden", "true");
+        pin.append(
+          pinDecoration,
+          balloonDecoration,
+          el("strong", "birthday-title", "🎂 Birthday today!"),
         );
-        const publicMessage = el("div", "birthday-public-message");
-        if (person.message) {
-          publicMessage.append(
-            el("strong", "", person.name + " says:"),
-            el("p", "", person.message)
+        const audioStatus = el("span", "birthday-audio-status");
+        audioStatus.setAttribute("aria-live", "polite");
+        const playSong = el(
+          "button",
+          "birthday-song-button",
+          "♪ Play birthday song",
+        );
+        playSong.type = "button";
+        playSong.onclick = async () => {
+          playSong.disabled = true;
+          try {
+            const duration = await playBirthdaySong();
+            pin.className = "birthday-pin " + nextBirthdayColor(colors);
+            throwBirthdayConfetti();
+            audioStatus.textContent = "Playing a birthday melody";
+            window.setTimeout(() => {
+              audioStatus.textContent = "";
+              playSong.disabled = false;
+            }, duration);
+          } catch (songError) {
+            audioStatus.textContent =
+              songError.message || "Audio is unavailable in this browser.";
+            playSong.disabled = false;
+          }
+        };
+        pin.append(playSong, audioStatus);
+        const people = new Map();
+        data.forEach((row) => {
+          if (!people.has(row.recipient_id)) {
+            people.set(row.recipient_id, {
+              name: row.recipient_name,
+              message: row.birthday_message || "",
+              wishes: [],
+            });
+          }
+          if (row.wish_id) people.get(row.recipient_id).wishes.push(row);
+        });
+        people.forEach((person, recipientId) => {
+          const isBirthdayUser = recipientId === ctx.user.id;
+          const card = el("section", "birthday-person");
+          card.append(
+            el("h3", "", "Happy birthday, " + person.name + "!"),
+            el("p", "birthday-subtitle", "We hope you have a wonderful day!"),
           );
-        } else if (!isBirthdayUser) {
-          publicMessage.appendChild(el("p", "birthday-no-message", "No public birthday message yet."));
-        }
-        if (person.message || !isBirthdayUser) card.appendChild(publicMessage);
-        if (isBirthdayUser) {
-          const messageForm = el("form", "birthday-message-form");
-          const messageInput = el("textarea", "birthday-message-input");
-          messageInput.maxLength = 500;
-          messageInput.rows = 2;
-          messageInput.placeholder = "Share a birthday wish or thank-you with everyone...";
-          messageInput.setAttribute("aria-label", "Your public birthday message");
-          messageInput.value = person.message;
-          const messageSubmit = el("button", "birthday-message-submit", person.message ? "Update public message" : "Share with everyone");
-          messageSubmit.type = "submit";
-          messageForm.append(messageInput, messageSubmit);
-          messageForm.onsubmit = async event => {
-            event.preventDefault();
-            const content = messageInput.value.trim();
-            if (!content) { err("Write a message before sharing it."); return; }
-            messageSubmit.disabled = true;
-            const { error: messageError } = await sb.rpc("post_my_birthday_message", { p_content: content });
-            messageSubmit.disabled = false;
-            if (messageError) { err(messageError.message); return; }
-            ok("Your birthday message is now visible to everyone.");
-            await loadBirthdayGreeting();
-          };
-          card.appendChild(messageForm);
-        }
-        if (isBirthdayUser) {
-          const wishList = el("div", "birthday-wish-list");
-          if (person.wishes.length) {
-            person.wishes.forEach(wish => {
-              const note = el("article", "birthday-wish");
-              note.append(
-                el("strong", "", wish.author_name || "Classmate"),
-                el("p", "", wish.content),
-                el("small", "", fmtDate(wish.created_at))
+          const publicMessage = el("div", "birthday-public-message");
+          if (person.message) {
+            publicMessage.append(
+              el("strong", "", person.name + " says:"),
+              el("p", "", person.message),
+            );
+          } else if (!isBirthdayUser) {
+            publicMessage.appendChild(
+              el("p", "birthday-no-message", "No public birthday message yet."),
+            );
+          }
+          if (person.message || !isBirthdayUser)
+            card.appendChild(publicMessage);
+          if (isBirthdayUser) {
+            const messageForm = el("form", "birthday-message-form");
+            const messageInput = el("textarea", "birthday-message-input");
+            messageInput.maxLength = 500;
+            messageInput.rows = 2;
+            messageInput.placeholder =
+              "Share a birthday wish or thank-you with everyone...";
+            messageInput.setAttribute(
+              "aria-label",
+              "Your public birthday message",
+            );
+            messageInput.value = person.message;
+            const messageSubmit = el(
+              "button",
+              "birthday-message-submit",
+              person.message ? "Update public message" : "Share with everyone",
+            );
+            messageSubmit.type = "submit";
+            messageForm.append(messageInput, messageSubmit);
+            messageForm.onsubmit = async (event) => {
+              event.preventDefault();
+              const content = messageInput.value.trim();
+              if (!content) {
+                err("Write a message before sharing it.");
+                return;
+              }
+              messageSubmit.disabled = true;
+              const { error: messageError } = await sb.rpc(
+                "post_my_birthday_message",
+                { p_content: content },
               );
-              wishList.appendChild(note);
-            });
-          } else wishList.appendChild(el("p", "birthday-no-wishes", "Your birthday wishes will appear here."));
-          card.appendChild(wishList);
-        } else {
-          card.appendChild(el("p", "birthday-private-wishes", "Birthday wishes are private to the student celebrating today."));
+              messageSubmit.disabled = false;
+              if (messageError) {
+                err(messageError.message);
+                return;
+              }
+              ok("Your birthday message is now visible to everyone.");
+              await loadBirthdayGreeting();
+            };
+            card.appendChild(messageForm);
+          }
+          if (isBirthdayUser) {
+            const wishList = el("div", "birthday-wish-list");
+            if (person.wishes.length) {
+              person.wishes.forEach((wish) => {
+                const note = el("article", "birthday-wish");
+                note.append(
+                  staffAuthorName(wish.author_name || "Classmate", wishTitles[wish.author_id]),
+                  el("p", "", wish.content),
+                  el("small", "", fmtDate(wish.created_at)),
+                );
+                wishList.appendChild(note);
+              });
+            } else
+              wishList.appendChild(
+                el(
+                  "p",
+                  "birthday-no-wishes",
+                  "Your birthday wishes will appear here.",
+                ),
+              );
+            card.appendChild(wishList);
+          } else {
+            card.appendChild(
+              el(
+                "p",
+                "birthday-private-wishes",
+                "Birthday wishes are private to the student celebrating today.",
+              ),
+            );
+          }
+          if (!isBirthdayUser) {
+            const form = el("form", "birthday-wish-form");
+            const input = el("textarea", "birthday-wish-input");
+            input.maxLength = 500;
+            input.rows = 2;
+            input.placeholder = "Write a birthday wish...";
+            input.setAttribute(
+              "aria-label",
+              "Birthday wish for " + person.name,
+            );
+            const submit = el("button", "birthday-wish-submit", "Send wish");
+            submit.type = "submit";
+            form.append(input, submit);
+            form.onsubmit = async (event) => {
+              event.preventDefault();
+              const content = input.value.trim();
+              if (!content) return;
+              submit.disabled = true;
+              const { error: wishError } = await sb.rpc("post_birthday_wish", {
+                p_recipient_id: recipientId,
+                p_content: content,
+              });
+              submit.disabled = false;
+              if (wishError) {
+                err(wishError.message);
+                return;
+              }
+              ok("Your birthday wish was sent.");
+              await loadBirthdayGreeting();
+            };
+            card.appendChild(form);
+          }
+          pin.appendChild(card);
+        });
+        pin.hidden = false;
+      }
+
+      function nextBirthdayColor(colors) {
+        if (birthdayColorIndex < 0) currentBirthdayColor(colors);
+        birthdayColorIndex = (birthdayColorIndex + 1) % colors.length;
+        try {
+          localStorage.setItem(
+            "portalis_birthday_color",
+            String(birthdayColorIndex),
+          );
+        } catch (_) {}
+        return colors[birthdayColorIndex];
+      }
+
+      function currentBirthdayColor(colors) {
+        if (birthdayColorIndex >= 0) return colors[birthdayColorIndex];
+        try {
+          const savedIndex = Number(
+            localStorage.getItem("portalis_birthday_color"),
+          );
+          if (
+            Number.isInteger(savedIndex) &&
+            savedIndex >= 0 &&
+            savedIndex < colors.length
+          ) {
+            birthdayColorIndex = savedIndex;
+          }
+        } catch (_) {}
+        if (birthdayColorIndex < 0) birthdayColorIndex = 0;
+        return colors[birthdayColorIndex];
+      }
+
+      async function playBirthdaySong() {
+        const AudioContextClass =
+          window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass)
+          throw new Error("Audio is unavailable in this browser.");
+        const audio = new AudioContextClass();
+        await audio.resume();
+        const melody = [
+          [392, 0.28],
+          [392, 0.16],
+          [440, 0.44],
+          [392, 0.44],
+          [523.25, 0.44],
+          [493.88, 0.8],
+          [392, 0.28],
+          [392, 0.16],
+          [440, 0.44],
+          [392, 0.44],
+          [587.33, 0.44],
+          [523.25, 0.8],
+          [392, 0.28],
+          [392, 0.16],
+          [783.99, 0.44],
+          [659.25, 0.44],
+          [523.25, 0.44],
+          [493.88, 0.44],
+          [440, 0.8],
+          [698.46, 0.28],
+          [698.46, 0.16],
+          [659.25, 0.44],
+          [523.25, 0.44],
+          [587.33, 0.44],
+          [523.25, 0.9],
+        ];
+        let startAt = audio.currentTime + 0.05;
+        melody.forEach(([frequency, duration]) => {
+          const oscillator = audio.createOscillator();
+          const volume = audio.createGain();
+          oscillator.type = "sine";
+          oscillator.frequency.value = frequency;
+          volume.gain.setValueAtTime(0.0001, startAt);
+          volume.gain.exponentialRampToValueAtTime(0.12, startAt + 0.025);
+          volume.gain.setValueAtTime(0.12, startAt + duration * 0.72);
+          volume.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+          oscillator.connect(volume).connect(audio.destination);
+          oscillator.start(startAt);
+          oscillator.stop(startAt + duration);
+          startAt += duration + 0.035;
+        });
+        const duration = Math.ceil((startAt - audio.currentTime) * 1000);
+        window.setTimeout(() => audio.close(), duration);
+        return duration;
+      }
+
+      function throwBirthdayConfetti() {
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+          return;
+        const layer = el("div", "birthday-confetti");
+        layer.setAttribute("aria-hidden", "true");
+        const colors = ["#f6b8dc", "#fff3a0", "#cde8ff", "#cdeec7", "#ff8f8f"];
+        for (let i = 0; i < 48; i++) {
+          const piece = el("i", "confetti-piece");
+          piece.style.left = Math.random() * 100 + "%";
+          piece.style.backgroundColor = colors[i % colors.length];
+          piece.style.setProperty(
+            "--confetti-drift",
+            Math.random() * 220 - 110 + "px",
+          );
+          piece.style.setProperty(
+            "--confetti-delay",
+            Math.random() * 0.8 + "s",
+          );
+          piece.style.setProperty(
+            "--confetti-spin",
+            Math.random() * 900 - 450 + "deg",
+          );
+          layer.appendChild(piece);
         }
-        if (!isBirthdayUser) {
-          const form = el("form", "birthday-wish-form");
-          const input = el("textarea", "birthday-wish-input");
-          input.maxLength = 500;
-          input.rows = 2;
-          input.placeholder = "Write a birthday wish...";
-          input.setAttribute("aria-label", "Birthday wish for " + person.name);
-          const submit = el("button", "birthday-wish-submit", "Send wish");
-          submit.type = "submit";
-          form.append(input, submit);
-          form.onsubmit = async event => {
-            event.preventDefault();
-            const content = input.value.trim();
-            if (!content) return;
-            submit.disabled = true;
-            const { error: wishError } = await sb.rpc("post_birthday_wish", {
-              p_recipient_id: recipientId,
-              p_content: content
-            });
-            submit.disabled = false;
-            if (wishError) { err(wishError.message); return; }
-            ok("Your birthday wish was sent.");
-            await loadBirthdayGreeting();
-          };
-          card.appendChild(form);
+        document.body.appendChild(layer);
+        window.setTimeout(() => layer.remove(), 3200);
+      }
+
+      async function loadFundReminder() {
+        const pin = document.getElementById("fundReminder");
+        if (view !== "board" || ctx.role !== "user") {
+          pin.hidden = true;
+          return;
         }
-        pin.appendChild(card);
-      });
-      pin.hidden = false;
-    }
-
-    function nextBirthdayColor(colors) {
-      if (birthdayColorIndex < 0) currentBirthdayColor(colors);
-      birthdayColorIndex = (birthdayColorIndex + 1) % colors.length;
-      try { localStorage.setItem("portalis_birthday_color", String(birthdayColorIndex)); } catch (_) {}
-      return colors[birthdayColorIndex];
-    }
-
-    function currentBirthdayColor(colors) {
-      if (birthdayColorIndex >= 0) return colors[birthdayColorIndex];
-      try {
-        const savedIndex = Number(localStorage.getItem("portalis_birthday_color"));
-        if (Number.isInteger(savedIndex) && savedIndex >= 0 && savedIndex < colors.length) {
-          birthdayColorIndex = savedIndex;
+        const { data: funds, error: fundsError } = await sb
+          .from("funds")
+          .select("id,title")
+          .ilike("title", "Class Fund")
+          .limit(1);
+        if (view !== "board") {
+          pin.hidden = true;
+          return;
         }
-      } catch (_) {}
-      if (birthdayColorIndex < 0) birthdayColorIndex = 0;
-      return colors[birthdayColorIndex];
-    }
+        if (fundsError) {
+          err(fundsError.message);
+          pin.hidden = true;
+          return;
+        }
+        const classFund = funds && funds[0];
+        if (!classFund) {
+          pin.hidden = true;
+          return;
+        }
 
-    async function playBirthdaySong() {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) throw new Error("Audio is unavailable in this browser.");
-      const audio = new AudioContextClass();
-      await audio.resume();
-      const melody = [
-        [392, .28], [392, .16], [440, .44], [392, .44], [523.25, .44], [493.88, .8],
-        [392, .28], [392, .16], [440, .44], [392, .44], [587.33, .44], [523.25, .8],
-        [392, .28], [392, .16], [783.99, .44], [659.25, .44], [523.25, .44], [493.88, .44], [440, .8],
-        [698.46, .28], [698.46, .16], [659.25, .44], [523.25, .44], [587.33, .44], [523.25, .9]
-      ];
-      let startAt = audio.currentTime + .05;
-      melody.forEach(([frequency, duration]) => {
-        const oscillator = audio.createOscillator();
-        const volume = audio.createGain();
-        oscillator.type = "sine";
-        oscillator.frequency.value = frequency;
-        volume.gain.setValueAtTime(.0001, startAt);
-        volume.gain.exponentialRampToValueAtTime(.12, startAt + .025);
-        volume.gain.setValueAtTime(.12, startAt + duration * .72);
-        volume.gain.exponentialRampToValueAtTime(.0001, startAt + duration);
-        oscillator.connect(volume).connect(audio.destination);
-        oscillator.start(startAt);
-        oscillator.stop(startAt + duration);
-        startAt += duration + .035;
-      });
-      const duration = Math.ceil((startAt - audio.currentTime) * 1000);
-      window.setTimeout(() => audio.close(), duration);
-      return duration;
-    }
+        const { data, error } = await sb.rpc("get_my_fund_balance", {
+          p_fund_id: classFund.id,
+        });
+        if (view !== "board") {
+          pin.hidden = true;
+          return;
+        }
+        if (error) {
+          err(error.message);
+          pin.hidden = true;
+          return;
+        }
+        const balance = Array.isArray(data) ? data[0] : data;
+        const outstanding = Number(balance && balance.outstanding);
+        if (!balance || !Number.isFinite(outstanding) || outstanding <= 0) {
+          pin.hidden = true;
+          return;
+        }
 
-    function throwBirthdayConfetti() {
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      const layer = el("div", "birthday-confetti");
-      layer.setAttribute("aria-hidden", "true");
-      const colors = ["#f6b8dc", "#fff3a0", "#cde8ff", "#cdeec7", "#ff8f8f"];
-      for (let i = 0; i < 48; i++) {
-        const piece = el("i", "confetti-piece");
-        piece.style.left = Math.random() * 100 + "%";
-        piece.style.backgroundColor = colors[i % colors.length];
-        piece.style.setProperty("--confetti-drift", (Math.random() * 220 - 110) + "px");
-        piece.style.setProperty("--confetti-delay", (Math.random() * .8) + "s");
-        piece.style.setProperty("--confetti-spin", (Math.random() * 900 - 450) + "deg");
-        layer.appendChild(piece);
-      }
-      document.body.appendChild(layer);
-      window.setTimeout(() => layer.remove(), 3200);
-    }
-
-    async function loadFundReminder() {
-      const pin = document.getElementById("fundReminder");
-      if (view !== "board" || ctx.role !== "user") { pin.hidden = true; return; }
-      const { data: funds, error: fundsError } = await sb.from("funds")
-        .select("id,title")
-        .ilike("title", "Class Fund")
-        .limit(1);
-      if (view !== "board") { pin.hidden = true; return; }
-      if (fundsError) { err(fundsError.message); pin.hidden = true; return; }
-      const classFund = funds && funds[0];
-      if (!classFund) { pin.hidden = true; return; }
-
-      const { data, error } = await sb.rpc("get_my_fund_balance", { p_fund_id: classFund.id });
-      if (view !== "board") { pin.hidden = true; return; }
-      if (error) { err(error.message); pin.hidden = true; return; }
-      const balance = Array.isArray(data) ? data[0] : data;
-      const outstanding = Number(balance && balance.outstanding);
-      if (!balance || !Number.isFinite(outstanding) || outstanding <= 0) {
-        pin.hidden = true;
-        return;
+        pin.replaceChildren();
+        const pushpin = el("span", "fund-reminder-pushpin");
+        pushpin.setAttribute("aria-hidden", "true");
+        pin.append(
+          pushpin,
+          el("span", "fund-reminder-label", "Pinned reminder"),
+          el("h3", "", "Class Fund outstanding"),
+          el(
+            "p",
+            "",
+            "You still have ₱" +
+              outstanding.toFixed(2) +
+              " in unpaid contributions.",
+          ),
+        );
+        const link = el("a", "fund-reminder-link", "View your fund balance");
+        link.href = "funds.html";
+        pin.appendChild(link);
+        pin.hidden = false;
       }
 
-      pin.replaceChildren();
-      const pushpin = el("span", "fund-reminder-pushpin");
-      pushpin.setAttribute("aria-hidden", "true");
-      pin.append(
-        pushpin,
-        el("span", "fund-reminder-label", "Pinned reminder"),
-        el("h3", "", "Class Fund outstanding"),
-        el("p", "", "You still have ₱" + outstanding.toFixed(2) + " in unpaid contributions.")
-      );
-      const link = el("a", "fund-reminder-link", "View your fund balance");
-      link.href = "funds.html";
-      pin.appendChild(link);
-      pin.hidden = false;
-    }
-
-    function setView(v) {
-      view = v; filter = "all"; clearMsg();
-      document.getElementById("tabBoard").classList.toggle("on", v === "board");
-      document.getElementById("tabMine").classList.toggle("on", v === "mine");
-      document.getElementById("composer").style.display = v === "mine" ? "block" : "none";
-      if (v !== "board") {
-        document.getElementById("birthdayGreeting").hidden = true;
-        document.getElementById("fundReminder").hidden = true;
+      function setView(v) {
+        view = v;
+        filter = "all";
+        clearMsg();
+        document
+          .getElementById("tabBoard")
+          .classList.toggle("on", v === "board");
+        document.getElementById("tabMine").classList.toggle("on", v === "mine");
+        document.getElementById("composer").style.display =
+          v === "mine" ? "block" : "none";
+        if (v !== "board") {
+          document.getElementById("birthdayGreeting").hidden = true;
+          document.getElementById("fundReminder").hidden = true;
+        }
+        loadNotes();
       }
-      loadNotes();
-    }
-    document.getElementById("tabBoard").onclick = () => setView("board");
-    document.getElementById("tabMine").onclick = () => setView("mine");
+      document.getElementById("tabBoard").onclick = () => setView("board");
+      document.getElementById("tabMine").onclick = () => setView("mine");
 
-    async function loadNotes() {
-      let q = sb.from("notes").select("*").order("created_at", { ascending: false });
-      q = view === "mine" ? q.eq("user_id", ctx.user.id) : q.eq("status", "approved");
-      const { data, error } = await q;
-      if (error) { err(error.message); return; }
-      notes = data;
-      if (view === "board") await Promise.all([loadFundReminder(), loadBirthdayGreeting()]);
-      counts = {};
-      const ids = notes.filter(n => n.status === "approved").map(n => n.id);
-      if (ids.length) {
-        const { data: cs } = await sb.from("comments").select("note_id").in("note_id", ids);
-        (cs || []).forEach(c => { counts[c.note_id] = (counts[c.note_id] || 0) + 1; });
-      }
-      render();
-    }
-
-    function renderFilters() {
-      const box = document.getElementById("filters");
-      box.innerHTML = "";
-      const all = el("button", "fbtn" + (filter === "all" ? " active" : ""), "All (" + notes.length + ")");
-      all.onclick = () => { filter = "all"; render(); };
-      box.appendChild(all);
-      ORDER.forEach(p => {
-        const count = notes.filter(n => n.priority === p).length;
-        const b = el("button", "fbtn p-" + p + (filter === p ? " active" : ""), LABEL[p] + " (" + count + ")");
-        b.onclick = () => { filter = p; render(); };
-        box.appendChild(b);
-      });
-    }
-
-    function render() {
-      renderFilters();
-      const board = document.getElementById("board");
-      board.innerHTML = "";
-      const shown = notes
-        .filter(n => filter === "all" || n.priority === filter)
-        .sort((a, b) => ORDER.indexOf(a.priority) - ORDER.indexOf(b.priority));
-      const empty = document.getElementById("empty");
-      empty.style.display = shown.length ? "none" : "block";
-      empty.textContent = view === "mine" ? "You have no notes here yet. Write one above." : "No approved notes yet.";
-      shown.forEach(n => {
-        const mine = n.user_id === ctx.user.id;
-        board.appendChild(noteCard(n, {
-          canEdit: mine,
-          canPrioritize: ctx.isAdmin,
-          showStatus: true,
-          onPriority: setPriority,
-          onSubs: saveSubs,
-          actions: ctx.isAdmin ? [deleteBtn(n)] : [],
-          footer: n.status === "approved" ? commentsFooter(n) : null
-        }));
-      });
-    }
-
-    function deleteBtn(n) {
-      const b = el("button", "", "Delete");
-      b.onclick = async () => {
-        if (!confirm("Delete this note for everyone?")) return;
-        const { error } = await sb.from("notes").delete().eq("id", n.id);
-        if (error) err(error.message);
-        else { notes = notes.filter(x => x.id !== n.id); render(); }
-      };
-      return b;
-    }
-
-    async function saveSubs(n, arr) {
-      const { error } = await sb.from("notes").update({ subnotes: arr }).eq("id", n.id);
-      if (error) { err(error.message); return; }
-      n.subnotes = arr; render();
-    }
-    async function setPriority(n, p) {
-      if (n.priority === p) return;
-      const { error } = await sb.from("notes").update({ priority: p }).eq("id", n.id);
-      if (error) { err(error.message); return; }
-      n.priority = p; render();
-    }
-
-    /* ---------- public comments ---------- */
-    function commentsFooter(n) {
-      return function (card) {
-        const wrap = el("div", "comments");
-        const toggle = el("button", "ghost small", "Comments (" + (counts[n.id] || 0) + ")");
-        const body = el("div", "cbody");
-        body.style.display = "none";
-        const list = el("div", "clist");
-        const row = el("div", "addsub");
-        const inp = el("input", "mini");
-        inp.placeholder = "Ask what it's for...";
-        inp.maxLength = 500;
-        const post = el("button", "plus", "Post");
-        post.style.fontSize = "18px";
-
-        async function load() {
-          const { data, error } = await sb.from("comments").select("*").eq("note_id", n.id).order("created_at");
-          list.innerHTML = "";
-          if (error) { list.textContent = error.message; return; }
-          counts[n.id] = data.length;
-          toggle.textContent = "Comments (" + data.length + ")";
-          if (!data.length) list.appendChild(el("p", "hint", "No comments yet. Ask a question!"));
-          data.forEach(c => {
-            const d = el("div", "comment");
-            const h = el("div", "chead");
-            h.appendChild(el("b", "", c.author_name || "user"));
-            h.appendChild(el("small", "", fmtDate(c.created_at)));
-            if (ctx.isAdmin) {
-              const x = el("button", "x", "\u00d7");
-              x.title = "Delete comment";
-              x.onclick = async () => {
-                if (!confirm("Delete this comment?")) return;
-                const { error } = await sb.from("comments").delete().eq("id", c.id);
-                if (error) alert(error.message); else load();
-              };
-              h.appendChild(x);
-            }
-            d.appendChild(h);
-            d.appendChild(el("div", "ctext", c.content));
-            list.appendChild(d);
+      async function loadNotes() {
+        let q = sb
+          .from("notes")
+          .select("*")
+          .order("created_at", { ascending: false });
+        q =
+          view === "mine"
+            ? q.eq("user_id", ctx.user.id)
+            : q.eq("status", "approved");
+        const { data, error } = await q;
+        if (error) {
+          err(error.message);
+          return;
+        }
+        try {
+          const titles = await loadStaffAuthorTitles(data.map((note) => note.user_id));
+          notes = data.map((note) => ({ ...note, staff_title: titles[note.user_id] }));
+        } catch (titleError) {
+          err(titleError.message);
+          return;
+        }
+        if (view === "board")
+          await Promise.all([loadFundReminder(), loadBirthdayGreeting()]);
+        counts = {};
+        const ids = notes
+          .filter((n) => n.status === "approved")
+          .map((n) => n.id);
+        if (ids.length) {
+          const { data: cs } = await sb
+            .from("comments")
+            .select("note_id")
+            .in("note_id", ids);
+          (cs || []).forEach((c) => {
+            counts[c.note_id] = (counts[c.note_id] || 0) + 1;
           });
         }
-        async function add() {
-          const t = inp.value.trim();
-          if (!t) return;
-          const { error } = await sb.from("comments").insert({ note_id: n.id, content: t });
-          if (error) { alert(error.message); return; }
-          inp.value = "";
-          load();
-        }
-        toggle.onclick = () => {
-          const open = body.style.display === "none";
-          body.style.display = open ? "block" : "none";
-          if (open) load();
+        render();
+      }
+
+      function renderFilters() {
+        const box = document.getElementById("filters");
+        box.innerHTML = "";
+        const all = el(
+          "button",
+          "fbtn" + (filter === "all" ? " active" : ""),
+          "All (" + notes.length + ")",
+        );
+        all.onclick = () => {
+          filter = "all";
+          render();
         };
-        post.onclick = add;
-        inp.addEventListener("keydown", e => { if (e.key === "Enter") add(); });
-        row.append(inp, post);
-        body.append(list, row);
-        wrap.append(toggle, body);
-        card.appendChild(wrap);
+        box.appendChild(all);
+        ORDER.forEach((p) => {
+          const count = notes.filter((n) => n.priority === p).length;
+          const b = el(
+            "button",
+            "fbtn p-" + p + (filter === p ? " active" : ""),
+            LABEL[p] + " (" + count + ")",
+          );
+          b.onclick = () => {
+            filter = p;
+            render();
+          };
+          box.appendChild(b);
+        });
+      }
+
+      function render() {
+        renderFilters();
+        const board = document.getElementById("board");
+        board.innerHTML = "";
+        const shown = notes
+          .filter((n) => filter === "all" || n.priority === filter)
+          .sort(
+            (a, b) => ORDER.indexOf(a.priority) - ORDER.indexOf(b.priority),
+          );
+        const empty = document.getElementById("empty");
+        empty.style.display = shown.length ? "none" : "block";
+        empty.textContent =
+          view === "mine"
+            ? "You have no notes here yet. Write one above."
+            : "No approved notes yet.";
+        shown.forEach((n) => {
+          const mine = n.user_id === ctx.user.id;
+          board.appendChild(
+            noteCard(n, {
+              canEdit: mine,
+              canPrioritize: ctx.isAdmin,
+              showStatus: true,
+              onPriority: setPriority,
+              onSubs: saveSubs,
+              actions: ctx.isAdmin ? [deleteBtn(n)] : [],
+              footer: n.status === "approved" ? commentsFooter(n) : null,
+            }),
+          );
+        });
+      }
+
+      function deleteBtn(n) {
+        const b = el("button", "", "Delete");
+        b.onclick = async () => {
+          if (!confirm("Delete this note for everyone?")) return;
+          const { error } = await sb.from("notes").delete().eq("id", n.id);
+          if (error) err(error.message);
+          else {
+            notes = notes.filter((x) => x.id !== n.id);
+            render();
+          }
+        };
+        return b;
+      }
+
+      async function saveSubs(n, arr) {
+        const { error } = await sb
+          .from("notes")
+          .update({ subnotes: arr })
+          .eq("id", n.id);
+        if (error) {
+          err(error.message);
+          return;
+        }
+        n.subnotes = arr;
+        render();
+      }
+      async function setPriority(n, p) {
+        if (n.priority === p) return;
+        const { error } = await sb
+          .from("notes")
+          .update({ priority: p })
+          .eq("id", n.id);
+        if (error) {
+          err(error.message);
+          return;
+        }
+        n.priority = p;
+        render();
+      }
+
+      /* ---------- public comments ---------- */
+      function commentsFooter(n) {
+        return function (card) {
+          const wrap = el("div", "comments");
+          const toggle = el(
+            "button",
+            "ghost small",
+            "Comments (" + (counts[n.id] || 0) + ")",
+          );
+          const body = el("div", "cbody");
+          body.style.display = "none";
+          const list = el("div", "clist");
+          const row = el("div", "addsub");
+          const inp = el("input", "mini");
+          inp.placeholder = "Ask what it's for...";
+          inp.maxLength = 500;
+          const post = el("button", "plus", "Post");
+          post.style.fontSize = "18px";
+
+          async function load() {
+            const { data, error } = await sb
+              .from("comments")
+              .select("*")
+              .eq("note_id", n.id)
+              .order("created_at");
+            list.innerHTML = "";
+            if (error) {
+              list.textContent = error.message;
+              return;
+            }
+            let titles;
+            try {
+              titles = await loadStaffAuthorTitles(data.map((comment) => comment.user_id));
+            } catch (titleError) {
+              list.textContent = titleError.message;
+              return;
+            }
+            counts[n.id] = data.length;
+            toggle.textContent = "Comments (" + data.length + ")";
+            if (!data.length)
+              list.appendChild(
+                el("p", "hint", "No comments yet. Ask a question!"),
+              );
+            data.forEach((c) => {
+              const d = el("div", "comment");
+              const h = el("div", "chead");
+              h.appendChild(staffAuthorName(c.author_name || "user", titles[c.user_id]));
+              h.appendChild(el("small", "", fmtDate(c.created_at)));
+              if (ctx.isAdmin) {
+                const x = el("button", "x", "\u00d7");
+                x.title = "Delete comment";
+                x.onclick = async () => {
+                  if (!confirm("Delete this comment?")) return;
+                  const { error } = await sb
+                    .from("comments")
+                    .delete()
+                    .eq("id", c.id);
+                  if (error) alert(error.message);
+                  else load();
+                };
+                h.appendChild(x);
+              }
+              d.appendChild(h);
+              d.appendChild(el("div", "ctext", c.content));
+              list.appendChild(d);
+            });
+          }
+          async function add() {
+            const t = inp.value.trim();
+            if (!t) return;
+            const { error } = await sb
+              .from("comments")
+              .insert({ note_id: n.id, content: t });
+            if (error) {
+              alert(error.message);
+              return;
+            }
+            inp.value = "";
+            load();
+          }
+          toggle.onclick = () => {
+            const open = body.style.display === "none";
+            body.style.display = open ? "block" : "none";
+            if (open) load();
+          };
+          post.onclick = add;
+          inp.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") add();
+          });
+          row.append(inp, post);
+          body.append(list, row);
+          wrap.append(toggle, body);
+          card.appendChild(wrap);
+        };
+      }
+
+      /* ---------- new note form ---------- */
+      const HINTS = {
+        text: "Write it however you like.",
+        bullets: "One item per line. Each line becomes a bullet.",
+        numbered: "One item per line. Lines are numbered automatically.",
       };
-    }
-
-    /* ---------- new note form ---------- */
-    const HINTS = {
-      text: "Write it however you like.",
-      bullets: "One item per line. Each line becomes a bullet.",
-      numbered: "One item per line. Lines are numbered automatically."
-    };
-    function updateHint() {
-      document.getElementById("fmtHint").textContent = HINTS[document.querySelector('input[name="fmt"]:checked').value];
-    }
-    document.querySelectorAll('input[name="fmt"]').forEach(r => r.addEventListener("change", updateHint));
-    updateHint();
-
-    function renderPending() {
-      const ul = document.getElementById("pending");
-      ul.innerHTML = "";
-      pending.forEach((t, i) => {
-        const li = el("li");
-        li.appendChild(el("span", "", t));
-        const x = el("button", "x", "\u00d7");
-        x.onclick = () => { pending.splice(i, 1); renderPending(); };
-        li.appendChild(x);
-        ul.appendChild(li);
-      });
-    }
-    function addPending() {
-      const inp = document.getElementById("subInput");
-      const t = inp.value.trim();
-      if (!t) return;
-      pending.push(t);
-      inp.value = "";
-      renderPending();
-      inp.focus();
-    }
-    document.getElementById("subAdd").onclick = addPending;
-    document.getElementById("subInput").addEventListener("keydown", e => {
-      if (e.key === "Enter") { e.preventDefault(); addPending(); }
-    });
-
-    document.getElementById("add").onclick = async () => {
-      clearMsg();
-      const title = document.getElementById("title").value.trim();
-      const content = document.getElementById("content").value.trim();
-      const priority = document.querySelector('input[name="prio"]:checked').value;
-      const format = document.querySelector('input[name="fmt"]:checked').value;
-      const leftover = document.getElementById("subInput").value.trim();
-      if (leftover) pending.push(leftover);
-      if (!title && !content && !pending.length) { err("Write a title, details, or a subnote first."); return; }
-
-      const { error } = await sb.from("notes").insert({
-        title, content, priority, format,
-        subnotes: pending.map(t => ({ text: t, done: false }))
-      });
-      if (error) { err(error.message); return; }
-
-      document.getElementById("title").value = "";
-      document.getElementById("content").value = "";
-      document.getElementById("subInput").value = "";
-      document.querySelector('input[name="prio"][value="medium"]').checked = true;
-      document.querySelector('input[name="fmt"][value="text"]').checked = true;
+      function updateHint() {
+        document.getElementById("fmtHint").textContent =
+          HINTS[document.querySelector('input[name="fmt"]:checked').value];
+      }
+      document
+        .querySelectorAll('input[name="fmt"]')
+        .forEach((r) => r.addEventListener("change", updateHint));
       updateHint();
-      pending = [];
-      renderPending();
-      await loadNotes();
-      ok(ctx.isAdmin ? "Posted." : "Sent! An admin or officer will review it before it appears on the public board.");
-    };
 
-    init();
-  </script>
-</body>
+      function renderPending() {
+        const ul = document.getElementById("pending");
+        ul.innerHTML = "";
+        pending.forEach((t, i) => {
+          const li = el("li");
+          li.appendChild(el("span", "", t));
+          const x = el("button", "x", "\u00d7");
+          x.onclick = () => {
+            pending.splice(i, 1);
+            renderPending();
+          };
+          li.appendChild(x);
+          ul.appendChild(li);
+        });
+      }
+      function addPending() {
+        const inp = document.getElementById("subInput");
+        const t = inp.value.trim();
+        if (!t) return;
+        pending.push(t);
+        inp.value = "";
+        renderPending();
+        inp.focus();
+      }
+      document.getElementById("subAdd").onclick = addPending;
+      document.getElementById("subInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addPending();
+        }
+      });
+
+      document.getElementById("add").onclick = async () => {
+        clearMsg();
+        const title = document.getElementById("title").value.trim();
+        const content = document.getElementById("content").value.trim();
+        const priority = document.querySelector(
+          'input[name="prio"]:checked',
+        ).value;
+        const format = document.querySelector(
+          'input[name="fmt"]:checked',
+        ).value;
+        const leftover = document.getElementById("subInput").value.trim();
+        if (leftover) pending.push(leftover);
+        if (!title && !content && !pending.length) {
+          err("Write a title, details, or a subnote first.");
+          return;
+        }
+
+        const { error } = await sb.from("notes").insert({
+          title,
+          content,
+          priority,
+          format,
+          subnotes: pending.map((t) => ({ text: t, done: false })),
+        });
+        if (error) {
+          err(error.message);
+          return;
+        }
+
+        document.getElementById("title").value = "";
+        document.getElementById("content").value = "";
+        document.getElementById("subInput").value = "";
+        document.querySelector('input[name="prio"][value="medium"]').checked =
+          true;
+        document.querySelector('input[name="fmt"][value="text"]').checked =
+          true;
+        updateHint();
+        pending = [];
+        renderPending();
+        await loadNotes();
+        ok(
+          ctx.isAdmin
+            ? "Posted."
+            : "Sent! An admin or officer will review it before it appears on the public board.",
+        );
+      };
+
+      init();
+    </script>
+  </body>
 </html>

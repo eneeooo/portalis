@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalis - Officer</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="bar"></div>
+    <p id="msg" class="msg"></p>
+
+    <section aria-labelledby="queueTitle">
+      <h2 id="queueTitle">Review queue <span id="qcount" class="badge"></span></h2>
+      <p class="hint">Notes stay private to their author until you approve them.</p>
+      <div id="queue" class="board" style="margin-top:34px"></div>
+      <p id="qempty" class="empty" style="display:none">Nothing waiting for review.</p>
+    </section>
+
+    <section class="section" aria-labelledby="allNotesTitle">
+      <h2 id="allNotesTitle">All notes</h2>
+      <div id="filters" class="filters" style="margin-top:12px"></div>
+      <div id="board" class="board"></div>
+    </section>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+    let ctx, notes = [], filter = "all";
+    const msg = document.getElementById("msg");
+    function err(text) { msg.className = "msg err"; msg.textContent = text; }
+    function ok(text) { msg.className = "msg ok"; msg.textContent = text; }
+
+    async function init() {
+      ctx = await requireAuth();
+      if (!ctx) return;
+      if (ctx.role !== "officer") { location.href = "dashboard.html"; return; }
+      renderBar(ctx, "officer");
+      await loadNotes();
+    }
+
+    async function loadNotes() {
+      const { data, error } = await sb.from("notes").select("*").order("created_at", { ascending: false });
+      if (error) { err(error.message); return; }
+      try {
+        const titles = await loadStaffAuthorTitles(data.map(note => note.user_id));
+        notes = data.map(note => ({ ...note, staff_title: titles[note.user_id] }));
+      } catch (titleError) {
+        err(titleError.message);
+        return;
+      }
+      render();
+    }
+
+    async function setStatus(note, status, reason) {
+      const { error } = await sb.from("notes").update({ status, reject_reason: reason || null }).eq("id", note.id);
+      if (error) { err(error.message); return; }
+      note.status = status;
+      note.reject_reason = reason || null;
+      ok(status === "approved" ? "Approved. It is now on the public board." : "Rejected.");
+      render();
+    }
+
+    async function setPriority(note, priority) {
+      const { error } = await sb.from("notes").update({ priority }).eq("id", note.id);
+      if (error) { err(error.message); return; }
+      note.priority = priority;
+      render();
+    }
+
+    function reviewActions(note) {
+      const actions = [];
+      if (note.status !== "approved") {
+        const approve = el("button", "", "Approve");
+        approve.onclick = () => setStatus(note, "approved");
+        actions.push(approve);
+      }
+      if (note.status !== "rejected") {
+        const reject = el("button", "ghost", note.status === "approved" ? "Unpublish" : "Reject");
+        reject.onclick = () => {
+          const reason = prompt("Reason (optional, the author will see it):", "");
+          if (reason === null) return;
+          setStatus(note, "rejected", reason.trim());
+        };
+        actions.push(reject);
+      }
+      const remove = el("button", "ghost", "Delete");
+      remove.onclick = async () => {
+        if (!confirm("Delete this note permanently?")) return;
+        const { error } = await sb.from("notes").delete().eq("id", note.id);
+        if (error) err(error.message);
+        else {
+          notes = notes.filter(item => item.id !== note.id);
+          render();
+        }
+      };
+      actions.push(remove);
+      return actions;
+    }
+
+    function render() {
+      const pending = notes.filter(note => note.status === "pending").sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      document.getElementById("qcount").textContent = pending.length;
+      const queue = document.getElementById("queue");
+      queue.innerHTML = "";
+      document.getElementById("qempty").style.display = pending.length ? "none" : "block";
+      pending.forEach(note => queue.appendChild(noteCard(note, {
+        showStatus: true,
+        canPrioritize: true,
+        onPriority: setPriority,
+        actions: reviewActions(note)
+      })));
+
+      const filters = document.getElementById("filters");
+      filters.innerHTML = "";
+      [["all", "All"], ["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"]].forEach(([status, label]) => {
+        const count = status === "all" ? notes.length : notes.filter(note => note.status === status).length;
+        const button = el("button", "fbtn" + (filter === status ? " active" : ""), label + " (" + count + ")");
+        button.onclick = () => { filter = status; render(); };
+        filters.appendChild(button);
+      });
+
+      const board = document.getElementById("board");
+      board.innerHTML = "";
+      notes
+        .filter(note => filter === "all" || note.status === filter)
+        .sort((a, b) => ORDER.indexOf(a.priority) - ORDER.indexOf(b.priority))
+        .forEach(note => board.appendChild(noteCard(note, {
+          showStatus: true,
+          canPrioritize: true,
+          onPriority: setPriority,
+          actions: reviewActions(note)
+        })));
+    }
+
+    init();
+  </script>
+</body>
+</html>

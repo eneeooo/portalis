@@ -34,7 +34,7 @@
   <script src="common.js"></script>
   <script>
     const topicId = Number(new URLSearchParams(location.search).get("id"));
-    let ctx, topic, questions = [], attempts = [], cur = null, answers = {}, saveTimer = null, advanceTimer = null, advanceSeconds = 0, currentQuestionIndex = 0;
+    let ctx, topic, questions = [], attempts = [], rankings = [], cur = null, answers = {}, saveTimer = null, advanceTimer = null, advanceSeconds = 0, currentQuestionIndex = 0;
     const msg = document.getElementById("msg");
     const quiz = document.getElementById("quiz");
 
@@ -77,19 +77,87 @@
     }
 
     async function loadQuiz() {
-      const [q, a] = await Promise.all([
+      const [q, a, leaderboard] = await Promise.all([
         sb.from("questions").select("id,qtype,prompt,options,position").eq("topic_id", topicId).order("position").order("id"),
-        sb.from("attempts").select("*").eq("topic_id", topicId).eq("user_id", ctx.user.id).order("attempt_no")
+        sb.from("attempts").select("*").eq("topic_id", topicId).eq("user_id", ctx.user.id).order("attempt_no"),
+        sb.rpc("quiz_leaderboard", { p_topic: topicId })
       ]);
-      if (q.error || a.error) { err((q.error || a.error).message); return; }
-      questions = q.data; attempts = a.data;
+      if (q.error || a.error || leaderboard.error) { err((q.error || a.error || leaderboard.error).message); return; }
+      questions = q.data; attempts = a.data; rankings = leaderboard.data || [];
       renderHome();
+    }
+
+    function rankingAvatar(name, url) {
+      if (url) {
+        const image = el("img", "rank-avatar");
+        image.src = url;
+        image.alt = "";
+        return image;
+      }
+      const initials = (name || "Student").split(/\s+/).map(part => part.charAt(0)).join("").slice(0, 2).toUpperCase();
+      return el("span", "rank-avatar rank-avatar-fallback", initials);
+    }
+
+    function renderRanking() {
+      const section = el("section", "card leaderboard");
+      section.appendChild(el("h2", "", "Quiz ranking"));
+      const current = rankings.find(row => row.is_me);
+      const summary = el("div", "rank-summary");
+      summary.appendChild(rankingAvatar(ctx.profile.full_name, ctx.profile.avatar_url));
+      const identity = el("div", "rank-identity");
+      identity.appendChild(el("strong", "", ctx.profile.full_name || "You"));
+      identity.appendChild(el("span", "rank-score", current
+        ? "Your best: " + current.score + "/" + current.total + " · Rank #" + current.rank_position
+        : "Not ranked yet — submit a quiz to join."));
+      if (current) {
+        const meter = el("div", "rank-meter");
+        const fill = el("span", "rank-meter-fill");
+        fill.style.width = current.percentage + "%";
+        fill.setAttribute("role", "progressbar");
+        fill.setAttribute("aria-valuemin", "0");
+        fill.setAttribute("aria-valuemax", "100");
+        fill.setAttribute("aria-valuenow", String(current.percentage));
+        fill.setAttribute("aria-label", "Your best quiz score: " + current.percentage + "%");
+        meter.appendChild(fill);
+        identity.appendChild(meter);
+      }
+      summary.appendChild(identity);
+      section.appendChild(summary);
+
+      if (!rankings.length) {
+        section.appendChild(el("p", "hint", "No submitted scores yet. Be the first to take this quiz."));
+        return section;
+      }
+      const list = el("ol", "rank-list");
+      rankings.forEach(row => {
+        const item = el("li", "rank-row" + (row.is_me ? " rank-row-self" : ""));
+        item.appendChild(el("span", "rank-position", "#" + row.rank_position));
+        item.appendChild(rankingAvatar(row.full_name, row.avatar_url));
+        const details = el("div", "rank-details");
+        const top = el("div", "rank-row-top");
+        top.append(el("strong", "", row.full_name || "Student"), el("span", "rank-score", row.score + "/" + row.total));
+        const meter = el("div", "rank-meter");
+        const fill = el("span", "rank-meter-fill");
+        fill.style.width = row.percentage + "%";
+        fill.setAttribute("role", "progressbar");
+        fill.setAttribute("aria-valuemin", "0");
+        fill.setAttribute("aria-valuemax", "100");
+        fill.setAttribute("aria-valuenow", String(row.percentage));
+        fill.setAttribute("aria-label", (row.full_name || "Student") + " scored " + row.percentage + "%");
+        meter.appendChild(fill);
+        details.append(top, meter);
+        item.appendChild(details);
+        list.appendChild(item);
+      });
+      section.appendChild(list);
+      return section;
     }
 
     /* ---------- quiz home: tries, history, start / continue / retry ---------- */
     function renderHome() {
       quiz.classList.remove("quiz-taking");
       quiz.innerHTML = "";
+      quiz.appendChild(renderRanking());
       const card = el("div", "card");
       if (!questions.length) {
         card.appendChild(el("p", "", "No quiz for this topic yet."));
@@ -294,6 +362,9 @@
       if (error) { err(error.message); return; }
       const no = cur.attempt_no;
       cur = null;
+      const { data: leaderboard, error: leaderboardError } = await sb.rpc("quiz_leaderboard", { p_topic: topicId });
+      if (leaderboardError) err("Quiz submitted, but ranking could not be refreshed: " + leaderboardError.message);
+      else rankings = leaderboard || [];
       renderResult(data, no, true);
     }
 
@@ -315,6 +386,7 @@
       rev.onclick = () => showTab("rev");
       card.append(retry, document.createTextNode(" "), rev, document.createTextNode(" "), back);
       quiz.appendChild(card);
+      quiz.appendChild(renderRanking());
 
       (r.results || []).forEach((x, i) => {
         const d = el("div", "res" + (x.ok ? "" : " bad"));

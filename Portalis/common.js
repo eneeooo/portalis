@@ -1,6 +1,45 @@
 /* Portalis shared helpers (load after config.js) */
 const LABEL = { urgent: "Urgent", high: "High", medium: "Medium", neutral: "Neutral", low: "Low" };
 const ORDER = ["urgent", "high", "medium", "neutral", "low"];
+const CLASS_TITLES = {
+  "26-22-059": "Treasurer",
+  "26-22-060": "Vice President",
+  "26-22-061": "PRO",
+  "26-22-064": "Auditor",
+  "26-22-066": "President",
+  "26-22-075": "Secretary"
+};
+
+function profileTitle(profile) {
+  const classTitle = CLASS_TITLES[profile.student_number];
+  if (classTitle) return classTitle;
+  return profile.role === "user"
+    ? "Student"
+    : profile.role.charAt(0).toUpperCase() + profile.role.slice(1);
+}
+
+function staffTitle(profile) {
+  return profile && (profile.role === "admin" || profile.role === "officer")
+    ? profileTitle(profile)
+    : "";
+}
+
+async function loadStaffAuthorTitles(authorIds) {
+  const ids = [...new Set((authorIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+  const { data, error } = await sb.rpc("staff_author_titles", {
+    p_author_ids: ids
+  });
+  if (error) throw error;
+  return Object.fromEntries((data || []).map(row => [row.author_id, row.title]));
+}
+
+function staffAuthorName(name, title) {
+  const identity = el("span", "author-identity");
+  identity.appendChild(el("span", "author-name", name || "user"));
+  if (title) identity.appendChild(el("span", "staff-title-card", title));
+  return identity;
+}
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -105,7 +144,18 @@ async function requireAuth(adminOnly) {
   }
   const role = prof.role;
   const isAdmin = role === "admin" || role === "officer";
-  if (adminOnly && !isAdmin) { location.href = "dashboard.html"; return null; }
+  if (adminOnly && role !== "admin") { location.href = "dashboard.html"; return null; }
+  if (!isAdmin) {
+    const { data: isMember, error: membershipError } = await sb.rpc("is_class_12_member");
+    if (membershipError) {
+      alert("Unable to verify class access: " + membershipError.message);
+      return null;
+    }
+    if (!isMember) {
+      await forceSignOut("This account is not registered as a member of class 12.");
+      return null;
+    }
+  }
   startSessionWatch();
   return { user: userData.user, profile: prof, role: role, isAdmin };
 }
@@ -136,7 +186,9 @@ function renderBar(ctx, active) {
   bar.appendChild(identity);
   const nav = el("nav", "nav");
   const links = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"], ["funds.html", "Class funds", "funds"], ["confessions.html", "Confessions", "confessions"], ["profile.html", "Profile", "profile"]];
-  if (ctx.isAdmin) links.push(["admin.html", "Admin", "admin"], ["manage.html", "Manage reviewers", "manage"]);
+  if (ctx.role === "admin") links.push(["admin.html", "Admin", "admin"]);
+  if (ctx.role === "officer") links.push(["officer.html", "Officer", "officer"]);
+  if (ctx.isAdmin) links.push(["manage.html", "Manage reviewers", "manage"]);
   links.forEach(l => {
     const a = el("a", "nav-link" + (active === l[2] ? " on" : ""), l[1]);
     if (active === l[2]) a.setAttribute("aria-current", "page");
@@ -145,10 +197,7 @@ function renderBar(ctx, active) {
   });
   bar.appendChild(nav);
   const right = el("div", "right profile-controls");
-  const roleLabel = ctx.role === "user"
-    ? "Student"
-    : ctx.role.charAt(0).toUpperCase() + ctx.role.slice(1);
-  right.appendChild(el("span", "badge profile-role", roleLabel));
+  right.appendChild(el("span", "badge profile-role", profileTitle(ctx.profile)));
   const out = el("button", "ghost", "Log out");
   out.onclick = () => confirmLogout();
   right.appendChild(out);
@@ -157,8 +206,8 @@ function renderBar(ctx, active) {
   document.querySelectorAll(".suggestion-circle").forEach(button => button.remove());
   const suggestion = el("button", "suggestion-circle", "?");
   suggestion.type = "button";
-  suggestion.title = "Send a suggestion to the admins and officers";
-  suggestion.setAttribute("aria-label", "Send a suggestion to the admins and officers");
+  suggestion.title = "Send a suggestion to the admins";
+  suggestion.setAttribute("aria-label", "Send a suggestion to the admins");
   suggestion.onclick = () => openSuggestion(ctx);
   document.body.appendChild(suggestion);
 }
@@ -205,7 +254,7 @@ function openSuggestion(ctx) {
   const dialog = el("div", "modal-backdrop");
   const box = el("form", "modal-card");
   box.appendChild(el("h2", "", "Send a suggestion"));
-  const label = el("label", "", "Your message (admins and officers will see your student number)");
+  const label = el("label", "", "Your message (admins will see your student number)");
   const input = document.createElement("textarea");
   input.maxLength = 1000;
   input.required = true;
@@ -224,7 +273,7 @@ function openSuggestion(ctx) {
     send.disabled = true;
     const { error } = await sb.from("suggestions").insert({ content, user_id: ctx.user.id });
     if (error) { status.className = "msg err"; status.textContent = error.message; send.disabled = false; return; }
-    status.className = "msg ok"; status.textContent = "Suggestion sent to the admins and officers.";
+    status.className = "msg ok"; status.textContent = "Suggestion sent to the admins.";
     input.disabled = true;
     send.remove();
   };
@@ -409,7 +458,13 @@ function noteCard(n, o) {
     c.appendChild(row);
   }
 
-  c.appendChild(el("small", "", "by " + (n.author_name || "user") + " \u00b7 " + new Date(n.created_at).toLocaleDateString()));
+  const author = el("small", "note-author");
+  author.append(
+    document.createTextNode("by "),
+    staffAuthorName(n.author_name, n.staff_title),
+    document.createTextNode(" \u00b7 " + new Date(n.created_at).toLocaleDateString())
+  );
+  c.appendChild(author);
   if (o.actions && o.actions.length) {
     const row = el("div", "actions");
     o.actions.forEach(b => row.appendChild(b));

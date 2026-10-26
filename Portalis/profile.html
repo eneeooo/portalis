@@ -30,6 +30,10 @@
           <input id="email" type="email" maxlength="254" placeholder="Not set">
         </div>
         <div class="profile-field">
+          <label for="birthDate">Birthday</label>
+          <input id="birthDate" type="date" autocomplete="bday">
+        </div>
+        <div class="profile-field">
           <label for="contacts">Other contacts (optional)</label>
           <input id="contacts" maxlength="240" placeholder="Phone, social link, etc.">
         </div>
@@ -62,9 +66,10 @@
       ctx = await requireAuth();
       if (!ctx) return;
       renderBar(ctx, "profile");
-      const { data, error } = await sb.from("profiles").select("email,full_name,contacts,about,avatar_url").eq("id", ctx.user.id).single();
+      const { data, error } = await sb.from("profiles").select("email,full_name,birth_date,contacts,about,avatar_url").eq("id", ctx.user.id).single();
       if (error) { show(error.message, true); return; }
       $("fullName").value = data.full_name || "";
+      $("birthDate").value = data.birth_date || "";
       currentEmail = (data.email && !data.email.endsWith("@login.portalis.invalid")) ? data.email : "";
       $("email").value = currentEmail;
       if (ctx.user.new_email) {
@@ -98,6 +103,13 @@
       try {
         const fullName = $("fullName").value.trim();
         if (!fullName) { show("Enter your full name.", true); return; }
+        const birthDate = $("birthDate").value;
+        const todayParts = new Intl.DateTimeFormat("en-US", {
+          timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit"
+        }).formatToParts(new Date());
+        const todayPart = type => todayParts.find(part => part.type === type).value;
+        const manilaToday = todayPart("year") + "-" + todayPart("month") + "-" + todayPart("day");
+        if (birthDate && birthDate > manilaToday) { show("Birthday cannot be in the future.", true); return; }
         const enteredEmail = $("email").value.trim().toLowerCase();
         if (enteredEmail && (!$("email").validity.valid || enteredEmail.endsWith(".invalid"))) {
           show("Enter a valid email address.", true); return;
@@ -112,13 +124,18 @@
         //    student confirms the new address from the email Supabase sends.
         const { data: saved, error } = await sb.from("profiles").update({
           full_name: fullName,
+          birth_date: birthDate || null,
           contacts: $("contacts").value.trim() || null,
           about: $("about").value.trim() || null,
           avatar_url: avatarUrl || null
-        }).eq("id", ctx.user.id).select("id");
+        }).eq("id", ctx.user.id).select("id,birth_date");
         if (error) { show("Could not save your profile: " + error.message, true); return; }
         if (!saved || saved.length === 0) {
           show("Nothing was saved: the database refused the update. Run migration_profile_email_confirm.sql in the Supabase SQL Editor.", true);
+          return;
+        }
+        if (saved[0].birth_date !== (birthDate || null)) {
+          show("Your profile was saved, but the birthday did not change. Run migration_profile_birthday_edit.sql in the Supabase SQL Editor.", true);
           return;
         }
         ctx.profile.full_name = fullName;

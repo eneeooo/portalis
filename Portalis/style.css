@@ -36,6 +36,10 @@ a{color:#000}
 .bar .right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .bar .profile-controls{flex-direction:column;gap:5px}
 .badge{border:2px solid #000;padding:2px 10px;font-size:16px;background:#000;color:#fff}
+.author-identity{display:inline-flex;align-items:center;gap:5px;vertical-align:middle}
+.author-name{font-weight:bold}
+.staff-title-card{display:inline-block;padding:1px 7px;border:1.5px solid #000;background:#fff3a0;color:#000;
+  font-size:12px;font-weight:bold;line-height:1.3;letter-spacing:.03em;text-transform:uppercase;opacity:1}
 
 /* sticky note */
 .note{
@@ -52,6 +56,20 @@ a{color:#000}
 .auth h1{font-size:38px;text-align:center}
 .auth p.sub{text-align:center;margin:0 0 14px}
 .auth .note{transform:rotate(-1deg);background:#fff}
+.auth .note::before{display:none}
+.auth-tape{position:absolute;z-index:1;top:-15px;left:50%;width:176px;margin:0;padding:3px 8px;
+  height:27px;border:2px solid #000;
+  background:linear-gradient(165deg,#ffffffef 0%,#f4f0e8ec 45%,#ffffffed 100%);
+  cursor:pointer;transform:translateX(-50%) rotate(2deg)}
+.auth-tape:hover{background:#fff3a0;box-shadow:3px 3px 0 #000}
+.auth-tape:focus-visible{outline:3px solid #000;outline-offset:3px}
+.auth .signup-link[hidden]{display:none}
+.auth .signup-link{display:block;width:100%;margin-top:10px;text-align:center}
+.learning-quote{position:relative;max-width:330px;margin:18px auto 10px;padding:13px 15px 13px 36px;
+  border:2px solid #000;background:#fff3a0;
+  box-shadow:3px 3px 0 #000;font-size:18px;line-height:1.3;text-align:left;transform:rotate(-.5deg)}
+.learning-quote::before{position:absolute;top:5px;left:9px;content:"“";
+  font-family:'Permanent Marker',cursive;font-size:32px;line-height:1}
 
 /* forms */
 label{display:block;margin:10px 0 2px}
@@ -110,6 +128,7 @@ button.dot.on{box-shadow:0 0 0 2px #fff,0 0 0 4px #000}
 .ntitle{font-size:24px;margin:0 0 6px;line-height:1.15}
 .note .text{white-space:pre-wrap;margin-bottom:8px}
 .note small{display:block;margin-top:10px;font-size:15px;opacity:.75}
+.note .note-author{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 .progress{font-size:16px;margin-top:6px}
 .subs{list-style:none;margin:6px 0;padding:0}
 .subs li{display:flex;align-items:center;gap:8px;padding:3px 0}
@@ -210,6 +229,8 @@ label[for=photo]:hover{background:#fff;color:#000;box-shadow:3px 3px 0 #000}
 .profile-password input{background:#fff}
 .week-list{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .week-list button{margin:0}
+.fund-period-control{display:flex;align-items:center;gap:5px}
+.fund-period-control button.small{padding:4px 8px;font-size:15px}
 .fund-table td,.fund-table th{text-align:center}
 .fund-table td:first-child,.fund-table th:first-child{text-align:left}
 .fund-total{font-size:22px;font-weight:bold}
@@ -252,7 +273,7 @@ label[for=photo]:hover{background:#fff;color:#000;box-shadow:3px 3px 0 #000}
 .suggestion-item:nth-child(3n){background:#cde8ff;transform:rotate(-.3deg)}
 .suggestion-item::before{position:absolute;top:-10px;left:50%;width:68px;height:20px;content:"";
   border:1px solid #d5d5d5;background:#ffffffb8;transform:translateX(-50%) rotate(-2deg)}
-.suggestion-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.suggestion-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .suggestion-name{font-size:18px;overflow-wrap:anywhere}
 .suggestion-student-number{flex:none;text-align:right;font-size:15px;opacity:.8}
 .suggestion-content{align-self:flex-start;margin:18px 0;padding:2px 5px;background:linear-gradient(transparent 18%,#fff 18%,#fff 88%,transparent 88%);
@@ -274,6 +295,20 @@ label[for=photo]:hover{background:#fff;color:#000;box-shadow:3px 3px 0 #000}
 
 /* plain white cards (reviewers, quiz) */
 .card{background:#fff;border:3px solid #000;box-shadow:6px 6px 0 #000;padding:18px 20px;margin:0 0 26px}
+.leaderboard h2{margin-bottom:14px}
+.rank-summary{display:flex;align-items:center;gap:12px;margin:0 0 18px;padding:12px;border:2px solid #000;background:#fff3a0}
+.rank-avatar{width:42px;height:42px;flex:none;border:2px solid #000;border-radius:50%;object-fit:cover;background:#f6b8dc}
+.rank-avatar-fallback{display:grid;place-items:center;font-size:16px;font-weight:bold}
+.rank-identity,.rank-details{min-width:0;flex:1}
+.rank-identity strong,.rank-identity span{display:block}
+.rank-score{font-size:16px;white-space:nowrap}
+.rank-meter{height:14px;overflow:hidden;border:2px solid #000;background:#fff}
+.rank-meter-fill{display:block;height:100%;background:#f6b8dc;transition:width .25s ease}
+.rank-list{display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none}
+.rank-row{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid #000;background:#fff}
+.rank-row-self{background:#fff3a0;box-shadow:2px 2px 0 #000}
+.rank-position{width:34px;flex:none;font-weight:bold;text-align:center}
+.rank-row-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px}
 .birthday-pin{position:relative;margin:8px 8px 30px;padding:26px 24px 22px;border:3px solid #000;
   background:#ffe0f0;box-shadow:6px 7px 0 #000;text-align:center;overflow:hidden}
 .birthday-note-yellow{background:#fff3a0}
@@ -459,11 +494,14 @@ select{background:#fff}
 .role-select:focus{outline:3px solid #f6b8dc;outline-offset:2px;box-shadow:none}
 .role-select:disabled{background-color:#eee;color:#555;cursor:not-allowed;opacity:1}
 .user-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.user-actions button{margin:0;padding:5px 10px;font-size:15px;line-height:1.2;border-radius:4px}
-.user-actions .edit-student-button{background:#fff3a0;color:#000}
-.user-actions .edit-student-button:hover{background:#000;color:#fff}
+.user-actions .user-action-circle{display:grid;place-items:center;width:38px;height:38px;flex:none;margin:0;padding:0;
+  border:2px solid #000;border-radius:50%;font-size:23px;font-weight:bold;line-height:1}
+.user-actions .reset-user-password-button{background:#fff3a0;color:#000}
+.user-actions .reset-user-password-button:hover{background:#000;color:#fff}
 .user-actions .delete-user-button{background:#b00020;color:#fff}
 .user-actions .delete-user-button:hover{background:#fff;color:#b00020}
+.user-actions .user-action-circle:focus-visible{outline:3px solid #f6b8dc;outline-offset:2px}
+.user-actions .user-action-circle:disabled{opacity:.5;cursor:not-allowed}
 #fundPrint{display:none}
 @media print{
   @page{size:landscape}

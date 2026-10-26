@@ -11,6 +11,7 @@
       <h1>Portalis</h1>
       <p class="sub">Your class space for notes and reviewers.</p>
       <div class="note">
+        <button id="signupTape" class="auth-tape" type="button" aria-label="Remove tape to show signup" aria-controls="signupLink" title="Remove tape"></button>
         <h2>Log in</h2>
         <label for="studentNumber">Student number</label>
         <input id="studentNumber" inputmode="numeric" autocomplete="username" placeholder="00-00-000" />
@@ -18,7 +19,8 @@
         <input id="password" type="password" placeholder="Your password" autocomplete="current-password" />
         <button id="login" class="full">Log in</button>
         <p id="msg" class="msg"></p>
-        <p class="switch">No account yet? <a href="signup.html">Sign up</a></p>
+        <p id="learningQuote" class="learning-quote"></p>
+        <a id="signupLink" class="btn full signup-link" href="signup.html" hidden>Sign up</a>
       </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -26,10 +28,51 @@
     <script>
       const msg = document.getElementById("msg");
       const btn = document.getElementById("login");
-      const INTERNAL_DOMAIN = "@login.portalis.invalid";
       const numberInput = document.getElementById("studentNumber");
+      const signupTape = document.getElementById("signupTape");
+      const signupLink = document.getElementById("signupLink");
+      const learningQuotes = [
+        "Every lesson learned is a new tool for tomorrow.",
+        "Small study steps can lead to remarkable discoveries.",
+        "Curiosity turns an ordinary class into an opportunity.",
+        "A question asked today can open a door tomorrow.",
+        "Practice is how effort becomes confidence.",
+        "Learning grows whenever you give an idea your attention.",
+        "Each page you read adds another path to explore.",
+        "Mistakes are drafts on the way to understanding.",
+        "A focused hour can brighten the whole day.",
+        "Good ideas often begin with a curious mind.",
+        "Your next breakthrough may start with one more try.",
+        "Studying is an investment in choices you have not met yet.",
+        "New skills begin as small acts of patience.",
+        "A classroom is a place where possibilities get practice.",
+        "Keep asking why; understanding likes good questions.",
+        "Progress is built one solved problem at a time.",
+        "Books lend you windows into worlds beyond your own.",
+        "Learning makes the familiar interesting and the unknown approachable.",
+        "A little preparation gives big ideas room to shine.",
+        "The habit of trying is a lesson that lasts.",
+        "Share what you know; explaining helps understanding grow.",
+        "The hardest chapter can become your proudest one.",
+        "Ideas get stronger when you test them with care.",
+        "Every class is a chance to notice something new.",
+        "Patience helps difficult concepts find their place.",
+        "A curious student can find a lesson almost anywhere.",
+        "Learning is progress you carry with you.",
+        "Give your goals the same attention you give your notes.",
+        "Today’s effort is tomorrow’s useful knowledge.",
+        "Stay curious, stay kind, and keep learning."
+      ];
 
       function show(text, isErr) { msg.className = "msg" + (isErr ? " err" : ""); msg.textContent = text; }
+      const quoteCard = document.getElementById("learningQuote");
+      const quoteColors = ["#fff3a0", "#f6b8dc", "#cde8ff", "#cdeec7", "#ffd3ad", "#ddc7ff"];
+      quoteCard.textContent = learningQuotes[Math.floor(Math.random() * learningQuotes.length)];
+      quoteCard.style.backgroundColor = quoteColors[Math.floor(Math.random() * quoteColors.length)];
+      signupTape.onclick = () => {
+        signupTape.remove();
+        signupLink.hidden = false;
+      };
 
       // Auto-format as 00-00-000 while typing
       numberInput.addEventListener("input", e => {
@@ -59,7 +102,6 @@
         location.href = "dashboard.html";
       })();
 
-      // supabase-js hides the function's own error text behind a generic message.
       async function functionError(error) {
         if (error && error.context instanceof Response) {
           try {
@@ -79,30 +121,14 @@
         }
         btn.disabled = true;
         try {
-          // 1) Normal path: signup creates the Auth account as <student number>@login.portalis.invalid,
-          //    so we can sign in directly. This needs no Edge Function.
-          const direct = await sb.auth.signInWithPassword({ email: student_number + INTERNAL_DOMAIN, password });
-          if (!direct.error && direct.data && direct.data.session) { location.href = "dashboard.html"; return; }
-
-          const directMsg = (direct.error && direct.error.message) || "";
-          if (direct.error && (direct.error.name === "AuthRetryableFetchError" || /failed to fetch|network/i.test(directMsg))) {
-            throw new Error("Cannot reach Supabase. Check your internet connection and that the project is not paused.");
-          }
-          if (/rate limit|too many/i.test(directMsg)) {
-            throw new Error("Too many attempts. Wait a few minutes and try again.");
-          }
-          if (/not confirmed/i.test(directMsg)) {
-            throw new Error("This account's email is not confirmed. In Supabase, turn off Confirm email (Authentication -> Providers -> Email) or confirm the user.");
-          }
-
-          // 2) Fallback: accounts whose Auth email was changed (or created another way).
-          //    The Edge Function looks the real Auth email up from the student number.
           const { data, error } = await sb.functions.invoke("username-login", { body: { student_number, password } });
           if (error) {
             const detail = await functionError(error);
             if (detail) throw new Error(detail);
-            console.warn("username-login unavailable:", error);
-            throw new Error("Invalid student number or password. (If you confirmed a new email, the username-login function must be deployed to sign in by student number.)");
+            if (error.name === "FunctionsFetchError" || error.name === "AuthRetryableFetchError") {
+              throw new Error("Cannot reach the student-number login service. Check your connection and that the username-login Edge Function is deployed.");
+            }
+            throw new Error(error.message || "Could not sign in. Check your student number and password.");
           }
           if (!data || !data.access_token || !data.refresh_token) throw new Error("Login did not return a session.");
           const { error: sessionError } = await sb.auth.setSession({
