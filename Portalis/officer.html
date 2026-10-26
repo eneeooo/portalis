@@ -75,6 +75,22 @@
       render();
     }
 
+    async function saveNote(note, changes) {
+      const { error } = await sb.from("notes").update(changes).eq("id", note.id);
+      if (error) { err(error.message); return false; }
+      Object.assign(note, changes);
+      ok("Note updated.");
+      render();
+      return true;
+    }
+
+    async function saveSubnotes(note, subnotes) {
+      const { error } = await sb.from("notes").update({ subnotes }).eq("id", note.id);
+      if (error) { err(error.message); return; }
+      note.subnotes = subnotes;
+      render();
+    }
+
     function reviewActions(note) {
       const actions = [];
       if (note.status !== "approved") {
@@ -115,7 +131,9 @@
         showStatus: true,
         canPrioritize: true,
         onPriority: setPriority,
-        actions: reviewActions(note)
+        canEdit: true,
+        onSubs: saveSubnotes,
+        actions: [noteEditAction(note, saveNote), ...reviewActions(note)]
       })));
 
       const filters = document.getElementById("filters");
@@ -136,7 +154,9 @@
           showStatus: true,
           canPrioritize: true,
           onPriority: setPriority,
-          actions: reviewActions(note)
+          canEdit: true,
+          onSubs: saveSubnotes,
+          actions: [noteEditAction(note, saveNote), ...reviewActions(note)]
         })));
     }
 

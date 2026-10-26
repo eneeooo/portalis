@@ -474,6 +474,160 @@ function noteCard(n, o) {
   return c;
 }
 
+function noteEditAction(note, onSave) {
+  const button = el("button", "ghost", "Edit");
+  button.type = "button";
+  button.onclick = () => {
+    const dialog = el("div", "modal-backdrop edit-note-backdrop");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-labelledby", "editNoteHeading");
+    const form = el("form", "note composer edit-note-form");
+    const heading = el("h2", "", "Edit note");
+    heading.id = "editNoteHeading";
+    const titleLabel = el("label", "", "Title");
+    const title = el("input");
+    title.maxLength = 80;
+    title.value = note.title || "";
+    titleLabel.appendChild(title);
+
+    const priorityLabel = el("label", "", "Importance");
+    const priorities = el("div", "prio-pick");
+    ["low", "neutral", "medium", "high", "urgent"].forEach(priority => {
+      const option = el("label", "p-" + priority);
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "edit-priority";
+      input.value = priority;
+      input.checked = (note.priority || "medium") === priority;
+      option.append(input, el("span", "", LABEL[priority]));
+      priorities.appendChild(option);
+    });
+
+    const formatLabel = el("label", "", "Format");
+    const formats = el("div", "fmt-pick");
+    [["text", "Plain"], ["bullets", "\u2022 Bullets"], ["numbered", "1. Numbered"]].forEach(([format, label]) => {
+      const option = el("label");
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "edit-format";
+      input.value = format;
+      input.checked = (note.format || "text") === format;
+      option.append(input, el("span", "", label));
+      formats.appendChild(option);
+    });
+
+    const contentLabel = el("label", "", "Details (optional)");
+    const content = el("textarea");
+    content.value = note.content || "";
+    content.placeholder = "Write something...";
+    contentLabel.appendChild(content);
+
+    const subnotesLabel = el("label", "", "Subnotes (optional)");
+    const subnotes = el("ul", "chips");
+    const subnoteInput = el("input");
+    subnoteInput.placeholder = "Add a subnote";
+    const addSubnote = el("button", "ghost", "+");
+    addSubnote.type = "button";
+    const subnoteRow = el("div", "subrow");
+    subnoteRow.append(subnoteInput, addSubnote);
+    const savedSubnotes = Array.isArray(note.subnotes)
+      ? note.subnotes.map(item => ({ text: item.text || "", done: !!item.done }))
+      : [];
+
+    function renderSubnotes() {
+      subnotes.replaceChildren();
+      savedSubnotes.forEach((item, index) => {
+        const row = el("li");
+        const text = el("span", "", item.text);
+        const done = document.createElement("input");
+        done.type = "checkbox";
+        done.checked = item.done;
+        done.setAttribute("aria-label", "Mark subnote complete");
+        done.onchange = () => { item.done = done.checked; };
+        const remove = el("button", "x", "\u00d7");
+        remove.type = "button";
+        remove.setAttribute("aria-label", "Remove subnote");
+        remove.onclick = () => {
+          savedSubnotes.splice(index, 1);
+          renderSubnotes();
+        };
+        row.append(done, text, remove);
+        subnotes.appendChild(row);
+      });
+    }
+
+    function appendSubnote() {
+      const text = subnoteInput.value.trim();
+      if (!text) return;
+      savedSubnotes.push({ text, done: false });
+      subnoteInput.value = "";
+      renderSubnotes();
+      subnoteInput.focus();
+    }
+
+    addSubnote.onclick = appendSubnote;
+    subnoteInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        appendSubnote();
+      }
+    });
+    renderSubnotes();
+
+    const status = el("p", "msg");
+    const actions = el("div", "edit-note-actions");
+    const cancel = el("button", "ghost", "Cancel");
+    cancel.type = "button";
+    cancel.onclick = () => dialog.remove();
+    const save = el("button", "", "Save changes");
+    save.type = "submit";
+    actions.append(cancel, save);
+
+    form.append(
+      heading,
+      titleLabel,
+      priorityLabel,
+      priorities,
+      formatLabel,
+      formats,
+      contentLabel,
+      subnotesLabel,
+      subnotes,
+      subnoteRow,
+      status,
+      actions,
+    );
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const nextTitle = title.value.trim();
+      const nextContent = content.value.trim();
+      if (!nextTitle && !nextContent && !savedSubnotes.length) {
+        status.className = "msg err";
+        status.textContent = "A note needs a title, details, or at least one subnote.";
+        return;
+      }
+      save.disabled = true;
+      const saved = await onSave(note, {
+        title: nextTitle,
+        content: nextContent,
+        priority: form.querySelector('input[name="edit-priority"]:checked').value,
+        format: form.querySelector('input[name="edit-format"]:checked').value,
+        subnotes: savedSubnotes,
+      });
+      if (saved) dialog.remove();
+      else save.disabled = false;
+    };
+    dialog.appendChild(form);
+    dialog.onclick = event => {
+      if (event.target === dialog) dialog.remove();
+    };
+    document.body.appendChild(dialog);
+    title.focus();
+  };
+  return button;
+}
+
 /* ---------- quiz tools ---------- */
 function shuffle(a) {
   const b = a.slice();

@@ -243,6 +243,22 @@
       render();
     }
 
+    async function saveNote(n, changes) {
+      const { error } = await sb.from("notes").update(changes).eq("id", n.id);
+      if (error) { err(error.message); return false; }
+      Object.assign(n, changes);
+      ok("Note updated.");
+      render();
+      return true;
+    }
+
+    async function saveSubnotes(n, subnotes) {
+      const { error } = await sb.from("notes").update({ subnotes }).eq("id", n.id);
+      if (error) { err(error.message); return; }
+      n.subnotes = subnotes;
+      render();
+    }
+
     function reviewActions(n) {
       const list = [];
       if (n.status !== "approved") {
@@ -276,7 +292,14 @@
       const queue = document.getElementById("queue");
       queue.innerHTML = "";
       document.getElementById("qempty").style.display = pend.length ? "none" : "block";
-      pend.forEach(n => queue.appendChild(noteCard(n, { showStatus: true, canPrioritize: true, onPriority: setPriority, actions: reviewActions(n) })));
+      pend.forEach(n => queue.appendChild(noteCard(n, {
+        showStatus: true,
+        canPrioritize: true,
+        onPriority: setPriority,
+        canEdit: true,
+        onSubs: saveSubnotes,
+        actions: [noteEditAction(n, saveNote), ...reviewActions(n)]
+      })));
 
       const box = document.getElementById("filters");
       box.innerHTML = "";
@@ -291,7 +314,14 @@
       notes
         .filter(n => filter === "all" || n.status === filter)
         .sort((a, b) => ORDER.indexOf(a.priority) - ORDER.indexOf(b.priority))
-        .forEach(n => board.appendChild(noteCard(n, { showStatus: true, canPrioritize: true, onPriority: setPriority, actions: reviewActions(n) })));
+        .forEach(n => board.appendChild(noteCard(n, {
+          showStatus: true,
+          canPrioritize: true,
+          onPriority: setPriority,
+          canEdit: true,
+          onSubs: saveSubnotes,
+          actions: [noteEditAction(n, saveNote), ...reviewActions(n)]
+        })));
     }
 
     init();

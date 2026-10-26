@@ -68,6 +68,8 @@ SETUP
        accounts (not Officers) to see confession authors on the Confessions page.
   3f5. Run migration_admin_only_suggestions.sql after migration_features.sql.
        It restricts suggestion viewing and deletion to Admin-role accounts.
+  3f6. Run migration_admin_only_note_edits.sql after migration_officer_role.sql.
+       It restricts note edits to Admins and Officers.
   3g. Run migration_quiz_ranking.sql after setup.sql to enable quiz rankings.
   4. For a standard Supabase Auth setup, run migration_optional_email.sql,
      then migration_supabase_auth_restore.sql. If migration_custom_auth.sql

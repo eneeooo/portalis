@@ -646,6 +646,9 @@
       function render() {
         renderFilters();
         const board = document.getElementById("board");
+        board.querySelectorAll(".comments[aria-expanded='true']").forEach((panel) => {
+          if (panel.closePanel) panel.closePanel();
+        });
         board.innerHTML = "";
         const shown = notes
           .filter((n) => filter === "all" || n.priority === filter)
@@ -659,47 +662,17 @@
             ? "You have no notes here yet. Write one above."
             : "No approved notes yet.";
         shown.forEach((n) => {
-          const mine = n.user_id === ctx.user.id;
           board.appendChild(
             noteCard(n, {
-              canEdit: mine,
               canPrioritize: ctx.isAdmin,
               showStatus: true,
               onPriority: setPriority,
-              onSubs: saveSubs,
-              actions: ctx.isAdmin ? [deleteBtn(n)] : [],
               footer: n.status === "approved" ? commentsFooter(n) : null,
             }),
           );
         });
       }
 
-      function deleteBtn(n) {
-        const b = el("button", "", "Delete");
-        b.onclick = async () => {
-          if (!confirm("Delete this note for everyone?")) return;
-          const { error } = await sb.from("notes").delete().eq("id", n.id);
-          if (error) err(error.message);
-          else {
-            notes = notes.filter((x) => x.id !== n.id);
-            render();
-          }
-        };
-        return b;
-      }
-
-      async function saveSubs(n, arr) {
-        const { error } = await sb
-          .from("notes")
-          .update({ subnotes: arr })
-          .eq("id", n.id);
-        if (error) {
-          err(error.message);
-          return;
-        }
-        n.subnotes = arr;
-        render();
-      }
       async function setPriority(n, p) {
         if (n.priority === p) return;
         const { error } = await sb
@@ -718,22 +691,78 @@
       function commentsFooter(n) {
         return function (card) {
           const wrap = el("div", "comments");
+          wrap.setAttribute("aria-expanded", "false");
           const toggle = el(
             "button",
             "ghost small",
             "Comments (" + (counts[n.id] || 0) + ")",
           );
+          toggle.type = "button";
+          toggle.setAttribute("aria-expanded", "false");
           const body = el("div", "cbody");
           body.style.display = "none";
           const list = el("div", "clist");
+          const viewport = el("div", "comment-viewport");
+          viewport.appendChild(list);
+          const navigation = el("div", "comment-navigation");
+          const previous = el("button", "ghost comment-arrow", "\u2190");
+          previous.type = "button";
+          previous.setAttribute("aria-label", "Previous comment");
+          const position = el("span", "comment-position");
+          const next = el("button", "ghost comment-arrow", "\u2192");
+          next.type = "button";
+          next.setAttribute("aria-label", "Next comment");
+          navigation.append(previous, position, next);
+          navigation.hidden = true;
+          const header = el("div", "comments-header");
           const row = el("div", "addsub");
           const inp = el("input", "mini");
           inp.placeholder = "Ask what it's for...";
           inp.maxLength = 500;
           const post = el("button", "plus", "Post");
           post.style.fontSize = "18px";
+          let currentComment = 0;
+          let rotationTimer = null;
+
+          function stopRotation() {
+            if (rotationTimer !== null) {
+              window.clearInterval(rotationTimer);
+              rotationTimer = null;
+            }
+          }
+
+          function closePanel() {
+            body.style.display = "none";
+            toggle.setAttribute("aria-expanded", "false");
+            wrap.setAttribute("aria-expanded", "false");
+            navigation.hidden = true;
+            stopRotation();
+          }
+          wrap.closePanel = closePanel;
+
+          function showComment(index) {
+            const total = list.children.length;
+            if (!total) return;
+            currentComment = (index + total) % total;
+            list.style.transform = "translateX(-" + currentComment * 100 + "%)";
+            position.textContent = (currentComment + 1) + " / " + total;
+          }
+
+          function startRotation() {
+            stopRotation();
+            if (list.children.length > 1) {
+              rotationTimer = window.setInterval(() => {
+                if (!wrap.isConnected || body.style.display === "none") {
+                  closePanel();
+                  return;
+                }
+                showComment(currentComment + 1);
+              }, 3000);
+            }
+          }
 
           async function load() {
+            stopRotation();
             const { data, error } = await sb
               .from("comments")
               .select("*")
@@ -742,6 +771,7 @@
             list.innerHTML = "";
             if (error) {
               list.textContent = error.message;
+              navigation.hidden = true;
               return;
             }
             let titles;
@@ -749,15 +779,19 @@
               titles = await loadStaffAuthorTitles(data.map((comment) => comment.user_id));
             } catch (titleError) {
               list.textContent = titleError.message;
+              navigation.hidden = true;
               return;
             }
+            if (body.style.display === "none") return;
             counts[n.id] = data.length;
             toggle.textContent = "Comments (" + data.length + ")";
-            if (!data.length)
-              list.appendChild(
-                el("p", "hint", "No comments yet. Ask a question!"),
-              );
+            currentComment = 0;
+            if (!data.length) {
+              list.appendChild(el("p", "hint comment-empty", "No comments yet. Ask a question!"));
+              navigation.hidden = true;
+            }
             data.forEach((c) => {
+              const slide = el("div", "comment-slide");
               const d = el("div", "comment");
               const h = el("div", "chead");
               h.appendChild(staffAuthorName(c.author_name || "user", titles[c.user_id]));
@@ -778,8 +812,12 @@
               }
               d.appendChild(h);
               d.appendChild(el("div", "ctext", c.content));
-              list.appendChild(d);
+              slide.appendChild(d);
+              list.appendChild(slide);
             });
+            navigation.hidden = data.length < 2;
+            showComment(0);
+            startRotation();
           }
           async function add() {
             const t = inp.value.trim();
@@ -794,18 +832,41 @@
             inp.value = "";
             load();
           }
-          toggle.onclick = () => {
-            const open = body.style.display === "none";
-            body.style.display = open ? "block" : "none";
-            if (open) load();
+          toggle.onclick = (event) => {
+            event.stopPropagation();
+            const open = toggle.getAttribute("aria-expanded") !== "true";
+            if (open) {
+              document
+                .querySelectorAll(".comments[aria-expanded='true']")
+                .forEach((panel) => {
+                  if (panel !== wrap && panel.closePanel) panel.closePanel();
+                });
+              body.style.display = "block";
+              toggle.setAttribute("aria-expanded", "true");
+              wrap.setAttribute("aria-expanded", "true");
+              load();
+            } else {
+              closePanel();
+            }
+          };
+          previous.onclick = (event) => {
+            event.stopPropagation();
+            showComment(currentComment - 1);
+            startRotation();
+          };
+          next.onclick = (event) => {
+            event.stopPropagation();
+            showComment(currentComment + 1);
+            startRotation();
           };
           post.onclick = add;
           inp.addEventListener("keydown", (e) => {
             if (e.key === "Enter") add();
           });
           row.append(inp, post);
-          body.append(list, row);
-          wrap.append(toggle, body);
+          header.append(toggle, navigation);
+          body.append(viewport, row);
+          wrap.append(header, body);
           card.appendChild(wrap);
         };
       }
