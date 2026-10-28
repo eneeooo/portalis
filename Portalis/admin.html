@@ -59,7 +59,7 @@
     }
 
     async function loadUsers() {
-      const { data, error } = await sb.from("profiles").select("id,email,student_number,full_name,role").order("created_at");
+      const { data, error } = await sb.rpc("get_admin_users");
       const body = document.getElementById("users");
       body.innerHTML = "";
       if (error) { err(error.message); return; }

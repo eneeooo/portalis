@@ -10,7 +10,7 @@
   <div class="wrap">
     <div id="bar"></div>
     <h2>Class funds</h2>
-    <p class="hint">Class Fund collection starts Aug 31–Sept 6, 2026, then continues weekly at ₱10 per student. Admins and officers can enter each student's total received; payments cover the oldest weeks first and carry forward as advance credit. Payment records are visible only to admins and officers.</p>
+    <p class="hint">Collection periods are added manually by admins. Admins and officers can enter each student's total received; payments cover the oldest periods first and carry forward as advance credit. Payment records are visible only to admins and officers.</p>
     <p id="msg" class="msg"></p>
     <div id="adminTools" class="card" style="display:none">
       <h3>Fund and collection period tools</h3>
@@ -71,15 +71,6 @@
       const { data, error } = await sb.from("funds").select("id,title,amount_per_period").order("created_at");
       if (error) { message(error.message, true); return; }
       funds = data || [];
-      if (ctx.isAdmin) {
-        const classFund = funds.find(f => f.title.trim().toLowerCase() === "class fund");
-        if (classFund) {
-          const { error: advanceError } = await sb.rpc("maintain_class_fund_advance_weeks", {
-            p_fund_id: classFund.id
-          });
-          if (advanceError) { message(advanceError.message, true); return; }
-        }
-      }
       const pick = $("fundPick"); pick.innerHTML = "";
       funds.forEach(f => { const o = el("option", "", f.title); o.value = f.id; pick.appendChild(o); });
       if (!funds.length) { $("summary").textContent = "No funds have been set up yet."; $("roster").innerHTML = ""; return; }
@@ -164,9 +155,13 @@
       );
       $("summary").appendChild(totals);
     }
+    function safeNumber(value, fallback = 0) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : fallback;
+    }
     function balanceCard(label, amount, className) {
       const card = el("div", "fund-balance-card " + className);
-      card.append(el("span", "fund-balance-label", label), el("strong", "fund-balance-amount", "₱" + Number(amount).toFixed(2)));
+      card.append(el("span", "fund-balance-label", label), el("strong", "fund-balance-amount", "₱" + safeNumber(amount).toFixed(2)));
       return card;
     }
     async function loadRoster() {
@@ -184,7 +179,7 @@
       const debtRows = debtResult.data || [];
       const myBalance = Array.isArray(myBalanceResult.data) ? myBalanceResult.data[0] : myBalanceResult.data;
       const debtByUser = Object.fromEntries(debtRows.map(x => [x.user_id, x]));
-      const totalFunds = debtRows.reduce((sum, user) => sum + Number(user.total_paid), 0);
+      const totalFunds = debtRows.reduce((sum, user) => sum + safeNumber(user.total_paid), 0);
       const debtors = debtRows.filter(x => Number(x.total_debt) > 0).length;
       $("summary").innerHTML = "";
       $("summary").appendChild(el("h3", "", selectedFund.title + " payment summary"));
@@ -207,9 +202,9 @@
           el("td", "", student.student_number || "Not assigned"),
           el("td", "", student.full_name || "Student"),
           el("td", "", "Due ₱" + Number(student.amount_due).toFixed(2) + " · paid ₱" + Number(student.amount_paid).toFixed(2)),
-          el("td", "", "₱" + Number(debt ? debt.total_paid : 0).toFixed(2)),
-          el("td", "", "₱" + Number(debt ? debt.advance_credit : 0).toFixed(2)),
-          el("td", "", "₱" + Number(debt ? debt.total_debt : 0).toFixed(2))
+          el("td", "", "₱" + safeNumber(debt ? debt.total_paid : 0).toFixed(2)),
+          el("td", "", "₱" + safeNumber(debt ? debt.advance_credit : 0).toFixed(2)),
+          el("td", "", "₱" + safeNumber(debt ? debt.total_debt : 0).toFixed(2))
         );
         const status = el("td");
         const isPartial = Number(student.amount_paid) > 0 && !student.is_paid;
@@ -225,7 +220,7 @@
       });
     }
     async function editPayment(student, debt) {
-      const current = Number(debt ? debt.total_paid : 0);
+      const current = safeNumber(debt ? debt.total_paid : 0);
       const input = prompt(
         "Total amount received from " + (student.full_name || "this student") +
           " across " + selectedFund.title + " (₱). Amount is allocated to the oldest unpaid weeks first:",
@@ -467,7 +462,7 @@
     };
     async function deletePeriod(period) {
       if (!selectedFund || !period) return;
-      if (!confirm("Remove \"" + period.label + "\" from " + selectedFund.title + "? Any money already collected will be kept and reallocated across the remaining weeks. Advance payments stay as credit and do not add future Class Fund weeks.")) return;
+      if (!confirm("Remove \"" + period.label + "\" from " + selectedFund.title + "? Any money already collected will be kept and reallocated across the remaining periods.")) return;
       const { error } = await sb.from("fund_periods").delete().eq("id", period.id);
       if (error) { message(error.message, true); return; }
       selectedPeriod = null;
