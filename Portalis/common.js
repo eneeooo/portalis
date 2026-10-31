@@ -228,8 +228,60 @@ async function requireAuth(adminOnly) {
   return { user: userData.user, profile: prof, role: role, isAdmin };
 }
 
+/* Phones: the top bar shrinks to the profile + a Menu button; every tab lives inside the menu. */
+function installBarMenuStyles() {
+  if (document.getElementById("barMenuStyle")) return;
+  const style = document.createElement("style");
+  style.id = "barMenuStyle";
+  style.textContent =
+    ".bar-who { display: contents; }" +
+    "button.menu-toggle { display: none; }" +
+    "@media (max-width: 700px) {" +
+    "  .bar { justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 24px; }" +
+    "  .bar-profile { flex: 1; min-width: 0; flex-direction: row; text-align: left; gap: 10px; }" +
+    "  .bar-profile .bar-avatar { width: 42px; height: 42px; flex: none; font-size: 17px; }" +
+    "  .bar-who { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; gap: 2px; }" +
+    "  .bar-profile .bar-name { max-width: 100%; font-size: 17px; }" +
+    "  .bar-profile .bar-student-number { font-size: 13px; }" +
+    "  button.menu-toggle { display: inline-flex; align-items: center; gap: 8px; flex: none; margin: 0; min-height: 42px; padding: 6px 14px; border: 2.5px solid #000; border-radius: 999px; background: #f6b8dc; color: #000; font-size: 17px; font-weight: bold; box-shadow: 2px 2px 0 #000; }" +
+    "  button.menu-toggle:hover { background: #fff0f8; }" +
+    "  button.menu-toggle:focus-visible { outline: 3px solid #000; outline-offset: 3px; }" +
+    "  button.menu-toggle svg { width: 18px; height: 18px; display: block; }" +
+    "  .bar .nav, .bar .profile-controls { display: none; }" +
+    "  .bar.menu-open .nav { display: flex; flex: 0 0 100%; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 2px dashed #000; }" +
+    "  .bar.menu-open .nav-link { justify-content: flex-start; width: 100%; min-height: 44px; padding: 8px 16px; font-size: 18px; border-radius: 14px; }" +
+    "  .bar.menu-open .profile-controls { display: flex; flex: 0 0 100%; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; padding-top: 10px; border-top: 2px dashed #000; }" +
+    "}";
+  document.head.appendChild(style);
+}
+
+function makeMenuToggle(bar, nav) {
+  const toggle = el("button", "menu-toggle");
+  toggle.type = "button";
+  toggle.setAttribute("aria-controls", "barNav");
+  const icons = {
+    open: '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M2 4.5 H16 M2 9 H16 M2 13.5 H16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/></svg>',
+    close: '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3.5 3.5 L14.5 14.5 M14.5 3.5 L3.5 14.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/></svg>'
+  };
+  const set = open => {
+    bar.classList.toggle("menu-open", open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    toggle.innerHTML = (open ? icons.close : icons.open) + "<span>" + (open ? "Close" : "Menu") + "</span>";
+  };
+  set(false);
+  toggle.onclick = event => { event.stopPropagation(); set(!bar.classList.contains("menu-open")); };
+  document.addEventListener("click", event => {
+    if (bar.classList.contains("menu-open") && !bar.contains(event.target)) set(false);
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && bar.classList.contains("menu-open")) { set(false); toggle.focus(); }
+  });
+  return toggle;
+}
+
 function renderBar(ctx, active) {
   const bar = document.getElementById("bar");
+  installBarMenuStyles();
   bar.className = "bar";
   bar.innerHTML = "";
   const identity = el("div", "bar-profile");
@@ -247,10 +299,12 @@ function renderBar(ctx, active) {
       .toUpperCase();
     identity.appendChild(el("span", "bar-avatar bar-avatar-fallback", initials));
   }
-  identity.append(
+  const who = el("span", "bar-who");
+  who.append(
     el("span", "bar-name", ctx.profile.full_name || "Student"),
     el("span", "bar-student-number", ctx.profile.student_number || "Student number not set")
   );
+  identity.appendChild(who);
   bar.appendChild(identity);
   loadNicknames([ctx.user.id]).then(() => {
     const nick = nickCache[ctx.user.id];
@@ -258,6 +312,8 @@ function renderBar(ctx, active) {
     if (nick && nameSpan) nameSpan.append(" ", el("span", "bar-nick", "(" + nick + ")"));
   });
   const nav = el("nav", "nav");
+  nav.id = "barNav";
+  bar.appendChild(makeMenuToggle(bar, nav));
   const links = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"], ["funds.html", "Class funds", "funds"], ["attendance.html", "Attendance", "attendance"], ["memories.html", "Memories", "memories"], ["confessions.html", "Confessions", "confessions"], ["profile.html", "Profile", "profile"]];
   if (ctx.role === "admin") links.push(["admin.html", "Admin", "admin"]);
   if (ctx.role === "officer") links.push(["officer.html", "Officer", "officer"]);
@@ -421,6 +477,30 @@ function showToast(text, kind) {
 /* ---------- view a classmate's profile ---------- */
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+/* Round X button in the top-right corner of the profile card. */
+function memberCloseButton(onClose) {
+  if (!document.getElementById("memberCloseStyle")) {
+    const style = document.createElement("style");
+    style.id = "memberCloseStyle";
+    style.textContent =
+      ".member-card { position: relative; }" +
+      ".member-card .member-head { padding-right: 34px; }" +
+      "button.member-x { position: absolute; top: 10px; right: 10px; width: 34px; height: 34px; margin: 0; padding: 0; display: grid; place-items: center; border-radius: 50%; background: #fff; color: #000; border: 2.5px solid #000; box-shadow: none; cursor: pointer; }" +
+      "button.member-x svg { width: 16px; height: 16px; display: block; }" +
+      "button.member-x:hover { background: #000; color: #fff; box-shadow: none; }" +
+      "button.member-x:focus-visible { outline: 3px solid #000; outline-offset: 2px; }";
+    document.head.appendChild(style);
+  }
+  const x = document.createElement("button");
+  x.type = "button";
+  x.className = "member-x";
+  x.setAttribute("aria-label", "Close");
+  x.title = "Close";
+  x.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3 L13 13 M13 3 L3 13" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/></svg>';
+  x.onclick = onClose;
+  return x;
+}
+
 function openMemberProfile(userId, hint) {
   if (!userId) return;
   hint = hint || {};
@@ -445,9 +525,7 @@ function openMemberProfile(userId, hint) {
       card.appendChild(el("p", "msg err", error
         ? error.message + " (Run migration_profile_nickname_online.sql in the Supabase SQL Editor if you have not yet.)"
         : "This profile could not be found."));
-      const ok = el("button", "ghost", "Close");
-      ok.onclick = close;
-      card.appendChild(ok);
+      card.appendChild(memberCloseButton(close));
       return;
     }
     const title = profileTitle({ student_number: row.student_number, role: row.role });
@@ -491,12 +569,10 @@ function openMemberProfile(userId, hint) {
       edit.href = "profile.html";
       actions.appendChild(edit);
     }
-    const done = el("button", "", "Close");
-    done.type = "button";
-    done.onclick = close;
-    actions.appendChild(done);
-    card.appendChild(actions);
-    done.focus();
+    if (actions.children.length) card.appendChild(actions);
+    const closeX = memberCloseButton(close);
+    card.appendChild(closeX);
+    closeX.focus();
   });
 }
 
