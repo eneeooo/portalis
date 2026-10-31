@@ -34,6 +34,22 @@
     </div>
 
     <div class="section">
+      <h2>Confession log <span id="clogCount" class="badge"></span></h2>
+      <p class="hint">Only admins can see this. Confessions stay anonymous everywhere else, and entries remain here even after a confession is deleted.</p>
+      <button id="clogToggle" type="button" class="ghost" aria-expanded="false" aria-controls="clogBox">Show log</button>
+      <div id="clogBox" hidden>
+        <p id="clogMsg" class="msg" style="display:none"></p>
+        <div class="scroll">
+          <table>
+            <thead><tr><th style="width:150px">Posted</th><th style="width:200px">Posted by</th><th style="width:100px">Feeling</th><th>Confession</th><th style="width:130px">Status</th></tr></thead>
+            <tbody id="clog"></tbody>
+          </table>
+        </div>
+        <p id="clogEmpty" class="empty" style="display:none">No confessions logged yet.</p>
+      </div>
+    </div>
+
+    <div class="section">
       <h2>Suggestions</h2>
       <div id="suggestions"></div>
     </div>
@@ -54,9 +70,54 @@
       if (!ctx) return;
       renderBar(ctx, "admin");
       await loadUsers();
+      await loadConfessionLog();
       await loadSuggestions();
       await loadNotes();
     }
+
+    let confessionLog = [];
+    async function loadConfessionLog() {
+      const note = document.getElementById("clogMsg");
+      const { data, error } = await sb.rpc("admin_confession_log");
+      if (error) {
+        confessionLog = [];
+        note.style.display = "";
+        note.className = "msg err";
+        note.textContent = /function|schema cache|does not exist|could not find/i.test(error.message)
+          ? "The confession log is not set up yet. Run migration_confession_log.sql in the Supabase SQL Editor."
+          : error.message;
+      } else {
+        note.style.display = "none";
+        confessionLog = data || [];
+      }
+      renderConfessionLog();
+    }
+    function renderConfessionLog() {
+      const body = document.getElementById("clog");
+      const empty = document.getElementById("clogEmpty");
+      document.getElementById("clogCount").textContent = confessionLog.length ? confessionLog.length : "";
+      body.innerHTML = "";
+      empty.style.display = confessionLog.length ? "none" : "";
+      confessionLog.forEach(r => {
+        const tr = document.createElement("tr");
+        const who = el("td", "");
+        who.appendChild(el("strong", "", r.author_name || "Unknown student"));
+        if (r.student_number) { who.appendChild(document.createElement("br")); who.appendChild(el("small", "", r.student_number)); }
+        const text = el("td", "", r.content);
+        text.style.whiteSpace = "pre-wrap";
+        text.style.overflowWrap = "anywhere";
+        const status = el("td", "", r.deleted_at ? "Deleted " + fmtDate(r.deleted_at) : "Live");
+        tr.append(el("td", "", fmtDate(r.posted_at)), who, el("td", "", String(r.feeling || "other").replace(/-/g, " ")), text, status);
+        body.appendChild(tr);
+      });
+    }
+    document.getElementById("clogToggle").onclick = () => {
+      const box = document.getElementById("clogBox");
+      const button = document.getElementById("clogToggle");
+      box.hidden = !box.hidden;
+      button.textContent = box.hidden ? "Show log" : "Hide log";
+      button.setAttribute("aria-expanded", box.hidden ? "false" : "true");
+    };
 
     async function loadUsers() {
       const { data, error } = await sb.rpc("get_admin_users");

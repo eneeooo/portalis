@@ -56,7 +56,8 @@
         <div id="mode-manual">
           <label for="mType">Question type</label>
           <select id="mType">
-            <option value="mcq">Multiple choice (also use for True/False)</option>
+            <option value="mcq">Multiple choice</option>
+            <option value="tf">True or False</option>
             <option value="identification">Identification (student types the answer)</option>
           </select>
           <label for="mPrompt">Question</label>
@@ -64,6 +65,11 @@
           <div id="mMcq">
             <label>Options (tick the correct one; blank options are ignored)</label>
             <div id="mOptions"></div>
+          </div>
+          <div id="mTf" style="display:none">
+            <label>Correct answer</label>
+            <div class="optrow"><input type="radio" name="mTfAnswer" id="mtfTrue" value="True" checked><label for="mtfTrue">True</label></div>
+            <div class="optrow"><input type="radio" name="mTfAnswer" id="mtfFalse" value="False"><label for="mtfFalse">False</label></div>
           </div>
           <div id="mId" style="display:none">
             <label for="mAnswer">Correct answer (not case sensitive)</label>
@@ -74,8 +80,8 @@
 
         <!-- bulk -->
         <div id="mode-bulk" style="display:none">
-          <p class="hint">Separate questions with a blank line. Multiple choice has options A) B) C)... and an "Answer:" letter. Without options it becomes identification.</p>
-          <textarea id="bText" style="min-height:220px" placeholder="Q: What is the capital of the Philippines?&#10;A) Cebu&#10;B) Manila&#10;C) Davao&#10;Answer: B&#10;&#10;Q: Keyword used to declare an integer in Java?&#10;Answer: int"></textarea>
+          <p class="hint">Separate questions with a blank line. Multiple choice has options A) B) C)... and an "Answer:" letter. Without options it becomes identification, unless the answer is True or False, which makes a True/False question.</p>
+          <textarea id="bText" style="min-height:220px" placeholder="Q: What is the capital of the Philippines?&#10;A) Cebu&#10;B) Manila&#10;C) Davao&#10;Answer: B&#10;&#10;Q: Keyword used to declare an integer in Java?&#10;Answer: int&#10;&#10;Q: Java is a programming language.&#10;Answer: True"></textarea>
           <button id="bParse">Check questions</button>
           <div id="bPreview"></div>
         </div>
@@ -248,9 +254,10 @@
       }
     }
     $("mType").onchange = () => {
-      const mcq = $("mType").value === "mcq";
-      $("mMcq").style.display = mcq ? "block" : "none";
-      $("mId").style.display = mcq ? "none" : "block";
+      const kind = $("mType").value;
+      $("mMcq").style.display = kind === "mcq" ? "block" : "none";
+      $("mTf").style.display = kind === "tf" ? "block" : "none";
+      $("mId").style.display = kind === "identification" ? "block" : "none";
     };
     $("mAdd").onclick = async () => {
       const prompt = $("mPrompt").value.trim();
@@ -269,6 +276,10 @@
         if (opts.length < 2) return err("Enter at least 2 options.");
         if (correct === null) return err("The ticked option is blank. Tick one that has text.");
         item = { qtype: "mcq", prompt: prompt, options: opts, answer: correct };
+      } else if ($("mType").value === "tf") {
+        // saved as a two-option multiple choice, so no database change is needed
+        const picked = document.querySelector('input[name="mTfAnswer"]:checked');
+        item = { qtype: "mcq", prompt: prompt, options: ["True", "False"], answer: picked ? picked.value : "True" };
       } else {
         const a = $("mAnswer").value.trim();
         if (!a) return err("Enter the correct answer.");
@@ -278,6 +289,7 @@
         $("mPrompt").value = ""; $("mAnswer").value = "";
         for (let i = 0; i < 4; i++) $("mo" + i).value = "";
         $("mc0").checked = true;
+        $("mtfTrue").checked = true;
       }
     };
 

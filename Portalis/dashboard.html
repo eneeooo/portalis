@@ -688,6 +688,7 @@
                   closePanel();
                   return;
                 }
+                if (reactionPickerOpen()) return;
                 showComment(currentComment + 1);
               }, 10000);
             }
@@ -722,6 +723,15 @@
               list.appendChild(el("p", "hint comment-empty", "No comments yet. Ask a question!"));
               navigation.hidden = true;
             }
+            const noteReactions = {};
+            let noteReactionsOk = false;
+            if (data.length) {
+              const rr = await sb.rpc("get_note_comment_reactions", { p_comment_ids: data.map((c) => c.id) });
+              if (!rr.error) {
+                noteReactionsOk = true;
+                (rr.data || []).forEach((x) => { (noteReactions[x.comment_id] = noteReactions[x.comment_id] || []).push(x); });
+              }
+            }
             data.forEach((c) => {
               const slide = el("div", "comment-slide");
               const d = el("div", "comment");
@@ -744,6 +754,13 @@
               }
               d.appendChild(h);
               d.appendChild(el("div", "ctext", c.content));
+              if (noteReactionsOk) {
+                d.appendChild(createReactions({
+                  table: "comment_reactions", idColumn: "comment_id", targetId: c.id,
+                  reactions: noteReactions[c.id] || [], names: false, compact: true,
+                  me: { id: ctx.user.id, name: ctx.profile.full_name || "You", nickname: nickCache[ctx.user.id] || "" }
+                }));
+              }
               slide.appendChild(d);
               list.appendChild(slide);
             });

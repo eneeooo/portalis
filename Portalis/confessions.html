@@ -43,12 +43,6 @@
     async function load() {
       const { data, error } = await sb.from("confessions").select("id,content,feeling,created_at").order("created_at", { ascending: false });
       if (error) { $("msg").className = "msg err"; $("msg").textContent = error.message; return; }
-      let authorNames = {};
-      if (ctx.role === "admin" && data.length) {
-        const { data: authors, error: authorError } = await sb.rpc("admin_confession_authors");
-        if (authorError) { $("msg").className = "msg err"; $("msg").textContent = authorError.message; return; }
-        authorNames = Object.fromEntries((authors || []).map(author => [author.confession_id, author.author_name]));
-      }
       const feed = $("feed"); feed.innerHTML = "";
       if (!data.length) feed.appendChild(el("p", "empty", "No confessions yet."));
       data.forEach(item => {
@@ -58,9 +52,6 @@
           el("p", "confession", item.content),
           el("small", "", fmtDate(item.created_at))
         );
-        if (ctx.role === "admin") {
-          card.appendChild(el("p", "confession-author", "Posted by: " + (authorNames[item.id] || "Unknown student")));
-        }
         if (ctx.role === "admin") {
           const remove = el("button", "ghost small", "Delete");
           remove.onclick = async () => {

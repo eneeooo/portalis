@@ -1154,7 +1154,8 @@ function shuffle(a) {
      Q: question text
      A) option
      B) option
-     Answer: B          <- letter for multiple choice, or the text for identification   */
+     Answer: B          <- letter for multiple choice, or the text for identification
+   No options + "Answer: True" / "Answer: False" makes a True/False question.            */
 function parseBulk(text) {
   const blocks = (text || "").replace(/\r/g, "").split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
   const items = [], errors = [];
@@ -1174,6 +1175,10 @@ function parseBulk(text) {
     const tag = "Question " + (bi + 1) + ": ";
     if (!prompt) { errors.push(tag + "no question text"); return; }
     if (!answer) { errors.push(tag + "missing 'Answer:' line"); return; }
+    if (opts.length === 0 && /^(true|false)$/i.test(answer)) {
+      items.push({ qtype: "mcq", prompt: prompt, options: ["True", "False"], answer: /^true$/i.test(answer) ? "True" : "False" });
+      return;
+    }
     if (opts.length === 0) { items.push({ qtype: "identification", prompt: prompt, options: [], answer: answer }); return; }
     if (opts.length < 2) { errors.push(tag + "needs at least 2 options"); return; }
     let correct = null;
@@ -1219,4 +1224,281 @@ function generateQuestions(text, style, limit) {
     out.push({ qtype: "mcq", prompt: "Which term matches this description? " + p.def, options: shuffle([p.term].concat(distractors)), answer: p.term });
   });
   return out;
+}
+
+/* ==========================================================================
+   Reactions (memories, memory comments and note comments share this)
+   ========================================================================== */
+const REACTIONS = [
+  { key: "like", label: "Like", icon: '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.3a2 2 0 0 0 2-1.7l1.4-9a2 2 0 0 0-2-2.3z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>' },
+  { key: "love", label: "Love", icon: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21.2l7.8-7.7 1.1-1.1a5.5 5.5 0 0 0 0-7.8z"/>' },
+  { key: "haha", label: "Haha", icon: '<circle cx="12" cy="12" r="9"/><path d="M7.5 9.8q1.2-1.6 2.4 0M14.1 9.8q1.2-1.6 2.4 0"/><path d="M7 13.5h10a5 5 0 0 1-10 0z" fill="currentColor"/>' },
+  { key: "wow", label: "Wow", icon: '<circle cx="12" cy="12" r="9"/><circle cx="9" cy="9.8" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="9.8" r="1.1" fill="currentColor" stroke="none"/><ellipse cx="12" cy="16" rx="2" ry="2.7" fill="currentColor" stroke="none"/>' },
+  { key: "sad", label: "Sad", icon: '<circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1.1" fill="currentColor" stroke="none"/><path d="M8.5 17q3.5-3.4 7 0"/>' },
+  { key: "angry", label: "Angry", icon: '<circle cx="12" cy="12" r="9"/><path d="M7 8l3.2 1.6M17 8l-3.2 1.6"/><circle cx="9" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.1" fill="currentColor" stroke="none"/><path d="M8.5 17.2q3.5-2.8 7 0"/>' }
+];
+const REACTION_MAP = {};
+REACTIONS.forEach(r => { REACTION_MAP[r.key] = r; });
+
+function reactionSvg(key) {
+  const r = REACTION_MAP[key] || REACTION_MAP.like;
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + r.icon + "</svg>";
+}
+
+function installReactionStyles() {
+  if (document.getElementById("reactionStyle")) return;
+  const style = document.createElement("style");
+  style.id = "reactionStyle";
+  style.textContent = [
+    ".react-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 2px; line-height: 1.2; }",
+    "button.react-btn { display: inline-flex; align-items: center; gap: 7px; margin: 0; min-height: 36px; padding: 4px 13px 4px 9px; border: 2.5px solid #000; border-radius: 999px; background: #fff; color: #000; font: inherit; font-size: 17px; box-shadow: 2px 2px 0 #000; cursor: pointer; }",
+    "button.react-btn svg { display: block; flex: none; width: 20px; height: 20px; }",
+    "button.react-btn:hover { background: #f6b8dc; color: #000; box-shadow: 2px 2px 0 #000; }",
+    "button.react-btn.on, button.react-btn.on:hover { background: #000; color: #fff; }",
+    "button.react-btn:focus-visible, button.react-sum:focus-visible, button.react-opt:focus-visible, button.react-tab:focus-visible { outline: 3px solid #000; outline-offset: 3px; }",
+    ".react-row.compact button.react-btn { min-height: 30px; padding: 2px 11px 2px 7px; border-width: 2px; font-size: 15px; gap: 6px; }",
+    ".react-row.compact button.react-btn svg { width: 16px; height: 16px; }",
+    "button.react-sum { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 2px 8px 2px 4px; border: 0; border-radius: 999px; background: transparent; color: #000; font: inherit; font-size: 16px; box-shadow: none; cursor: pointer; }",
+    "button.react-sum:hover:not(:disabled) { background: #fff0f8; color: #000; box-shadow: none; text-decoration: underline; }",
+    "button.react-sum:disabled { cursor: default; }",
+    "button.react-sum[hidden] { display: none; }",
+    ".react-stack { display: inline-flex; }",
+    ".react-mini { display: grid; place-items: center; width: 24px; height: 24px; margin-left: -7px; border: 2px solid #000; border-radius: 50%; background: #fff; color: #000; }",
+    ".react-mini:first-child { margin-left: 0; }",
+    ".react-mini svg { display: block; width: 14px; height: 14px; }",
+    ".react-row.compact .react-mini { width: 21px; height: 21px; }",
+    ".react-row.compact .react-mini svg { width: 12px; height: 12px; }",
+    ".react-picker { position: absolute; z-index: 1200; display: flex; gap: 4px; padding: 6px; background: #fff; border: 3px solid #000; border-radius: 999px; box-shadow: 3px 3px 0 #000; }",
+    ".react-picker[hidden] { display: none; }",
+    "button.react-opt { display: grid; place-items: center; width: 40px; height: 40px; margin: 0; padding: 0; border: 2px solid #000; border-radius: 50%; background: #fff; color: #000; box-shadow: none; cursor: pointer; transition: transform .1s; }",
+    "button.react-opt svg { display: block; width: 22px; height: 22px; }",
+    "button.react-opt:hover { background: #f6b8dc; color: #000; box-shadow: none; transform: translateY(-3px); }",
+    "button.react-opt.on, button.react-opt.on:hover { background: #000; color: #fff; }",
+    ".react-modal { position: relative; text-align: left; max-width: 420px; }",
+    ".react-modal h3 { margin: 0 0 12px; padding-right: 44px; }",
+    ".react-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }",
+    "button.react-tab { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 3px 12px; border: 2px solid #000; border-radius: 999px; background: #fff; color: #000; font: inherit; font-size: 16px; box-shadow: none; }",
+    "button.react-tab svg { display: block; width: 16px; height: 16px; }",
+    "button.react-tab:hover { background: #f6b8dc; color: #000; box-shadow: none; }",
+    "button.react-tab.on, button.react-tab.on:hover { background: #000; color: #fff; }",
+    "ul.react-people { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; border-top: 2px dashed #000; }",
+    "li.react-person { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-bottom: 1.5px dashed #000; }",
+    "li.react-person .react-mini { flex: none; width: 30px; height: 30px; margin: 0; }",
+    "li.react-person .react-mini svg { width: 17px; height: 17px; }",
+    ".react-person-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }",
+    ".react-person-nick { opacity: .7; }",
+    "button.react-link { margin: 0; padding: 0; border: 0; background: none; color: #000; font: inherit; text-align: left; text-decoration: underline; box-shadow: none; cursor: pointer; }",
+    "button.react-link:hover { background: none; color: #000; box-shadow: none; text-decoration-thickness: 2px; }",
+    ".react-you { padding: 0 9px; border: 1.5px solid #000; border-radius: 999px; font-size: 13px; }",
+    ".react-empty { margin: 12px 0 0; }",
+    ".react-toast { position: fixed; left: 50%; bottom: 96px; z-index: 1300; max-width: min(92vw, 460px); transform: translateX(-50%); padding: 10px 16px; background: #000; color: #fff; font-size: 17px; box-shadow: 3px 3px 0 #0005; }"
+  ].join("\n");
+  document.head.appendChild(style);
+}
+
+function reactionToast(text) {
+  installReactionStyles();
+  document.querySelectorAll(".react-toast").forEach(node => node.remove());
+  const toast = el("div", "react-toast", text);
+  toast.setAttribute("role", "alert");
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 5000);
+}
+
+function friendlyReactionError(error) {
+  const text = (error && error.message) || String(error);
+  if (/relation|does not exist|schema cache|could not find|function/i.test(text)) {
+    return "Reactions are not set up yet. Run migration_memory_reactions.sql and migration_comment_reactions.sql in the Supabase SQL Editor.";
+  }
+  if (/row-level security|violates/i.test(text)) return "You can only react to approved posts and comments.";
+  return text;
+}
+
+/* One floating picker shared by every reaction button (so nothing gets clipped inside cards or sliders). */
+const reactPicker = { node: null, anchor: null, hideTimer: 0, openTimer: 0, ready: false };
+
+function reactionPickerOpen() { return !!(reactPicker.node && !reactPicker.node.hidden); }
+
+function hideReactPicker() {
+  clearTimeout(reactPicker.hideTimer);
+  clearTimeout(reactPicker.openTimer);
+  if (reactPicker.node) reactPicker.node.hidden = true;
+  reactPicker.anchor = null;
+}
+
+function scheduleHideReactPicker(ms) {
+  clearTimeout(reactPicker.hideTimer);
+  reactPicker.hideTimer = setTimeout(hideReactPicker, ms);
+}
+
+function showReactPicker(anchor, current, onPick, focusFirst) {
+  installReactionStyles();
+  if (!reactPicker.node) {
+    const node = el("div", "react-picker");
+    node.setAttribute("role", "menu");
+    node.hidden = true;
+    node.addEventListener("mouseenter", () => clearTimeout(reactPicker.hideTimer));
+    node.addEventListener("mouseleave", () => scheduleHideReactPicker(300));
+    document.body.appendChild(node);
+    reactPicker.node = node;
+  }
+  if (!reactPicker.ready) {
+    reactPicker.ready = true;
+    document.addEventListener("click", event => {
+      if (!event.target.closest(".react-picker, .react-btn")) hideReactPicker();
+    });
+    document.addEventListener("keydown", event => { if (event.key === "Escape") hideReactPicker(); });
+  }
+  const node = reactPicker.node;
+  node.replaceChildren();
+  REACTIONS.forEach(r => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "react-opt" + (r.key === current ? " on" : "");
+    option.title = r.label;
+    option.setAttribute("role", "menuitem");
+    option.setAttribute("aria-label", r.label + (r.key === current ? " (your reaction, tap to remove)" : ""));
+    option.innerHTML = reactionSvg(r.key);
+    option.onclick = event => { event.stopPropagation(); hideReactPicker(); onPick(r.key); };
+    node.appendChild(option);
+  });
+  reactPicker.anchor = anchor;
+  node.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const width = node.offsetWidth, height = node.offsetHeight;
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+  let top = rect.top - height - 8;
+  if (top < 8) top = rect.bottom + 8;
+  node.style.left = (left + window.scrollX) + "px";
+  node.style.top = (top + window.scrollY) + "px";
+  if (focusFirst) { const first = node.querySelector(".react-opt.on") || node.firstChild; if (first) first.focus(); }
+}
+
+/* opts: { table, idColumn, targetId, reactions: [{user_id, reaction, display_name?, nickname?}],
+           me: {id, name, nickname}, names: bool (tap the count to see who reacted),
+           fetchFresh: async () => array | null, compact: bool } */
+function createReactions(opts) {
+  installReactionStyles();
+  const me = opts.me;
+  let list = (opts.reactions || []).map(r => Object.assign({}, r));
+  const row = el("div", "react-row" + (opts.compact ? " compact" : ""));
+  const btn = el("button", "react-btn");
+  btn.type = "button";
+  btn.setAttribute("aria-haspopup", "menu");
+  const sum = el("button", "react-sum");
+  sum.type = "button";
+  row.append(btn, sum);
+
+  const mine = () => list.find(r => r.user_id === me.id);
+
+  function render() {
+    const my = mine();
+    btn.classList.toggle("on", !!my);
+    const label = my ? REACTION_MAP[my.reaction].label : "React";
+    btn.innerHTML = reactionSvg(my ? my.reaction : "like") + "<span>" + label + "</span>";
+    btn.setAttribute("aria-label", my ? "Your reaction: " + label + ". Change it" : "React");
+    const counts = {};
+    list.forEach(r => { counts[r.reaction] = (counts[r.reaction] || 0) + 1; });
+    const top = REACTIONS.map(r => r.key).filter(k => counts[k]).sort((a, b) => counts[b] - counts[a]).slice(0, 3);
+    sum.hidden = !list.length;
+    sum.innerHTML = '<span class="react-stack">' + top.map(k => '<span class="react-mini">' + reactionSvg(k) + "</span>").join("") + '</span><span class="react-total">' + list.length + "</span>";
+    sum.title = REACTIONS.filter(r => counts[r.key]).map(r => r.label + " " + counts[r.key]).join(", ");
+    sum.setAttribute("aria-label", list.length + (list.length === 1 ? " reaction" : " reactions") + (opts.names ? ". See who reacted" : ""));
+    sum.disabled = !opts.names;
+  }
+
+  let chain = Promise.resolve();
+  function pick(key) {
+    const before = mine();
+    const remove = !!before && before.reaction === key;
+    list = list.filter(r => r.user_id !== me.id);
+    if (!remove) list.push({ user_id: me.id, reaction: key, display_name: me.name, nickname: me.nickname || null });
+    render();
+    chain = chain.then(async () => {
+      const request = remove
+        ? sb.from(opts.table).delete().eq(opts.idColumn, opts.targetId).eq("user_id", me.id)
+        : sb.from(opts.table).upsert({ [opts.idColumn]: opts.targetId, user_id: me.id, reaction: key }, { onConflict: opts.idColumn + ",user_id" });
+      const { error } = await request;
+      if (error) {
+        list = list.filter(r => r.user_id !== me.id);
+        if (before) list.push(before);
+        render();
+        reactionToast(friendlyReactionError(error));
+      }
+    });
+  }
+
+  const openPicker = focusFirst => { const my = mine(); showReactPicker(btn, my && my.reaction, pick, focusFirst); };
+  const canHover = () => window.matchMedia && window.matchMedia("(hover: hover)").matches;
+  btn.onclick = event => { event.stopPropagation(); openPicker(true); };
+  btn.addEventListener("mouseenter", () => {
+    if (!canHover()) return;
+    clearTimeout(reactPicker.hideTimer);
+    clearTimeout(reactPicker.openTimer);
+    reactPicker.openTimer = setTimeout(() => openPicker(false), 250);
+  });
+  btn.addEventListener("mouseleave", () => { clearTimeout(reactPicker.openTimer); scheduleHideReactPicker(350); });
+
+  function openList() {
+    let filter = "all";
+    const dialog = el("div", "modal-backdrop");
+    const card = el("div", "modal-card react-modal");
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-modal", "true");
+    card.setAttribute("aria-label", "Who reacted");
+    const close = () => { dialog.remove(); document.removeEventListener("keydown", onKey); };
+    const onKey = event => { if (event.key === "Escape") close(); };
+    document.addEventListener("keydown", onKey);
+    dialog.onclick = event => { if (event.target === dialog) close(); };
+    const tabs = el("div", "react-tabs");
+    const people = el("ul", "react-people");
+    function draw() {
+      const counts = {};
+      list.forEach(r => { counts[r.reaction] = (counts[r.reaction] || 0) + 1; });
+      if (filter !== "all" && !counts[filter]) filter = "all";
+      tabs.replaceChildren();
+      const makeTab = (key, html) => {
+        const tab = el("button", "react-tab" + (filter === key ? " on" : ""));
+        tab.type = "button";
+        tab.innerHTML = html;
+        tab.onclick = () => { filter = key; draw(); };
+        tabs.appendChild(tab);
+      };
+      makeTab("all", "All " + list.length);
+      REACTIONS.forEach(r => { if (counts[r.key]) makeTab(r.key, reactionSvg(r.key) + "<span>" + counts[r.key] + "</span>"); });
+      people.replaceChildren();
+      list.slice().reverse().filter(r => filter === "all" || r.reaction === filter).forEach(r => {
+        const li = el("li", "react-person");
+        const icon = el("span", "react-mini");
+        icon.innerHTML = reactionSvg(r.reaction);
+        icon.title = REACTION_MAP[r.reaction].label;
+        const name = el("span", "react-person-name");
+        const link = el("button", "react-link", r.display_name || "Student");
+        link.type = "button";
+        link.onclick = () => openMemberProfile(r.user_id);
+        name.appendChild(link);
+        if (r.nickname) name.append(" ", el("span", "react-person-nick", "(" + r.nickname.toLowerCase() + ")"));
+        li.append(icon, name);
+        if (r.user_id === me.id) li.appendChild(el("span", "react-you", "You"));
+        people.appendChild(li);
+      });
+      if (!list.length) people.appendChild(el("li", "hint react-empty", "No reactions yet."));
+    }
+    card.append(el("h3", "", "Reactions"), tabs, people, memberCloseButton(close));
+    dialog.appendChild(card);
+    document.body.appendChild(dialog);
+    draw();
+    if (typeof opts.fetchFresh === "function") {
+      opts.fetchFresh().then(fresh => {
+        if (!Array.isArray(fresh) || !dialog.isConnected) return;
+        list = fresh.map(r => Object.assign({}, r));
+        render();
+        draw();
+      }).catch(() => {});
+    }
+  }
+  sum.onclick = event => { event.stopPropagation(); if (opts.names) openList(); };
+
+  render();
+  return row;
 }

@@ -56,6 +56,20 @@
       return text;
     }
 
+    let reactionsByMemory = {}, reactionsError = null;
+
+    /* who is reacting (the uploader can react to their own post too) */
+    function myReactor() {
+      return { id: ctx.user.id, name: ctx.profile.full_name || "You", nickname: nickCache[ctx.user.id] || "" };
+    }
+
+    async function loadReactions() {
+      reactionsByMemory = {};
+      const { data, error } = await sb.rpc("get_memory_reactions");
+      reactionsError = error || null;
+      (data || []).forEach(r => { (reactionsByMemory[r.memory_id] = reactionsByMemory[r.memory_id] || []).push(r); });
+    }
+
     async function init() {
       ctx = await requireAuth(); if (!ctx) return;
       renderBar(ctx, "memories");
@@ -67,6 +81,7 @@
       if (error) { message(friendly(error), true); return; }
       memories = data || [];
       await attachExtraPhotos();
+      await loadReactions();
       memories.forEach(m => { if (m.nickname) nickCache[m.user_id] = m.nickname.toLowerCase(); });
       urls = {};
       const paths = memories.flatMap(m => [m.image_path].concat(m.extra_paths || []));
@@ -78,6 +93,7 @@
       }
       render();
       if (blocked) message(blocked + " photo(s) could not be opened. In Supabase > SQL Editor, run migration_memories_multi_photos.sql again, then refresh.", true);
+      else if (reactionsError && ctx.isAdmin) message(friendlyReactionError(reactionsError), true);
     }
 
     /* get_memories() in the database may be an older copy that does not return extra_paths,
@@ -190,6 +206,16 @@
       const body = el("div", "memory-body");
       body.appendChild(el("h4", "memory-title", m.title));
       body.appendChild(authorLine(m));
+      if (m.status === "approved" && !reactionsError) {
+        body.appendChild(createReactions({
+          table: "memory_reactions", idColumn: "memory_id", targetId: m.id,
+          reactions: reactionsByMemory[m.id] || [], me: myReactor(), names: true,
+          fetchFresh: async () => {
+            const r = await sb.rpc("get_memory_reactions");
+            return r.error ? null : (r.data || []).filter(x => x.memory_id === m.id);
+          }
+        }));
+      }
 
       const actions = el("div", "memory-actions");
       if (m.status === "pending") {
@@ -226,7 +252,7 @@
       return function (cardNode) {
         const wrap = el("div", "comments");
         wrap.setAttribute("aria-expanded", "false");
-        const label = () => "Comments (" + (m.comment_count || 0) + (ctx.isAdmin && m.pending_comment_count ? " +" + m.pending_comment_count + " waiting" : "") + ")";
+        const label = () => "Comments (" + (m.comment_count || 0) + ")";
         const toggle = el("button", "ghost small", label());
         toggle.type = "button";
         toggle.setAttribute("aria-expanded", "false");
@@ -253,7 +279,7 @@
         const post = el("button", "plus", "Post");
         post.type = "button";
         post.style.fontSize = "18px";
-        const note = el("p", "hint memory-comment-note", ctx.isAdmin ? "" : "Comments appear after an admin or officer approves them.");
+        const note = el("p", "hint memory-comment-note", "");
         let current = 0, timer = null, hovering = false;
 
         function stop() { if (timer !== null) { window.clearInterval(timer); timer = null; } }
@@ -277,7 +303,7 @@
           if (list.children.length > 1) {
             timer = window.setInterval(() => {
               if (!wrap.isConnected || body.style.display === "none") { closePanel(); return; }
-              if (hovering || wrap.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+              if (hovering || reactionPickerOpen() || wrap.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
               show(current + 1);
             }, 10000);
           }
@@ -300,16 +326,26 @@
             list.appendChild(el("p", "hint comment-empty", "No comments yet. Be the first!"));
             navigation.hidden = true;
           }
+          const approvedIds = data.filter(c => c.status === "approved").map(c => c.id);
+          const commentReactions = {};
+          let commentReactionsOk = false;
+          if (approvedIds.length) {
+            const rr = await sb.rpc("get_memory_comment_reactions", { p_comment_ids: approvedIds });
+            if (!rr.error) {
+              commentReactionsOk = true;
+              (rr.data || []).forEach(x => { (commentReactions[x.comment_id] = commentReactions[x.comment_id] || []).push(x); });
+            }
+          }
           data.forEach(c => {
             const slide = el("div", "comment-slide");
-            const d = el("div", "comment" + (c.status === "pending" ? " comment-pending" : ""));
+            const d = el("div", "comment");
             const h = el("div", "chead");
             h.appendChild(staffAuthorName(c.author_name || "user", "", c.user_id));
             h.appendChild(el("small", "", fmtDate(c.created_at)));
             if (ctx.isAdmin || c.user_id === ctx.user.id) {
               const x = el("button", "x", "\u00d7");
               x.type = "button";
-              x.title = c.status === "pending" && ctx.isAdmin && c.user_id !== ctx.user.id ? "Reject comment" : "Delete comment";
+              x.title = "Delete comment";
               x.onclick = async () => {
                 if (!confirm("Remove this comment?")) return;
                 const { error: e } = await sb.from("memory_comments").delete().eq("id", c.id);
@@ -319,18 +355,11 @@
             }
             d.appendChild(h);
             d.appendChild(el("div", "ctext", c.body));
-            if (c.status === "pending") {
-              const tag = el("span", "memory-tag", ctx.isAdmin && c.user_id !== ctx.user.id ? "Needs your approval" : "Waiting for approval");
-              d.appendChild(tag);
-              if (ctx.isAdmin) {
-                const ok = el("button", "small", "Approve");
-                ok.type = "button";
-                ok.onclick = async () => {
-                  const { error: e } = await sb.from("memory_comments").update({ status: "approved" }).eq("id", c.id);
-                  if (e) alert(friendly(e)); else loadComments();
-                };
-                d.appendChild(ok);
-              }
+            if (commentReactionsOk) {
+              d.appendChild(createReactions({
+                table: "memory_comment_reactions", idColumn: "comment_id", targetId: c.id,
+                reactions: commentReactions[c.id] || [], me: myReactor(), names: false, compact: true
+              }));
             }
             slide.appendChild(d);
             list.appendChild(slide);
@@ -348,7 +377,6 @@
           post.disabled = false;
           if (error) { alert(friendly(error)); return; }
           inp.value = "";
-          if (!ctx.isAdmin) note.textContent = "Sent! Your comment will show up after it is approved.";
           loadComments();
         }
 
