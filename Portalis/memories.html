@@ -66,14 +66,30 @@
       const { data, error } = await sb.rpc("get_memories");
       if (error) { message(friendly(error), true); return; }
       memories = data || [];
+      await attachExtraPhotos();
       memories.forEach(m => { if (m.nickname) nickCache[m.user_id] = m.nickname.toLowerCase(); });
       urls = {};
       const paths = memories.flatMap(m => [m.image_path].concat(m.extra_paths || []));
+      let blocked = 0;
       if (paths.length) {
         const signed = await sb.storage.from(BUCKET).createSignedUrls(paths, 3600);
         (signed.data || []).forEach(item => { if (item.signedUrl) urls[item.path] = item.signedUrl; });
+        blocked = paths.filter(p => !urls[p]).length;
       }
       render();
+      if (blocked) message(blocked + " photo(s) could not be opened. In Supabase > SQL Editor, run migration_memories_multi_photos.sql again, then refresh.", true);
+    }
+
+    /* get_memories() in the database may be an older copy that does not return extra_paths,
+       so read the extra photos straight from the memories table when they are missing. */
+    async function attachExtraPhotos() {
+      const stale = memories.filter(m => !Array.isArray(m.extra_paths));
+      if (!stale.length) return;
+      const { data, error } = await sb.from("memories").select("id, extra_paths").in("id", stale.map(m => m.id));
+      if (error || !data) return;
+      const byId = {};
+      data.forEach(r => { byId[r.id] = Array.isArray(r.extra_paths) ? r.extra_paths : []; });
+      stale.forEach(m => { m.extra_paths = byId[m.id] || []; });
     }
 
     function friendlyPhotos(error) {
@@ -98,8 +114,15 @@
         const slide = el("div", "photo-slide");
         const img = el("img", "memory-img");
         img.alt = m.title + (paths.length > 1 ? " (" + (i + 1) + " of " + paths.length + ")" : "");
-        img.loading = i === 0 ? "eager" : "lazy";
-        if (urls[path]) img.src = urls[path]; else slide.classList.add("memory-missing");
+        img.loading = "eager";
+        img.decoding = "async";
+        if (urls[path]) img.src = urls[path];
+        else {
+          slide.classList.add("memory-missing");
+          const gone = el("span", "", "Photo unavailable");
+          gone.style.cssText = "align-self:center;padding:12px;font-size:14px;line-height:1.4;";
+          slide.appendChild(gone);
+        }
         if (onOpen) { img.classList.add("zoomable"); img.onclick = () => onOpen(i); }
         img.addEventListener("load", () => { if (typeof box.fit === "function") box.fit(); });
         slide.appendChild(img);
