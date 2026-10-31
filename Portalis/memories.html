@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalis - Memories</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="bar"></div>
+    <h2>Memories</h2>
+    <p class="hint">Share photos of our class moments. Every photo and every comment is checked by an admin or officer before everyone can see it.</p>
+
+    <section class="card memory-form" aria-label="Post a memory">
+      <h3>Post a memory</h3>
+      <label for="mTitle">Title</label>
+      <input id="mTitle" maxlength="80" placeholder="e.g. Intramurals day">
+      <label for="mPhoto" class="memory-photo-label">Photos</label>
+      <div class="file-row">
+        <input id="mPhoto" type="file" accept="image/*" multiple class="file-input">
+        <label for="mPhoto" class="file-btn">Choose photos</label>
+        <span id="mFile" class="file-name">No photos chosen (up to 10)</span>
+      </div>
+      <div id="mPreviews" class="memory-previews" hidden></div>
+      <p class="hint memory-approval">An admin or officer checks every photo before it is shown to the class.</p>
+      <button id="mPost" type="button">Post memory</button>
+      <p id="msg" class="msg" role="status"></p>
+    </section>
+
+    <section id="queueBox" style="display:none">
+      <h3 id="queueTitle">Waiting for approval</h3>
+      <div id="queue" class="memory-grid"></div>
+    </section>
+
+    <h3 id="feedTitle">Class memories</h3>
+    <div id="feed" class="memory-grid"></div>
+    <p id="empty" class="empty" style="display:none">No memories yet. Be the first to post one!</p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const $ = id => document.getElementById(id);
+    const BUCKET = "memories";
+    let ctx, memories = [], urls = {}, chosen = [];
+    const MAX_PHOTOS = 10;
+
+    function message(text, bad) { $("msg").className = "msg" + (bad ? " err" : " ok"); $("msg").textContent = text; }
+    function friendly(error) {
+      const text = (error && error.message) || String(error);
+      if (/get_memories|memories|schema cache|does not exist|Bucket/i.test(text)) {
+        return "Memories is not set up yet. Run migration_memories_and_updates.sql in the Supabase SQL Editor, then refresh. (" + text + ")";
+      }
+      return text;
+    }
+
+    async function init() {
+      ctx = await requireAuth(); if (!ctx) return;
+      renderBar(ctx, "memories");
+      await load();
+    }
+
+    async function load() {
+      const { data, error } = await sb.rpc("get_memories");
+      if (error) { message(friendly(error), true); return; }
+      memories = data || [];
+      memories.forEach(m => { if (m.nickname) nickCache[m.user_id] = m.nickname.toLowerCase(); });
+      urls = {};
+      const paths = memories.flatMap(m => [m.image_path].concat(m.extra_paths || []));
+      if (paths.length) {
+        const signed = await sb.storage.from(BUCKET).createSignedUrls(paths, 3600);
+        (signed.data || []).forEach(item => { if (item.signedUrl) urls[item.path] = item.signedUrl; });
+      }
+      render();
+    }
+
+    function friendlyPhotos(error) {
+      const text = (error && error.message) || String(error);
+      if (/extra_paths/i.test(text)) return "Multiple photos are not set up yet. Run migration_memories_multi_photos.sql in the Supabase SQL Editor, then refresh. (" + text + ")";
+      return friendly(error);
+    }
+
+    function authorLine(m) {
+      const line = el("div", "memory-meta");
+      line.appendChild(staffAuthorName(m.author_name, "", m.user_id));
+      line.appendChild(el("small", "memory-date", fmtDate(m.created_at)));
+      return line;
+    }
+
+    /* One photo, or a swipeable row of photos (scroll sideways, arrows, or dots). */
+    function photoSlider(m, onOpen, startIndex) {
+      const paths = [m.image_path].concat(m.extra_paths || []);
+      const box = el("div", "photo-slider" + (paths.length > 1 ? " multi" : ""));
+      const track = el("div", "photo-track");
+      paths.forEach((path, i) => {
+        const slide = el("div", "photo-slide");
+        const img = el("img", "memory-img");
+        img.alt = m.title + (paths.length > 1 ? " (" + (i + 1) + " of " + paths.length + ")" : "");
+        img.loading = i === 0 ? "eager" : "lazy";
+        if (urls[path]) img.src = urls[path]; else slide.classList.add("memory-missing");
+        if (onOpen) { img.classList.add("zoomable"); img.onclick = () => onOpen(i); }
+        img.addEventListener("load", () => { if (typeof box.fit === "function") box.fit(); });
+        slide.appendChild(img);
+        track.appendChild(slide);
+      });
+      box.appendChild(track);
+      if (paths.length < 2) return box;
+
+      let index = 0;
+      const counter = el("span", "photo-count", "1 / " + paths.length);
+      const dots = el("div", "photo-dots");
+      const dotNodes = paths.map((_, i) => {
+        const d = el("button", "photo-dot");
+        d.type = "button";
+        d.setAttribute("aria-label", "Photo " + (i + 1));
+        d.onclick = () => go(i);
+        dots.appendChild(d);
+        return d;
+      });
+      const prev = el("button", "photo-arrow photo-prev", "\u2039");
+      prev.type = "button";
+      prev.setAttribute("aria-label", "Previous photo");
+      prev.onclick = () => go(index - 1);
+      const next = el("button", "photo-arrow photo-next", "\u203a");
+      next.type = "button";
+      next.setAttribute("aria-label", "Next photo");
+      next.onclick = () => go(index + 1);
+      box.append(prev, next, counter, dots);
+
+      function fit() {
+        const img = track.children[index] && track.children[index].querySelector("img");
+        if (img && img.clientHeight) track.style.height = img.clientHeight + "px";
+      }
+      box.fit = () => fit();
+      function paint() {
+        counter.textContent = (index + 1) + " / " + paths.length;
+        dotNodes.forEach((d, i) => d.classList.toggle("on", i === index));
+        prev.disabled = index === 0;
+        next.disabled = index === paths.length - 1;
+        fit();
+      }
+      function go(i, instant) {
+        i = Math.max(0, Math.min(paths.length - 1, i));
+        track.scrollTo({ left: i * track.clientWidth, behavior: instant ? "auto" : "smooth" });
+        index = i;
+        paint();
+      }
+      let settle = 0;
+      track.addEventListener("scroll", () => {
+        clearTimeout(settle);
+        settle = setTimeout(() => {
+          const i = Math.round(track.scrollLeft / Math.max(track.clientWidth, 1));
+          if (i !== index) { index = i; paint(); }
+        }, 80);
+      }, { passive: true });
+      window.addEventListener("resize", () => { fit(); });
+      requestAnimationFrame(() => { if (startIndex) go(startIndex, true); else paint(); });
+      return box;
+    }
+
+    function card(m) {
+      const article = el("article", "memory-card" + (m.status === "pending" ? " memory-pending" : ""));
+      article.appendChild(photoSlider(m, index => openPhoto(m, index), 0));
+
+      const body = el("div", "memory-body");
+      body.appendChild(el("h4", "memory-title", m.title));
+      body.appendChild(authorLine(m));
+
+      const actions = el("div", "memory-actions");
+      if (m.status === "pending") {
+        body.appendChild(el("span", "memory-tag", ctx.isAdmin && m.user_id !== ctx.user.id ? "Needs your approval" : "Waiting for approval"));
+        if (ctx.isAdmin) {
+          const ok = el("button", "small", "Approve");
+          ok.type = "button";
+          ok.onclick = async () => {
+            const { error } = await sb.from("memories").update({ status: "approved" }).eq("id", m.id);
+            if (error) { message(friendly(error), true); return; }
+            message("Memory approved.", false);
+            await load();
+          };
+          actions.appendChild(ok);
+        }
+        const reject = el("button", "ghost small", ctx.isAdmin && m.user_id !== ctx.user.id ? "Reject" : "Cancel post");
+        reject.type = "button";
+        reject.onclick = () => removeMemory(m, true);
+        actions.appendChild(reject);
+      } else if (ctx.isAdmin || m.user_id === ctx.user.id) {
+        const del = el("button", "ghost small", "Delete");
+        del.type = "button";
+        del.onclick = () => removeMemory(m, false);
+        actions.appendChild(del);
+      }
+      if (actions.children.length) body.appendChild(actions);
+      article.appendChild(body);
+      if (m.status === "approved") commentsPanel(m)(article);
+      return article;
+    }
+
+    /* ---------- sliding comments (same behaviour as the notes board) ---------- */
+    function commentsPanel(m) {
+      return function (cardNode) {
+        const wrap = el("div", "comments");
+        wrap.setAttribute("aria-expanded", "false");
+        const label = () => "Comments (" + (m.comment_count || 0) + (ctx.isAdmin && m.pending_comment_count ? " +" + m.pending_comment_count + " waiting" : "") + ")";
+        const toggle = el("button", "ghost small", label());
+        toggle.type = "button";
+        toggle.setAttribute("aria-expanded", "false");
+        const body = el("div", "cbody");
+        body.style.display = "none";
+        const list = el("div", "clist");
+        const viewport = el("div", "comment-viewport");
+        viewport.appendChild(list);
+        const navigation = el("div", "comment-navigation");
+        const previous = el("button", "ghost comment-arrow", "\u2190");
+        previous.type = "button";
+        previous.setAttribute("aria-label", "Previous comment");
+        const position = el("span", "comment-position");
+        const next = el("button", "ghost comment-arrow", "\u2192");
+        next.type = "button";
+        next.setAttribute("aria-label", "Next comment");
+        navigation.append(previous, position, next);
+        navigation.hidden = true;
+        const header = el("div", "comments-header");
+        const row = el("div", "addsub");
+        const inp = el("input", "mini");
+        inp.placeholder = "Write a comment...";
+        inp.maxLength = 500;
+        const post = el("button", "plus", "Post");
+        post.type = "button";
+        post.style.fontSize = "18px";
+        const note = el("p", "hint memory-comment-note", ctx.isAdmin ? "" : "Comments appear after an admin or officer approves them.");
+        let current = 0, timer = null, hovering = false;
+
+        function stop() { if (timer !== null) { window.clearInterval(timer); timer = null; } }
+        function closePanel() {
+          body.style.display = "none";
+          toggle.setAttribute("aria-expanded", "false");
+          wrap.setAttribute("aria-expanded", "false");
+          navigation.hidden = true;
+          stop();
+        }
+        wrap.closePanel = closePanel;
+        function show(index) {
+          const total = list.children.length;
+          if (!total) return;
+          current = (index + total) % total;
+          list.style.transform = "translateX(-" + current * 100 + "%)";
+          position.textContent = (current + 1) + " / " + total;
+        }
+        function start() {
+          stop();
+          if (list.children.length > 1) {
+            timer = window.setInterval(() => {
+              if (!wrap.isConnected || body.style.display === "none") { closePanel(); return; }
+              if (hovering || wrap.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+              show(current + 1);
+            }, 10000);
+          }
+        }
+        wrap.addEventListener("mouseenter", () => { hovering = true; });
+        wrap.addEventListener("mouseleave", () => { hovering = false; });
+
+        async function loadComments() {
+          stop();
+          const { data, error } = await sb.rpc("get_memory_comments", { p_memory_id: m.id });
+          list.innerHTML = "";
+          if (error) { list.textContent = friendly(error); navigation.hidden = true; return; }
+          if (body.style.display === "none") return;
+          (data || []).forEach(c => { if (c.nickname) nickCache[c.user_id] = c.nickname.toLowerCase(); });
+          m.comment_count = data.filter(c => c.status === "approved").length;
+          m.pending_comment_count = data.filter(c => c.status === "pending").length;
+          toggle.textContent = label();
+          current = 0;
+          if (!data.length) {
+            list.appendChild(el("p", "hint comment-empty", "No comments yet. Be the first!"));
+            navigation.hidden = true;
+          }
+          data.forEach(c => {
+            const slide = el("div", "comment-slide");
+            const d = el("div", "comment" + (c.status === "pending" ? " comment-pending" : ""));
+            const h = el("div", "chead");
+            h.appendChild(staffAuthorName(c.author_name || "user", "", c.user_id));
+            h.appendChild(el("small", "", fmtDate(c.created_at)));
+            if (ctx.isAdmin || c.user_id === ctx.user.id) {
+              const x = el("button", "x", "\u00d7");
+              x.type = "button";
+              x.title = c.status === "pending" && ctx.isAdmin && c.user_id !== ctx.user.id ? "Reject comment" : "Delete comment";
+              x.onclick = async () => {
+                if (!confirm("Remove this comment?")) return;
+                const { error: e } = await sb.from("memory_comments").delete().eq("id", c.id);
+                if (e) alert(friendly(e)); else loadComments();
+              };
+              h.appendChild(x);
+            }
+            d.appendChild(h);
+            d.appendChild(el("div", "ctext", c.body));
+            if (c.status === "pending") {
+              const tag = el("span", "memory-tag", ctx.isAdmin && c.user_id !== ctx.user.id ? "Needs your approval" : "Waiting for approval");
+              d.appendChild(tag);
+              if (ctx.isAdmin) {
+                const ok = el("button", "small", "Approve");
+                ok.type = "button";
+                ok.onclick = async () => {
+                  const { error: e } = await sb.from("memory_comments").update({ status: "approved" }).eq("id", c.id);
+                  if (e) alert(friendly(e)); else loadComments();
+                };
+                d.appendChild(ok);
+              }
+            }
+            slide.appendChild(d);
+            list.appendChild(slide);
+          });
+          navigation.hidden = data.length < 2;
+          show(0);
+          start();
+        }
+
+        async function add() {
+          const t = inp.value.trim();
+          if (!t) return;
+          post.disabled = true;
+          const { error } = await sb.from("memory_comments").insert({ memory_id: m.id, body: t });
+          post.disabled = false;
+          if (error) { alert(friendly(error)); return; }
+          inp.value = "";
+          if (!ctx.isAdmin) note.textContent = "Sent! Your comment will show up after it is approved.";
+          loadComments();
+        }
+
+        toggle.onclick = event => {
+          event.stopPropagation();
+          const open = toggle.getAttribute("aria-expanded") !== "true";
+          if (open) {
+            document.querySelectorAll(".comments[aria-expanded='true']").forEach(panel => { if (panel !== wrap && panel.closePanel) panel.closePanel(); });
+            body.style.display = "block";
+            toggle.setAttribute("aria-expanded", "true");
+            wrap.setAttribute("aria-expanded", "true");
+            loadComments();
+          } else {
+            closePanel();
+          }
+        };
+        previous.onclick = event => { event.stopPropagation(); show(current - 1); start(); };
+        next.onclick = event => { event.stopPropagation(); show(current + 1); start(); };
+        post.onclick = add;
+        inp.addEventListener("keydown", e => { if (e.key === "Enter") add(); });
+        row.append(inp, post);
+        header.append(toggle, navigation);
+        body.append(viewport, row, note);
+        wrap.append(header, body);
+        cardNode.appendChild(wrap);
+      };
+    }
+
+    function render() {
+      const pending = memories.filter(m => m.status === "pending");
+      const approved = memories.filter(m => m.status === "approved");
+      const queueBox = $("queueBox");
+      queueBox.style.display = pending.length ? "block" : "none";
+      $("queueTitle").textContent = ctx.isAdmin ? "Waiting for approval (" + pending.length + ")" : "Your posts waiting for approval";
+      $("queue").replaceChildren(...pending.map(card));
+      $("feed").replaceChildren(...approved.map(card));
+      $("empty").style.display = approved.length ? "none" : "block";
+      $("feedTitle").style.display = approved.length ? "block" : "none";
+    }
+
+    async function removeMemory(m, isReject) {
+      const ask = isReject ? "Remove this pending photo?" : "Delete this memory and all of its comments? This cannot be undone.";
+      if (!confirm(ask)) return;
+      const { error } = await sb.from("memories").delete().eq("id", m.id);
+      if (error) { message(friendly(error), true); return; }
+      await sb.storage.from(BUCKET).remove([m.image_path].concat(m.extra_paths || []));
+      message(isReject ? "Photo removed." : "Memory deleted.", false);
+      await load();
+    }
+
+    /* ---------- photo picking and compression ---------- */
+    function renderPreviews() {
+      const box = $("mPreviews");
+      box.replaceChildren();
+      box.hidden = !chosen.length;
+      $("mFile").textContent = chosen.length ? chosen.length + (chosen.length === 1 ? " photo chosen" : " photos chosen") + " (up to " + MAX_PHOTOS + ")" : "No photos chosen (up to " + MAX_PHOTOS + ")";
+      chosen.forEach((item, i) => {
+        const cell = el("div", "memory-prev-item");
+        const img = el("img", "");
+        img.src = item.url;
+        img.alt = "Photo " + (i + 1);
+        const x = el("button", "memory-prev-x", "\u00d7");
+        x.type = "button";
+        x.title = "Remove this photo";
+        x.onclick = () => { URL.revokeObjectURL(item.url); chosen.splice(i, 1); renderPreviews(); };
+        cell.append(img, x);
+        if (i === 0 && chosen.length > 1) cell.appendChild(el("span", "memory-prev-cover", "cover"));
+        box.appendChild(cell);
+      });
+    }
+
+    $("mPhoto").onchange = () => {
+      const files = Array.from($("mPhoto").files || []);
+      $("mPhoto").value = "";
+      let skipped = 0;
+      files.forEach(file => {
+        if (!file.type.startsWith("image/") || file.size > 25 * 1024 * 1024 || chosen.length >= MAX_PHOTOS) { skipped++; return; }
+        chosen.push({ file, url: URL.createObjectURL(file) });
+      });
+      renderPreviews();
+      message(skipped ? skipped + " file(s) skipped: images only, under 25 MB each, up to " + MAX_PHOTOS + " photos." : "", !!skipped);
+    };
+
+    function loadImage(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("That image could not be read.")); };
+        img.src = url;
+      });
+    }
+
+    async function prepareImage(file) {
+      if (file.type === "image/gif" && file.size <= 5 * 1024 * 1024) return { blob: file, ext: "gif", type: "image/gif" };
+      const img = await loadImage(file);
+      const max = 1600;
+      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const g = canvas.getContext("2d");
+      g.fillStyle = "#fff";
+      g.fillRect(0, 0, canvas.width, canvas.height);
+      g.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.85));
+      if (!blob) throw new Error("That image could not be processed.");
+      if (blob.size > 5 * 1024 * 1024) throw new Error("That image is still too large after shrinking.");
+      return { blob, ext: "jpg", type: "image/jpeg" };
+    }
+
+    $("mPost").onclick = async () => {
+      const title = $("mTitle").value.trim();
+      if (!title) { message("Add a title first.", true); return; }
+      if (!chosen.length) { message("Choose at least one photo first.", true); return; }
+      const button = $("mPost");
+      button.disabled = true;
+      const uploaded = [];
+      try {
+        for (let i = 0; i < chosen.length; i++) {
+          message("Uploading photo " + (i + 1) + " of " + chosen.length + "...", false);
+          const image = await prepareImage(chosen[i].file);
+          const path = ctx.user.id + "/" + Date.now() + "-" + i + "-" + Math.random().toString(36).slice(2, 8) + "." + image.ext;
+          const up = await sb.storage.from(BUCKET).upload(path, image.blob, { contentType: image.type, upsert: false });
+          if (up.error) throw up.error;
+          uploaded.push(path);
+        }
+        const row = { title, image_path: uploaded[0] };
+        if (uploaded.length > 1) row.extra_paths = uploaded.slice(1);
+        const { error } = await sb.from("memories").insert(row);
+        if (error) throw error;
+        $("mTitle").value = "";
+        chosen.forEach(item => URL.revokeObjectURL(item.url));
+        chosen = [];
+        renderPreviews();
+        message(ctx.isAdmin ? "Memory posted." : "Thanks! Your memory will appear after an admin or officer approves it.", false);
+        await load();
+      } catch (error) {
+        if (uploaded.length) await sb.storage.from(BUCKET).remove(uploaded);
+        message(friendlyPhotos(error), true);
+      } finally {
+        button.disabled = false;
+      }
+    };
+
+    /* ---------- full-size photo viewer ---------- */
+    function openPhoto(m, startIndex) {
+      if (!urls[m.image_path]) return;
+      const dialog = el("div", "modal-backdrop");
+      const box = el("div", "modal-card memory-modal");
+      box.setAttribute("role", "dialog");
+      box.setAttribute("aria-modal", "true");
+      box.setAttribute("aria-label", m.title);
+      const close = () => { dialog.remove(); document.removeEventListener("keydown", onKey); };
+      const onKey = e => { if (e.key === "Escape") close(); };
+      document.addEventListener("keydown", onKey);
+      dialog.onclick = e => { if (e.target === dialog) close(); };
+      box.append(photoSlider(m, null, startIndex || 0), el("h3", "memory-title", m.title));
+      const closeBtn = el("button", "ghost", "Close");
+      closeBtn.type = "button";
+      closeBtn.onclick = close;
+      box.appendChild(closeBtn);
+      dialog.appendChild(box);
+      document.body.appendChild(dialog);
+      closeBtn.focus();
+    }
+
+    init();
+  </script>
+</body>
+</html>

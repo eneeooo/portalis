@@ -29,6 +29,21 @@ Built using HTML, CSS, and JavaScript, Portalis uses **Supabase** as its backend
 - KaTeX-rendered math in reviewer content and saved quiz attempts.
 - Admin/officer-managed ₱10 weekly class fund, additional collections, and cumulative
   unpaid balances by student.
+- Attendance tab following the BSIT-12 class attendance sheet (STUDENT NAME plus date
+  columns). Admins and Officers add class dates and mark each student (✓ present,
+  X absent, L late, E excused); everyone else can only view. The sheet can be
+  printed or saved as PDF (8.5 x 13 in long bond) or XLSX, with the school logos
+  optional (logo files are in `Portalis/logos/`; replace the PNGs to change them).
+- Memories tab (several photos per memory, swipe or use arrows): anyone can post a photo with a title and comment on photos; every
+  photo and comment waits for an Admin or Officer to approve it. Photos live in a
+  private storage bucket and are visible to the class only after approval.
+- View-profile cards (hover a name in notes/comments, or click it in Attendance or the online list): click any name in Attendance or the online list to see a
+  classmate's picture, About me, title and birthday (month and day). Email and
+  other contacts stay private.
+- Fund balance button: a floating button appears bottom-right only while you still owe
+  money; it disappears when you are paid up or paid in advance.
+- Who's online: a floating button above the suggestion button shows a live list
+  of classmates currently in Portalis, with optional join notifications.
 - Responsive static frontend backed by Supabase Auth, Postgres, and Storage.
 
 ## Technologies Used
@@ -61,6 +76,16 @@ Run `Portalis\setup.sql`, `Portalis\migration_features.sql`,
 `Portalis\migration_admin_only_suggestions.sql`,
 `Portalis\migration_optional_email.sql`, and
 `Portalis\migration_supabase_auth_restore.sql` in the Supabase SQL Editor.
+Run `Portalis\migration_attendance_presence.sql` to enable Attendance,
+view-profile and the online list (it also sets the school-year roster order; edit
+`SCHOOL`, `ACADEMIC_YEAR` and `CLASS_LABEL` at the top of the script in
+`Portalis\attendance.html` for a new term).
+Then run `Portalis\migration_profile_nickname_online.sql` (nicknames, Get to know me
+notes, working online list). Then run `Portalis\migration_memories_and_updates.sql` (Memories tab, confession
+full names for admins, nicknames in attendance). Then run `Portalis\migration_memories_multi_photos.sql` (several photos per memory).
+Optionally run `Portalis\migration_seed_get_to_know.sql`
+once to fill in the answers from the class "Get to know each other" document;
+it only fills fields that are still empty.
 After `Portalis\migration_profile_email_confirm.sql`, run
 `Portalis\migration_profile_birthday_edit.sql` to let students edit their birthdays.
 The restore script supports the `portalis_auth_users` table if the custom-auth

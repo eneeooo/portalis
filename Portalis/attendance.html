@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalis - Attendance</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="bar"></div>
+    <div class="att-heading">
+      <div>
+        <h2>Attendance</h2>
+        <p class="hint" id="intro">BSIT-12 class attendance. Everyone can view the sheet; only admins and officers can mark it.</p>
+      </div>
+      <button id="exportBtn" type="button" class="att-export-btn">Print / Save as PDF or XLSX</button>
+    </div>
+    <p id="msg" class="msg" role="status"></p>
+
+    <div id="stats" class="att-stats"></div>
+
+    <section id="staffTools" class="card att-tools" style="display:none" aria-label="Attendance tools">
+      <h3>Add a class date</h3>
+      <div class="att-add">
+        <div><label for="newDate">Date</label><input id="newDate" type="date"></div>
+        <div><label for="newLabel">Note (optional)</label><input id="newLabel" maxlength="40" placeholder="e.g. Lecture, Lab"></div>
+        <button id="addDate" type="button">Add date</button>
+      </div>
+      <p class="hint">Click a cell to cycle: &#10003; Present &rarr; X Absent &rarr; L Late &rarr; E Excused &rarr; blank. Use <b>Mark all present</b> to mark everyone who is still blank as present, then click only the absentees. Use Previous / Next to move between dates.</p>
+    </section>
+
+    <section class="card att-card" aria-label="Attendance sheet">
+      <div class="att-pager" id="pager">
+        <button id="prevDate" type="button" class="att-nav" aria-label="Previous date">&#8249; Previous</button>
+        <div class="att-pager-mid">
+          <label for="datePick" class="att-pager-label">Date</label>
+          <select id="datePick" aria-label="Choose a date"></select>
+          <span id="dateCount" class="att-pager-count"></span>
+        </div>
+        <button id="nextDate" type="button" class="att-nav" aria-label="Next date">Next &#8250;</button>
+      </div>
+      <div class="att-subbar">
+        <div id="dateTools" class="att-date-tools-row"></div>
+        <ul class="att-legend" aria-label="Legend">
+          <li><span class="att-key st-present">&#10003;</span> Present</li>
+          <li><span class="att-key st-absent">X</span> Absent</li>
+          <li><span class="att-key st-late">L</span> Late</li>
+          <li><span class="att-key st-excused">E</span> Excused</li>
+        </ul>
+      </div>
+      <div class="att-scroll"><table class="att-table" id="sheet"></table></div>
+      <p id="empty" class="empty" style="display:none"></p>
+    </section>
+    <div id="attPrint"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script src="attendance-export.js"></script>
+  <script>
+    /* Change these three lines each school year / class. */
+    const SCHOOL = "UNIVERSIDAD DE MANILA";
+    const ACADEMIC_YEAR = "2026-2027";
+    const CLASS_LABEL = "BSIT-12";
+
+    const CYCLE = ["", "present", "absent", "late", "excused"];
+    const GLYPH = { present: "\u2713", absent: "X", late: "L", excused: "E" };
+    const NAME = { present: "Present", absent: "Absent", late: "Late", excused: "Excused" };
+    const $ = id => document.getElementById(id);
+
+    let ctx, canEdit = false, students = [], sessions = [], currentId = null;
+    const marks = new Map();          // "sessionId:userId" -> status
+    const writeQueue = new Map();     // per-cell write chain so rapid clicks land in order
+    let pendingWrites = 0, reloadTimer = 0;
+
+    function message(text, bad) { $("msg").className = "msg" + (bad ? " err" : " ok"); $("msg").textContent = text; }
+    const keyOf = (s, u) => s + ":" + u;
+    function manilaToday() {
+      return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    }
+    function dateObj(iso) { return new Date(iso + "T12:00:00"); }
+    function shortDate(iso) { return dateObj(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }); }
+    function longDate(iso) { return dateObj(iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }); }
+    function weekday(iso) { return dateObj(iso).toLocaleDateString("en-US", { weekday: "short" }); }
+    function monthLabel(key) { return dateObj(key + "-01").toLocaleDateString("en-US", { month: "long", year: "numeric" }); }
+    function fullName(st) { return st.display_name; }
+    function friendly(error) {
+      const text = (error && error.message) || String(error);
+      if (/function .*get_attendance_roster|attendance_(sessions|records)|schema cache|does not exist/i.test(text)) {
+        return "Attendance is not set up yet. Run migration_attendance_presence.sql and then migration_memories_and_updates.sql in the Supabase SQL Editor, then refresh. (" + text + ")";
+      }
+      return text;
+    }
+    const currentSession = () => sessions.find(s => s.id === currentId) || null;
+    const currentIndex = () => sessions.findIndex(s => s.id === currentId);
+
+    async function init() {
+      ctx = await requireAuth(); if (!ctx) return;
+      renderBar(ctx, "attendance");
+      canEdit = ctx.isAdmin;
+      $("staffTools").style.display = canEdit ? "block" : "none";
+      $("intro").textContent = canEdit
+        ? "You can mark attendance as an " + (ctx.role === "admin" ? "admin" : "officer") + ". Everyone else can only view the sheet."
+        : "BSIT-12 class attendance. This sheet is view-only; admins and officers record attendance.";
+      $("newDate").value = manilaToday();
+      await loadAll();
+      subscribeLive();
+    }
+
+    async function fetchAllRecords() {
+      const rows = [], size = 1000;
+      for (let offset = 0; ; offset += size) {
+        const { data, error } = await sb.from("attendance_records")
+          .select("session_id,user_id,status")
+          .order("session_id").order("user_id")
+          .range(offset, offset + size - 1);
+        if (error) throw error;
+        rows.push(...(data || []));
+        if (!data || data.length < size) break;
+      }
+      return rows;
+    }
+
+    async function loadAll() {
+      try {
+        const [rosterRes, sessionRes, records] = await Promise.all([
+          sb.rpc("get_attendance_roster"),
+          sb.from("attendance_sessions").select("id,session_date,label").order("session_date"),
+          fetchAllRecords()
+        ]);
+        if (rosterRes.error) throw rosterRes.error;
+        if (sessionRes.error) throw sessionRes.error;
+        students = rosterRes.data || [];
+        sessions = sessionRes.data || [];
+        marks.clear();
+        records.forEach(r => marks.set(keyOf(r.session_id, r.user_id), r.status));
+        if (!currentSession()) {
+          const today = manilaToday();
+          const pick = sessions.find(s => s.session_date === today) || sessions[sessions.length - 1] || null;
+          currentId = pick ? pick.id : null;
+        }
+        render();
+      } catch (error) {
+        message(friendly(error), true);
+      }
+    }
+
+    function subscribeLive() {
+      const refresh = () => {
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => { if (pendingWrites === 0) loadAll(); else refresh(); }, 600);
+      };
+      try {
+        sb.channel("attendance-changes")
+          .on("postgres_changes", { event: "*", schema: "public", table: "attendance_records" }, refresh)
+          .on("postgres_changes", { event: "*", schema: "public", table: "attendance_sessions" }, refresh)
+          .subscribe();
+      } catch (_) { /* live updates are optional */ }
+    }
+
+    function monthsList() { return [...new Set(sessions.map(s => s.session_date.slice(0, 7)))].sort(); }
+
+    function countsFor(userId, list) {
+      const c = { present: 0, late: 0, absent: 0, excused: 0 };
+      list.forEach(s => { const m = marks.get(keyOf(s.id, userId)); if (m) c[m]++; });
+      return c;
+    }
+    function presentOn(session) {
+      let n = 0;
+      students.forEach(st => { const m = marks.get(keyOf(session.id, st.user_id)); if (m === "present" || m === "late") n++; });
+      return n;
+    }
+
+    function renderPager() {
+      const pick = $("datePick");
+      pick.replaceChildren();
+      sessions.forEach(s => {
+        const o = el("option", "", longDate(s.session_date) + (s.label ? " \u00b7 " + s.label : ""));
+        o.value = String(s.id);
+        pick.appendChild(o);
+      });
+      if (currentId !== null) pick.value = String(currentId);
+      const i = currentIndex();
+      $("prevDate").disabled = i <= 0;
+      $("nextDate").disabled = i < 0 || i >= sessions.length - 1;
+      pick.disabled = !sessions.length;
+      $("dateCount").textContent = sessions.length ? (i + 1) + " of " + sessions.length : "";
+      $("pager").style.display = sessions.length ? "flex" : "none";
+
+      const tools = $("dateTools");
+      tools.replaceChildren();
+      const s = currentSession();
+      if (canEdit && s) {
+        const allBtn = el("button", "att-mini", "Mark all present");
+        allBtn.type = "button";
+        allBtn.title = "Mark everyone who is still blank as present on this date";
+        allBtn.onclick = () => markAllPresent(s);
+        const del = el("button", "att-mini att-mini-danger", "Remove this date");
+        del.type = "button";
+        del.onclick = () => removeDate(s);
+        tools.append(allBtn, del);
+      }
+    }
+
+    function goTo(delta) {
+      const i = currentIndex() + delta;
+      if (i < 0 || i >= sessions.length) return;
+      currentId = sessions[i].id;
+      render();
+    }
+
+    function render() {
+      renderPager();
+      const session = currentSession();
+      renderStats(session);
+      const table = $("sheet");
+      table.replaceChildren();
+      $("empty").style.display = session ? "none" : "block";
+      $("empty").textContent = canEdit
+        ? "No class dates yet. Add the first date above to start recording attendance."
+        : "No attendance has been recorded yet.";
+      if (!students.length) { $("empty").style.display = "block"; $("empty").textContent = "No students found for this class."; return; }
+      if (!session) return;
+
+      const today = manilaToday();
+      const thead = document.createElement("thead");
+      const hr = document.createElement("tr");
+      hr.appendChild(el("th", "att-name-col", "STUDENT NAME"));
+      const th = el("th", "att-date" + (session.session_date === today ? " today" : ""));
+      th.appendChild(el("span", "att-date-main", shortDate(session.session_date)));
+      th.appendChild(el("span", "att-date-sub", weekday(session.session_date) + (session.label ? " \u00b7 " + session.label : "")));
+      hr.appendChild(th);
+      [["P", "Present (all dates)"], ["L", "Late (all dates)"], ["A", "Absent (all dates)"], ["E", "Excused (all dates)"]].forEach(([short, full]) => {
+        const t = el("th", "att-total", short); t.title = full; hr.appendChild(t);
+      });
+      thead.appendChild(hr);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+      students.forEach((student, i) => {
+        const tr = el("tr", student.user_id === ctx.user.id ? "att-me" : "");
+        const nameCell = el("th", "att-name-col");
+        nameCell.scope = "row";
+        const who = el("button", "att-who");
+        who.type = "button";
+        who.title = "View profile";
+        who.append(el("span", "att-no", (i + 1) + "."), el("span", "att-student", fullName(student)));
+        who.onclick = () => openMemberProfile(student.user_id, student);
+        nameCell.appendChild(who);
+        tr.appendChild(nameCell);
+        tr.appendChild(markCell(session, student));
+        const c = countsFor(student.user_id, sessions);
+        [c.present, c.late, c.absent, c.excused].forEach((n, idx) => tr.appendChild(el("td", "att-total" + (idx === 2 && n ? " att-total-bad" : ""), String(n))));
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+
+      const tfoot = document.createElement("tfoot");
+      const fr = document.createElement("tr");
+      fr.appendChild(el("th", "att-name-col", "Total present (incl. late)"));
+      fr.appendChild(el("td", "att-foot-count", String(presentOn(session))));
+      const blank = el("td", "att-total", "");
+      blank.colSpan = 4;
+      fr.appendChild(blank);
+      tfoot.appendChild(fr);
+      table.appendChild(tfoot);
+    }
+
+    function paintCell(node, status) {
+      node.className = node.className.replace(/\bst-\w+\b/g, "").trim() + (status ? " st-" + status : "");
+      node.textContent = GLYPH[status] || "";
+    }
+
+    function markCell(session, student) {
+      const status = marks.get(keyOf(session.id, student.user_id)) || "";
+      const label = fullName(student) + ", " + shortDate(session.session_date) + ": " + (NAME[status] || "not recorded");
+      if (!canEdit) {
+        const td = el("td", "att-cell" + (status ? " st-" + status : ""), GLYPH[status] || "");
+        td.title = label;
+        return td;
+      }
+      const td = el("td", "att-cell-td");
+      const button = el("button", "att-cell" + (status ? " st-" + status : ""), GLYPH[status] || "");
+      button.type = "button";
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.onclick = () => {
+        const current = marks.get(keyOf(session.id, student.user_id)) || "";
+        const next = CYCLE[(CYCLE.indexOf(current) + 1) % CYCLE.length];
+        setMark(session, student, next, button);
+      };
+      td.appendChild(button);
+      return td;
+    }
+
+    function setMark(session, student, next, button) {
+      const key = keyOf(session.id, student.user_id);
+      const previous = marks.get(key) || "";
+      if (next) marks.set(key, next); else marks.delete(key);
+      paintCell(button, next);
+      button.title = fullName(student) + ", " + shortDate(session.session_date) + ": " + (NAME[next] || "not recorded");
+      refreshTotalsOnly();
+      pendingWrites++;
+      const chain = (writeQueue.get(key) || Promise.resolve()).then(async () => {
+        const result = next
+          ? await sb.from("attendance_records").upsert({ session_id: session.id, user_id: student.user_id, status: next }, { onConflict: "session_id,user_id" })
+          : await sb.from("attendance_records").delete().eq("session_id", session.id).eq("user_id", student.user_id);
+        if (result.error) {
+          if (previous) marks.set(key, previous); else marks.delete(key);
+          paintCell(button, previous);
+          refreshTotalsOnly();
+          message("Could not save: " + friendly(result.error), true);
+        }
+      }).finally(() => { pendingWrites--; });
+      writeQueue.set(key, chain);
+    }
+
+    function refreshTotalsOnly() {
+      const rows = document.querySelectorAll("#sheet tbody tr");
+      rows.forEach((tr, i) => {
+        const c = countsFor(students[i].user_id, sessions);
+        const cells = tr.querySelectorAll("td.att-total");
+        [c.present, c.late, c.absent, c.excused].forEach((n, idx) => {
+          if (cells[idx]) { cells[idx].textContent = String(n); cells[idx].classList.toggle("att-total-bad", idx === 2 && n > 0); }
+        });
+      });
+      const session = currentSession();
+      const foot = document.querySelector("#sheet tfoot .att-foot-count");
+      if (foot && session) foot.textContent = String(presentOn(session));
+      renderStats(session);
+    }
+
+    function renderStats(session) {
+      const box = $("stats");
+      box.replaceChildren();
+      if (!students.length) return;
+      const me = countsFor(ctx.user.id, sessions);
+      const attended = me.present + me.late;
+      const recorded = attended + me.absent + me.excused;
+      let classMarked = 0, classAttended = 0;
+      students.forEach(st => { const c = countsFor(st.user_id, sessions); classAttended += c.present + c.late; classMarked += c.present + c.late + c.absent; });
+      const card = (label, value, note) => {
+        const c = el("div", "att-stat");
+        c.append(el("span", "att-stat-label", label), el("strong", "att-stat-value", value));
+        if (note) c.appendChild(el("span", "att-stat-note", note));
+        box.appendChild(c);
+      };
+      card("Class dates", String(sessions.length), "recorded so far");
+      if (session) card("Present on " + shortDate(session.session_date), presentOn(session) + " / " + students.length, "present or late");
+      card("Class attendance rate", classMarked ? Math.round(classAttended / classMarked * 100) + "%" : "\u2014", "all dates, excused not counted");
+      if (students.some(s => s.user_id === ctx.user.id)) {
+        card("Your attendance", recorded ? attended + " / " + recorded : "\u2014", recorded ? "present or late, all dates" : "nothing recorded yet");
+        card("Your absences", String(me.absent), me.excused ? me.excused + " excused" : "all dates");
+      }
+    }
+
+    async function markAllPresent(session) {
+      const missing = students.filter(st => !marks.get(keyOf(session.id, st.user_id)));
+      if (!missing.length) { message("Everyone already has a mark for " + shortDate(session.session_date) + ".", false); return; }
+      pendingWrites++;
+      const { error } = await sb.from("attendance_records").upsert(
+        missing.map(st => ({ session_id: session.id, user_id: st.user_id, status: "present" })),
+        { onConflict: "session_id,user_id" }
+      );
+      pendingWrites--;
+      if (error) { message("Could not save: " + friendly(error), true); return; }
+      missing.forEach(st => marks.set(keyOf(session.id, st.user_id), "present"));
+      render();
+      message(missing.length + " student(s) marked present for " + shortDate(session.session_date) + ". Click the absentees to mark them.", false);
+    }
+
+    async function removeDate(session) {
+      if (!confirm("Remove " + shortDate(session.session_date) + " and every mark recorded for it? This cannot be undone.")) return;
+      const { error } = await sb.from("attendance_sessions").delete().eq("id", session.id);
+      if (error) { message(friendly(error), true); return; }
+      message("Date removed.", false);
+      currentId = null;
+      await loadAll();
+    }
+
+    $("addDate").onclick = async () => {
+      const date = $("newDate").value;
+      if (!date) { message("Pick a date first.", true); return; }
+      const label = $("newLabel").value.trim() || null;
+      const { data, error } = await sb.from("attendance_sessions").insert({ session_date: date, label }).select("id").single();
+      if (error) {
+        message(/duplicate|unique/i.test(error.message) ? shortDate(date) + " is already on the sheet." : friendly(error), true);
+        return;
+      }
+      $("newLabel").value = "";
+      currentId = data.id;
+      message(shortDate(date) + " added. Mark attendance by clicking the cells.", false);
+      await loadAll();
+    };
+
+    $("prevDate").onclick = () => goTo(-1);
+    $("nextDate").onclick = () => goTo(1);
+    $("datePick").onchange = () => { currentId = Number($("datePick").value); render(); };
+
+    /* ---------------- export / print ---------------- */
+    /* School logos live in the logos/ folder (replace the PNG files to change them). */
+    const LOGO_FILES = { left: "logos/logo-um.png", right: "logos/logo-ccs.png" };
+    let logoCache = null;
+    function readLogo(url) {
+      return fetch(url).then(r => { if (!r.ok) throw new Error("missing"); return r.blob(); }).then(blob => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => resolve({ dataUrl: reader.result, w: img.naturalWidth || 1, h: img.naturalHeight || 1 });
+          img.onerror = () => reject(new Error("bad image"));
+          img.src = reader.result;
+        };
+        reader.onerror = () => reject(new Error("read failed"));
+        reader.readAsDataURL(blob);
+      }));
+    }
+    async function loadLogos() {
+      if (logoCache) return logoCache;
+      const result = {};
+      for (const side of ["left", "right"]) {
+        try { result[side] = await readLogo(LOGO_FILES[side]); } catch (_) { result[side] = null; }
+      }
+      logoCache = (result.left || result.right) ? result : null;
+      return logoCache;
+    }
+
+    function buildModel(list, rangeLabel) {
+      return {
+        school: SCHOOL, academicYear: ACADEMIC_YEAR, className: CLASS_LABEL, rangeLabel: rangeLabel,
+        generated: new Date(),
+        dates: list.map(s => ({ iso: s.session_date, short: shortDate(s.session_date), weekday: weekday(s.session_date), label: s.label || "" })),
+        rows: students.map((st, i) => ({
+          no: i + 1, name: fullName(st),
+          marks: list.map(s => marks.get(keyOf(s.id, st.user_id)) || ""),
+          counts: countsFor(st.user_id, list)
+        })),
+        presentByDate: list.map(presentOn)
+      };
+    }
+
+    function openExportDialog() {
+      if (!students.length) { message("There is nothing to export yet.", true); return; }
+      const dialog = el("div", "modal-backdrop");
+      const box = el("form", "modal-card export-card");
+      box.setAttribute("role", "dialog");
+      box.setAttribute("aria-modal", "true");
+      box.appendChild(el("h2", "", "Export attendance"));
+
+      box.appendChild(el("p", "export-label", "Format"));
+      const formats = el("div", "export-formats");
+      let chosen = "pdf";
+      [["pdf", "PDF", "Download, long bond"], ["xlsx", "XLSX", "Excel workbook"], ["print", "Print", "Open print dialog"]].forEach(([id, title, sub]) => {
+        const b = el("button", "export-format" + (id === chosen ? " on" : ""));
+        b.type = "button";
+        b.setAttribute("aria-pressed", String(id === chosen));
+        b.append(el("strong", "", title), el("small", "", sub));
+        b.onclick = () => {
+          chosen = id;
+          formats.querySelectorAll(".export-format").forEach(x => { x.classList.remove("on"); x.setAttribute("aria-pressed", "false"); });
+          b.classList.add("on"); b.setAttribute("aria-pressed", "true");
+        };
+        formats.appendChild(b);
+      });
+      box.appendChild(formats);
+
+      box.appendChild(el("p", "export-label", "Dates to include"));
+      const range = document.createElement("select");
+      const opts = [["all", "All recorded dates"], ["current", "Only the date shown now"]];
+      monthsList().slice().reverse().forEach(m => opts.push(["m:" + m, monthLabel(m)]));
+      opts.forEach(([v, t]) => { const o = el("option", "", t); o.value = v; range.appendChild(o); });
+      box.appendChild(range);
+
+      const logoLabel = el("label", "export-check");
+      const logoBox = document.createElement("input");
+      logoBox.type = "checkbox";
+      logoBox.checked = true;
+      logoLabel.append(logoBox, document.createTextNode(" Include the school logos"));
+      box.appendChild(logoLabel);
+
+      const status = el("p", "msg");
+      const cancel = el("button", "ghost", "Cancel"); cancel.type = "button";
+      const go = el("button", "", "Export"); go.type = "submit";
+      const actions = el("div", "edit-note-actions");
+      actions.append(cancel, go);
+      box.append(status, actions);
+      const close = () => { dialog.remove(); document.removeEventListener("keydown", onKey); };
+      const onKey = e => { if (e.key === "Escape") close(); };
+      document.addEventListener("keydown", onKey);
+      cancel.onclick = close;
+      dialog.onclick = e => { if (e.target === dialog) close(); };
+
+      box.onsubmit = async event => {
+        event.preventDefault();
+        const v = range.value;
+        const list = v === "all" ? sessions : v === "current" ? sessions.filter(x => x.id === currentId) : sessions.filter(x => x.session_date.startsWith(v.slice(2)));
+        if (!list.length) { status.className = "msg err"; status.textContent = "There are no class dates in that range."; return; }
+        const label = v === "all" ? "All dates" : v === "current" ? longDate(list[0].session_date) : monthLabel(v.slice(2));
+        const model = buildModel(list, label);
+        go.disabled = true;
+        try {
+          if (logoBox.checked) {
+            model.logos = await loadLogos();
+            if (!model.logos) { status.className = "msg"; status.textContent = "Logos were not found, exporting without them..."; }
+          }
+          if (chosen === "pdf") {
+            if (!window.jspdf) throw new Error("The PDF library could not be loaded. Check your internet connection.");
+            AttendanceExport.toPdf(model, window.jspdf.jsPDF).save(AttendanceExport.fileStem(model) + ".pdf");
+          } else if (chosen === "xlsx") {
+            if (!window.ExcelJS) throw new Error("The XLSX library could not be loaded. Check your internet connection.");
+            const buffer = await AttendanceExport.toXlsxBuffer(model, window.ExcelJS);
+            const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = AttendanceExport.fileStem(model) + ".xlsx";
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+          } else {
+            const target = $("attPrint");
+            target.replaceChildren(AttendanceExport.toPrintNode(model, document));
+            document.body.classList.add("att-printing");
+            window.addEventListener("afterprint", () => document.body.classList.remove("att-printing"), { once: true });
+            close();
+            setTimeout(() => window.print(), 250);
+            return;
+          }
+          close();
+          message("Attendance exported as " + chosen.toUpperCase() + ".", false);
+        } catch (error) {
+          status.className = "msg err";
+          status.textContent = error.message || String(error);
+        } finally {
+          go.disabled = false;
+        }
+      };
+      dialog.appendChild(box);
+      document.body.appendChild(dialog);
+      go.focus();
+    }
+    $("exportBtn").onclick = openExportDialog;
+    init();
+  </script>
+</body>
+</html>

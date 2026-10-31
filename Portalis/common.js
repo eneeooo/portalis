@@ -24,9 +24,21 @@ function staffTitle(profile) {
     : "";
 }
 
+const nickCache = {};
+async function loadNicknames(ids) {
+  const wanted = [...new Set((ids || []).filter(id => id && !(id in nickCache)))];
+  if (!wanted.length) return;
+  wanted.forEach(id => { nickCache[id] = ""; });
+  try {
+    const { data, error } = await sb.rpc("get_member_nicknames", { p_ids: wanted });
+    if (!error) (data || []).forEach(row => { nickCache[row.user_id] = (row.nickname || "").toLowerCase(); });
+  } catch (_) { /* nicknames are optional */ }
+}
+
 async function loadStaffAuthorTitles(authorIds) {
   const ids = [...new Set((authorIds || []).filter(Boolean))];
   if (!ids.length) return {};
+  await loadNicknames(ids);
   const { data, error } = await sb.rpc("staff_author_titles", {
     p_author_ids: ids
   });
@@ -34,9 +46,65 @@ async function loadStaffAuthorTitles(authorIds) {
   return Object.fromEntries((data || []).map(row => [row.author_id, row.title]));
 }
 
-function staffAuthorName(name, title) {
+/* Hover (or tap) a name to get a small "See profile" menu. */
+const profilePop = { node: null, timer: 0 };
+function hideProfilePop() {
+  clearTimeout(profilePop.timer);
+  if (profilePop.node) profilePop.node.hidden = true;
+}
+function hideProfilePopSoon() {
+  clearTimeout(profilePop.timer);
+  profilePop.timer = setTimeout(hideProfilePop, 220);
+}
+function showProfilePop(anchor, userId, name) {
+  clearTimeout(profilePop.timer);
+  if (!profilePop.node) {
+    const node = el("div", "profile-pop");
+    node.setAttribute("role", "menu");
+    node.onmouseenter = () => clearTimeout(profilePop.timer);
+    node.onmouseleave = hideProfilePopSoon;
+    document.body.appendChild(node);
+    profilePop.node = node;
+    document.addEventListener("keydown", event => { if (event.key === "Escape") hideProfilePop(); });
+    document.addEventListener("click", event => {
+      if (!profilePop.node.contains(event.target) && !event.target.closest(".author-name.has-profile")) hideProfilePop();
+    });
+    window.addEventListener("scroll", hideProfilePop, { passive: true });
+  }
+  const node = profilePop.node;
+  node.replaceChildren();
+  node.appendChild(el("span", "profile-pop-name", name || "Classmate"));
+  const see = el("button", "", "\ud83d\udc64 See profile");
+  see.type = "button";
+  see.setAttribute("role", "menuitem");
+  see.onclick = () => { hideProfilePop(); openMemberProfile(userId); };
+  node.appendChild(see);
+  node.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const width = node.offsetWidth || 200;
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+  node.style.left = (left + window.scrollX) + "px";
+  node.style.top = (rect.bottom + window.scrollY + 4) + "px";
+}
+
+function staffAuthorName(name, title, userId) {
   const identity = el("span", "author-identity");
-  identity.appendChild(el("span", "author-name", name || "user"));
+  let nameNode;
+  if (userId) {
+    nameNode = el("button", "author-name has-profile", name || "user");
+    nameNode.type = "button";
+    nameNode.title = "See profile";
+    nameNode.setAttribute("aria-haspopup", "menu");
+    nameNode.onmouseenter = () => showProfilePop(nameNode, userId, name);
+    nameNode.onmouseleave = hideProfilePopSoon;
+    nameNode.onfocus = () => showProfilePop(nameNode, userId, name);
+    nameNode.onclick = event => { event.stopPropagation(); showProfilePop(nameNode, userId, name); };
+  } else {
+    nameNode = el("span", "author-name", name || "user");
+  }
+  identity.appendChild(nameNode);
+  const nick = userId && nickCache[userId];
+  if (nick) identity.appendChild(el("span", "author-nick", "(" + nick + ")"));
   if (title) identity.appendChild(el("span", "staff-title-card", title));
   return identity;
 }
@@ -184,8 +252,13 @@ function renderBar(ctx, active) {
     el("span", "bar-student-number", ctx.profile.student_number || "Student number not set")
   );
   bar.appendChild(identity);
+  loadNicknames([ctx.user.id]).then(() => {
+    const nick = nickCache[ctx.user.id];
+    const nameSpan = identity.querySelector(".bar-name");
+    if (nick && nameSpan) nameSpan.append(" ", el("span", "bar-nick", "(" + nick + ")"));
+  });
   const nav = el("nav", "nav");
-  const links = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"], ["funds.html", "Class funds", "funds"], ["confessions.html", "Confessions", "confessions"], ["profile.html", "Profile", "profile"]];
+  const links = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"], ["funds.html", "Class funds", "funds"], ["attendance.html", "Attendance", "attendance"], ["memories.html", "Memories", "memories"], ["confessions.html", "Confessions", "confessions"], ["profile.html", "Profile", "profile"]];
   if (ctx.role === "admin") links.push(["admin.html", "Admin", "admin"]);
   if (ctx.role === "officer") links.push(["officer.html", "Officer", "officer"]);
   if (ctx.isAdmin) links.push(["manage.html", "Manage reviewers", "manage"]);
@@ -210,6 +283,369 @@ function renderBar(ctx, active) {
   suggestion.setAttribute("aria-label", "Send a suggestion to the admins");
   suggestion.onclick = () => openSuggestion(ctx);
   document.body.appendChild(suggestion);
+  renderOnlineButton(ctx);
+  renderFundButton(ctx);
+}
+
+/* ---------- outstanding fund balance (bottom-right button, only when something is owed) ---------- */
+const fundState = { button: null, panel: null, items: [], total: 0, timer: 0 };
+
+function pesos(amount) {
+  return "\u20b1" + Number(amount).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function refreshFundBalance() {
+  const button = fundState.button, panel = fundState.panel;
+  if (!button || !button.isConnected) return;
+  try {
+    const { data: funds, error } = await sb.from("funds").select("id,title").order("id");
+    if (error) throw error;
+    const items = [];
+    for (const fund of funds || []) {
+      const { data, error: balanceError } = await sb.rpc("get_my_fund_balance", { p_fund_id: fund.id });
+      if (balanceError) continue;
+      const row = Array.isArray(data) ? data[0] : data;
+      const owed = Number(row && row.outstanding);
+      // Paid in full or paid ahead (advance credit): nothing is owed, so nothing is shown.
+      if (Number.isFinite(owed) && owed > 0) items.push({ id: fund.id, title: fund.title, owed });
+    }
+    fundState.items = items;
+    fundState.total = items.reduce((sum, item) => sum + item.owed, 0);
+  } catch (_) {
+    fundState.items = [];
+    fundState.total = 0;
+  }
+  const owes = fundState.total > 0;
+  button.hidden = !owes;
+  document.body.classList.toggle("has-fund-btn", owes);
+  if (!owes) { panel.hidden = true; button.setAttribute("aria-expanded", "false"); return; }
+  button.querySelector(".fund-amount").textContent = pesos(fundState.total);
+  if (!panel.hidden) paintFundPanel();
+}
+
+function paintFundPanel() {
+  const panel = fundState.panel;
+  panel.replaceChildren();
+  const head = el("div", "online-head");
+  const titleBox = el("div");
+  titleBox.append(el("h3", "online-title", "Fund balance"), el("p", "online-sub", "You still need to pay"));
+  const close = el("button", "online-close", "\u00d7");
+  close.type = "button";
+  close.setAttribute("aria-label", "Close");
+  close.onclick = () => { panel.hidden = true; fundState.button.setAttribute("aria-expanded", "false"); };
+  head.append(titleBox, close);
+  panel.appendChild(head);
+  panel.appendChild(el("p", "fund-total", pesos(fundState.total)));
+  const list = el("ul", "fund-list");
+  fundState.items.forEach(item => {
+    const row = el("li");
+    row.append(el("span", "", item.title), el("strong", "", pesos(item.owed)));
+    list.appendChild(row);
+  });
+  panel.appendChild(list);
+  const link = el("a", "btn fund-link", "View your fund balance");
+  link.href = "funds.html";
+  panel.appendChild(link);
+}
+
+function renderFundButton(ctx) {
+  document.querySelectorAll(".fund-circle, .fund-panel").forEach(node => node.remove());
+  const button = el("button", "fund-circle");
+  button.type = "button";
+  button.hidden = true;
+  button.title = "Outstanding fund balance";
+  button.setAttribute("aria-label", "Outstanding fund balance");
+  button.setAttribute("aria-expanded", "false");
+  button.appendChild(el("span", "fund-sign", "\u20b1"));
+  button.appendChild(el("span", "fund-amount", ""));
+  document.body.appendChild(button);
+  const panel = el("section", "online-panel fund-panel");
+  panel.hidden = true;
+  panel.setAttribute("aria-label", "Outstanding fund balance");
+  document.body.appendChild(panel);
+  fundState.button = button;
+  fundState.panel = panel;
+  button.onclick = () => {
+    panel.hidden = !panel.hidden;
+    button.setAttribute("aria-expanded", String(!panel.hidden));
+    if (!panel.hidden) paintFundPanel();
+  };
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !panel.hidden) { panel.hidden = true; button.setAttribute("aria-expanded", "false"); }
+  });
+  document.addEventListener("click", event => {
+    if (!panel.hidden && !panel.contains(event.target) && !button.contains(event.target)) {
+      panel.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+    }
+  });
+  clearInterval(fundState.timer);
+  fundState.timer = setInterval(refreshFundBalance, 5 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshFundBalance(); });
+  refreshFundBalance();
+}
+
+/* ---------- avatars, toasts ---------- */
+function initialsOf(name) {
+  return (name || "?").split(/[\s,]+/).filter(Boolean).map(part => part.charAt(0)).join("").slice(0, 2).toUpperCase() || "?";
+}
+
+function avatarNode(url, name, cls) {
+  if (url) {
+    const img = el("img", cls || "avatar-sm");
+    img.src = url;
+    img.alt = "";
+    img.loading = "lazy";
+    img.referrerPolicy = "no-referrer";
+    img.onerror = () => img.replaceWith(el("span", (cls || "avatar-sm") + " avatar-fallback", initialsOf(name)));
+    return img;
+  }
+  return el("span", (cls || "avatar-sm") + " avatar-fallback", initialsOf(name));
+}
+
+function showToast(text, kind) {
+  let stack = document.querySelector(".toast-stack");
+  if (!stack) {
+    stack = el("div", "toast-stack");
+    stack.setAttribute("role", "status");
+    stack.setAttribute("aria-live", "polite");
+    document.body.appendChild(stack);
+  }
+  const toast = el("div", "toast" + (kind ? " toast-" + kind : ""), text);
+  stack.appendChild(toast);
+  while (stack.children.length > 3) stack.firstChild.remove();
+  setTimeout(() => toast.classList.add("toast-out"), 4200);
+  setTimeout(() => toast.remove(), 4700);
+}
+
+/* ---------- view a classmate's profile ---------- */
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function openMemberProfile(userId, hint) {
+  if (!userId) return;
+  hint = hint || {};
+  const dialog = el("div", "modal-backdrop");
+  const card = el("div", "modal-card member-card");
+  card.setAttribute("role", "dialog");
+  card.setAttribute("aria-modal", "true");
+  card.setAttribute("aria-label", "Member profile");
+  const close = () => { dialog.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = event => { if (event.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  dialog.onclick = event => { if (event.target === dialog) close(); };
+  card.appendChild(el("p", "hint", "Loading profile..."));
+  dialog.appendChild(card);
+  document.body.appendChild(dialog);
+
+  sb.rpc("get_member_profile", { p_user_id: userId }).then(({ data, error }) => {
+    card.replaceChildren();
+    const row = Array.isArray(data) ? data[0] : data;
+    if (error || !row) {
+      card.appendChild(el("h2", "", "Profile unavailable"));
+      card.appendChild(el("p", "msg err", error
+        ? error.message + " (Run migration_profile_nickname_online.sql in the Supabase SQL Editor if you have not yet.)"
+        : "This profile could not be found."));
+      const ok = el("button", "ghost", "Close");
+      ok.onclick = close;
+      card.appendChild(ok);
+      return;
+    }
+    const title = profileTitle({ student_number: row.student_number, role: row.role });
+    const head = el("div", "member-head");
+    head.appendChild(avatarNode(row.avatar_url, row.display_name, "member-avatar"));
+    const who = el("div", "member-who");
+    const nameLine = el("h2", "member-name", row.display_name || "Student");
+    if (row.nickname) nameLine.append(" ", el("span", "member-nick", "(" + row.nickname.toLowerCase() + ")"));
+    who.appendChild(nameLine);
+    const chips = el("div", "member-chips");
+    chips.appendChild(el("span", "staff-title-card member-title", title));
+    if (row.student_number) chips.appendChild(el("span", "member-number", row.student_number));
+    const online = presence.users.some(u => u.user_id === row.user_id);
+    chips.appendChild(el("span", "online-pill" + (online ? " on" : ""), online ? "Online now" : "Offline"));
+    who.appendChild(chips);
+    head.appendChild(who);
+    card.appendChild(head);
+
+    const about = el("div", "member-section");
+    about.appendChild(el("h3", "member-label", "About"));
+    about.appendChild(el("p", row.about ? "member-about" : "hint", row.about || "This member has not written anything yet."));
+    card.appendChild(about);
+
+    [["Favorite things", row.favorites], ["Hobbies", row.hobbies], ["Fun facts", row.fun_facts]].forEach(([label, text]) => {
+      if (!text) return;
+      const note = el("div", "member-note");
+      note.append(el("h3", "member-label", label), el("p", "", text));
+      card.appendChild(note);
+    });
+
+    const facts = el("dl", "member-facts");
+    const fact = (label, value) => { facts.append(el("dt", "", label), el("dd", "", value)); };
+    if (row.birth_month && row.birth_day) fact("Birthday", MONTHS[row.birth_month - 1] + " " + row.birth_day);
+    if (row.member_since) fact("Joined Portalis", new Date(row.member_since).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }));
+    fact("Class", "BSIT-12");
+    card.appendChild(facts);
+
+    const actions = el("div", "edit-note-actions");
+    if (userId === (presence.me && presence.me.user_id)) {
+      const edit = el("a", "btn ghost", "Edit my profile");
+      edit.href = "profile.html";
+      actions.appendChild(edit);
+    }
+    const done = el("button", "", "Close");
+    done.type = "button";
+    done.onclick = close;
+    actions.appendChild(done);
+    card.appendChild(actions);
+    done.focus();
+  });
+}
+
+/* ---------- who's online (heartbeat saved in the database) ---------- */
+const presence = { users: [], me: null, status: "connecting", error: "", panel: null, button: null, known: new Set(), started: false };
+
+function toastsMuted() {
+  try { return localStorage.getItem("portalis_online_toasts") === "off"; } catch (_) { return false; }
+}
+function setToastsMuted(off) {
+  try { localStorage.setItem("portalis_online_toasts", off ? "off" : "on"); } catch (_) {}
+}
+
+function startPresence(ctx) {
+  if (presence.started) return;
+  presence.started = true;
+  presence.me = {
+    user_id: ctx.user.id,
+    name: ctx.profile.full_name || ctx.profile.student_number || "Student",
+    title: profileTitle(ctx.profile),
+    role: ctx.profile.role,
+    avatar_url: ctx.profile.avatar_url || null
+  };
+  let first = true;
+
+  async function tick() {
+    try {
+      const beat = await sb.rpc("touch_presence");
+      if (beat.error) throw beat.error;
+      const { data, error } = await sb.rpc("get_online_users");
+      if (error) throw error;
+      const users = (data || []).map(u => ({
+        user_id: u.user_id,
+        name: u.display_name || "Student",
+        nickname: (u.nickname || "").toLowerCase(),
+        title: profileTitle({ student_number: u.student_number, role: u.role }),
+        role: u.role,
+        avatar_url: u.avatar_url || null
+      }));
+      users.forEach(u => { if (u.nickname) nickCache[u.user_id] = u.nickname; });
+      if (!first && !toastsMuted()) {
+        const joined = users.filter(u => u.user_id !== ctx.user.id && !presence.known.has(u.user_id)).map(u => u.nickname || u.name);
+        if (joined.length) showToast(joined.length === 1 ? joined[0] + " is online" : joined.length + " classmates came online", "online");
+      }
+      presence.known = new Set(users.map(u => u.user_id));
+      first = false;
+      presence.users = users;
+      presence.status = "live";
+      presence.error = "";
+    } catch (error) {
+      presence.status = "error";
+      presence.error = (error && error.message) || String(error);
+    }
+    refreshOnlineUI();
+  }
+
+  tick();
+  setInterval(tick, 20000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
+}
+
+function renderOnlineButton(ctx) {
+  document.querySelectorAll(".online-circle, .online-panel").forEach(node => node.remove());
+  const button = el("button", "online-circle");
+  button.type = "button";
+  button.title = "Who's online";
+  button.setAttribute("aria-label", "Who's online");
+  button.setAttribute("aria-expanded", "false");
+  button.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M16.5 14.2c2.7.2 4.5 2.2 4.5 4.8"/></svg>';
+  button.appendChild(el("span", "online-count", "0"));
+  document.body.appendChild(button);
+  presence.button = button;
+
+  const panel = el("section", "online-panel");
+  panel.hidden = true;
+  panel.setAttribute("aria-label", "People online now");
+  document.body.appendChild(panel);
+  presence.panel = panel;
+
+  button.onclick = () => {
+    panel.hidden = !panel.hidden;
+    button.setAttribute("aria-expanded", String(!panel.hidden));
+    if (!panel.hidden) refreshOnlineUI();
+  };
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !panel.hidden) { panel.hidden = true; button.setAttribute("aria-expanded", "false"); }
+  });
+  document.addEventListener("click", event => {
+    if (!panel.hidden && !panel.contains(event.target) && !button.contains(event.target)) {
+      panel.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+    }
+  });
+  startPresence(ctx);
+  refreshOnlineUI();
+}
+
+function refreshOnlineUI() {
+  const button = presence.button, panel = presence.panel;
+  if (!button || !panel) return;
+  const count = presence.users.length;
+  const badge = button.querySelector(".online-count");
+  badge.textContent = presence.status === "error" ? "!" : String(count);
+  button.classList.toggle("has-online", count > 0 && presence.status !== "error");
+  button.classList.toggle("is-error", presence.status === "error");
+  if (panel.hidden) return;
+
+  panel.replaceChildren();
+  const head = el("div", "online-head");
+  const titleBox = el("div");
+  titleBox.append(el("h3", "online-title", "Online now"), el("p", "online-sub", presence.status === "live" ? count + (count === 1 ? " person" : " people") + " online" : presence.status === "error" ? "Not connected" : "Connecting..."));
+  const close = el("button", "online-close", "\u00d7");
+  close.type = "button";
+  close.setAttribute("aria-label", "Close");
+  close.onclick = () => { panel.hidden = true; button.setAttribute("aria-expanded", "false"); };
+  head.append(titleBox, close);
+  panel.appendChild(head);
+
+  if (presence.status === "error") {
+    panel.appendChild(el("p", "online-empty", "The online list could not connect. Run migration_profile_nickname_online.sql in the Supabase SQL Editor, then refresh." + (presence.error ? " (" + presence.error + ")" : "")));
+  } else if (!count) {
+    panel.appendChild(el("p", "online-empty", presence.status === "live" ? "No one else is online right now." : "Checking who is around..."));
+  } else {
+    const list = el("ul", "online-list");
+    presence.users.forEach(user => {
+      const item = el("li");
+      const row = el("button", "online-row");
+      row.type = "button";
+      row.title = "View " + user.name + "'s profile";
+      const avatar = el("span", "online-avatar-wrap");
+      avatar.append(avatarNode(user.avatar_url, user.name, "avatar-sm"), el("span", "online-dot"));
+      const text = el("span", "online-text");
+      const nameLine = el("span", "online-name", user.name + (user.nickname ? " (" + user.nickname + ")" : "") + (presence.me && user.user_id === presence.me.user_id ? " \u00b7 you" : ""));
+      text.append(nameLine, el("span", "online-role", user.title));
+      row.append(avatar, text);
+      row.onclick = () => openMemberProfile(user.user_id, user);
+      item.appendChild(row);
+      list.appendChild(item);
+    });
+    panel.appendChild(list);
+  }
+
+  const foot = el("label", "online-foot");
+  const toggle = document.createElement("input");
+  toggle.type = "checkbox";
+  toggle.checked = !toastsMuted();
+  toggle.onchange = () => setToastsMuted(!toggle.checked);
+  foot.append(toggle, document.createTextNode(" Notify me when classmates come online"));
+  panel.appendChild(foot);
 }
 
 function renderMath(box) {
@@ -461,7 +897,7 @@ function noteCard(n, o) {
   const author = el("small", "note-author");
   author.append(
     document.createTextNode("by "),
-    staffAuthorName(n.author_name, n.staff_title),
+    staffAuthorName(n.author_name, n.staff_title, n.user_id),
     document.createTextNode(" \u00b7 " + new Date(n.created_at).toLocaleDateString())
   );
   c.appendChild(author);

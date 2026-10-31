@@ -98,7 +98,6 @@
         <p class="hint" id="postHint"></p>
       </div>
 
-      <div id="fundReminder" class="fund-reminder-pin" hidden></div>
       <div id="birthdayGreeting" class="birthday-pin" hidden></div>
       <div id="filters" class="filters"></div>
       <div id="board" class="board"></div>
@@ -318,7 +317,7 @@
               person.wishes.forEach((wish) => {
                 const note = el("article", "birthday-wish");
                 note.append(
-                  staffAuthorName(wish.author_name || "Classmate", wishTitles[wish.author_id]),
+                  staffAuthorName(wish.author_name || "Classmate", wishTitles[wish.author_id], wish.author_id),
                   el("p", "", wish.content),
                   el("small", "", fmtDate(wish.created_at)),
                 );
@@ -491,72 +490,6 @@
         window.setTimeout(() => layer.remove(), 3200);
       }
 
-      async function loadFundReminder() {
-        const pin = document.getElementById("fundReminder");
-        if (view !== "board" || ctx.role !== "user") {
-          pin.hidden = true;
-          return;
-        }
-        const { data: funds, error: fundsError } = await sb
-          .from("funds")
-          .select("id,title")
-          .ilike("title", "Class Fund")
-          .limit(1);
-        if (view !== "board") {
-          pin.hidden = true;
-          return;
-        }
-        if (fundsError) {
-          err(fundsError.message);
-          pin.hidden = true;
-          return;
-        }
-        const classFund = funds && funds[0];
-        if (!classFund) {
-          pin.hidden = true;
-          return;
-        }
-
-        const { data, error } = await sb.rpc("get_my_fund_balance", {
-          p_fund_id: classFund.id,
-        });
-        if (view !== "board") {
-          pin.hidden = true;
-          return;
-        }
-        if (error) {
-          err(error.message);
-          pin.hidden = true;
-          return;
-        }
-        const balance = Array.isArray(data) ? data[0] : data;
-        const outstanding = Number(balance && balance.outstanding);
-        if (!balance || !Number.isFinite(outstanding) || outstanding <= 0) {
-          pin.hidden = true;
-          return;
-        }
-
-        pin.replaceChildren();
-        const pushpin = el("span", "fund-reminder-pushpin");
-        pushpin.setAttribute("aria-hidden", "true");
-        pin.append(
-          pushpin,
-          el("span", "fund-reminder-label", "Pinned reminder"),
-          el("h3", "", "Class Fund outstanding"),
-          el(
-            "p",
-            "",
-            "You still have ₱" +
-              outstanding.toFixed(2) +
-              " in unpaid contributions.",
-          ),
-        );
-        const link = el("a", "fund-reminder-link", "View your fund balance");
-        link.href = "funds.html";
-        pin.appendChild(link);
-        pin.hidden = false;
-      }
-
       function setView(v) {
         view = v;
         filter = "all";
@@ -569,7 +502,6 @@
           v === "mine" ? "block" : "none";
         if (v !== "board") {
           document.getElementById("birthdayGreeting").hidden = true;
-          document.getElementById("fundReminder").hidden = true;
         }
         loadNotes();
       }
@@ -598,7 +530,7 @@
           return;
         }
         if (view === "board")
-          await Promise.all([loadFundReminder(), loadBirthdayGreeting()]);
+          await loadBirthdayGreeting();
         counts = {};
         const ids = notes
           .filter((n) => n.status === "approved")
@@ -757,7 +689,7 @@
                   return;
                 }
                 showComment(currentComment + 1);
-              }, 3000);
+              }, 10000);
             }
           }
 
@@ -794,7 +726,7 @@
               const slide = el("div", "comment-slide");
               const d = el("div", "comment");
               const h = el("div", "chead");
-              h.appendChild(staffAuthorName(c.author_name || "user", titles[c.user_id]));
+              h.appendChild(staffAuthorName(c.author_name || "user", titles[c.user_id], c.user_id));
               h.appendChild(el("small", "", fmtDate(c.created_at)));
               if (ctx.isAdmin) {
                 const x = el("button", "x", "\u00d7");

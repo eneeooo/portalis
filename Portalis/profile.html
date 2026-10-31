@@ -10,7 +10,7 @@
   <div class="wrap">
     <div id="bar"></div>
     <h2>My profile</h2>
-    <p class="hint profile-intro">Update your profile details and picture. Your student number remains your sign-in ID; email is optional and is not used for login.</p>
+    <p class="hint profile-intro">Update your profile details and picture. Your student number remains your sign-in ID; email is optional and is not used for login. Classmates can see your name, nickname, picture, About me, Get to know me notes and birthday (month and day only); your email and other contacts stay private.</p>
     <p id="msg" class="msg"></p>
     <section class="profile-sticky profile-grid" aria-labelledby="profileDetailsTitle">
       <div class="profile-photo">
@@ -24,6 +24,10 @@
         <div class="profile-field">
           <label for="fullName">Full name</label>
           <input id="fullName" maxlength="100" autocomplete="name" placeholder="First and last name">
+        </div>
+        <div class="profile-field" id="nicknameField">
+          <label for="nickname">Nickname (shown next to your name)</label>
+          <input id="nickname" maxlength="40" placeholder="e.g. Ric">
         </div>
         <div class="profile-field">
           <label for="email">Email (optional)</label>
@@ -42,7 +46,19 @@
           <textarea id="about" maxlength="500"></textarea>
         </div>
         <button id="save">Save profile</button>
+        <button id="previewPublic" class="ghost" type="button">See how classmates view my profile</button>
       </div>
+    </section>
+    <section class="profile-sticky profile-getto" id="getToKnow" aria-labelledby="getToTitle">
+      <h3 id="getToTitle">Get to know me</h3>
+      <p class="hint">Short notes your classmates see when they open your profile. All optional.</p>
+      <label for="favorites">Favorite things</label>
+      <textarea id="favorites" class="short" maxlength="400" placeholder="Foods, shows, colors, music..."></textarea>
+      <label for="hobbies">Hobbies</label>
+      <textarea id="hobbies" class="short" maxlength="400" placeholder="What do you do for fun?"></textarea>
+      <label for="funFacts">Fun facts about me</label>
+      <textarea id="funFacts" class="short" maxlength="400" placeholder="Something people might not know"></textarea>
+      <button id="saveGetTo" type="button">Save profile</button>
     </section>
     <section class="profile-sticky profile-password" aria-labelledby="passwordTitle">
       <h3 id="passwordTitle">Change password</h3>
@@ -58,7 +74,7 @@
   <script src="config.js"></script>
   <script src="common.js"></script>
   <script>
-    let ctx, avatarUrl = "", currentEmail = "";
+    let ctx, avatarUrl = "", currentEmail = "", hasNewFields = true;
     const $ = id => document.getElementById(id);
     const msg = $("msg");
     function show(text, error) { msg.className = "msg" + (error ? " err" : " ok"); msg.textContent = text; }
@@ -66,8 +82,21 @@
       ctx = await requireAuth();
       if (!ctx) return;
       renderBar(ctx, "profile");
-      const { data, error } = await sb.from("profiles").select("email,full_name,birth_date,contacts,about,avatar_url").eq("id", ctx.user.id).single();
+      const base = "email,full_name,birth_date,contacts,about,avatar_url";
+      let { data, error } = await sb.from("profiles").select(base + ",nickname,favorites,hobbies,fun_facts").eq("id", ctx.user.id).single();
+      if (error && /nickname|favorites|hobbies|fun_facts|column/i.test(error.message)) {
+        // Database not upgraded yet: keep the old profile page working and hide the new fields.
+        hasNewFields = false;
+        $("nicknameField").style.display = "none";
+        $("getToKnow").style.display = "none";
+        ({ data, error } = await sb.from("profiles").select(base).eq("id", ctx.user.id).single());
+        if (!error) show("Run migration_profile_nickname_online.sql in the Supabase SQL Editor to turn on nicknames and the Get to know me notes.", true);
+      }
       if (error) { show(error.message, true); return; }
+      $("nickname").value = data.nickname || "";
+      $("favorites").value = data.favorites || "";
+      $("hobbies").value = data.hobbies || "";
+      $("funFacts").value = data.fun_facts || "";
       $("fullName").value = data.full_name || "";
       $("birthDate").value = data.birth_date || "";
       currentEmail = (data.email && !data.email.endsWith("@login.portalis.invalid")) ? data.email : "";
@@ -122,13 +151,20 @@
 
         // 1) Normal profile fields. The email column is protected: it only changes after the
         //    student confirms the new address from the email Supabase sends.
-        const { data: saved, error } = await sb.from("profiles").update({
+        const changes = {
           full_name: fullName,
           birth_date: birthDate || null,
           contacts: $("contacts").value.trim() || null,
           about: $("about").value.trim() || null,
           avatar_url: avatarUrl || null
-        }).eq("id", ctx.user.id).select("id,birth_date");
+        };
+        if (hasNewFields) {
+          changes.nickname = $("nickname").value.trim() || null;
+          changes.favorites = $("favorites").value.trim() || null;
+          changes.hobbies = $("hobbies").value.trim() || null;
+          changes.fun_facts = $("funFacts").value.trim() || null;
+        }
+        const { data: saved, error } = await sb.from("profiles").update(changes).eq("id", ctx.user.id).select("id,birth_date");
         if (error) { show("Could not save your profile: " + error.message, true); return; }
         if (!saved || saved.length === 0) {
           show("Nothing was saved: the database refused the update. Run migration_profile_email_confirm.sql in the Supabase SQL Editor.", true);
@@ -139,6 +175,7 @@
           return;
         }
         ctx.profile.full_name = fullName;
+        if (hasNewFields) nickCache[ctx.user.id] = changes.nickname || "";
 
         // 2) New email: Supabase emails a confirmation link to the NEW address.
         if (enteredEmail && enteredEmail !== currentEmail) {
@@ -160,6 +197,8 @@
         show("Unexpected error: " + (e && e.message ? e.message : e), true);
       } finally { $("save").disabled = false; }
     };
+    $("saveGetTo").onclick = () => $("save").click();
+    $("previewPublic").onclick = () => { if (ctx) openMemberProfile(ctx.user.id); };
     $("changePassword").onclick = async () => {
       const password = $("newPassword").value;
       if (password.length < 6) { show("Password must be at least 6 characters.", true); return; }

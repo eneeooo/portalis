@@ -242,3 +242,15 @@ BULK QUESTION FORMAT (blank line between questions)
 
   Q: Keyword used to declare an integer in Java?
   Answer: int
+
+ATTENDANCE, VIEW PROFILE, NICKNAMES AND ONLINE LIST
+---------------------------------------------------
+1. Run migration_attendance_presence.sql once in the Supabase SQL Editor (safe to re-run).
+2. Then run migration_profile_nickname_online.sql (nickname, favorite things, hobbies,
+   fun facts, and the online list, which now works without any Realtime settings).
+3. Optional: run migration_seed_get_to_know.sql once to fill in the class
+   'Get to know each other' answers (only empty fields are filled).
+4. Run migration_memories_and_updates.sql (Memories tab, admin-only confession full names,
+   nicknames in attendance). Run it after step 2.
+5. Run migration_memories_multi_photos.sql (several photos per memory). Run it after step 4.
+If the online button shows a red '!', step 2 has not been run yet.
