@@ -2870,3 +2870,162 @@ body.has-fund-btn .online-panel:not(.fund-panel) { bottom: 226px; }
 .memory-grid { column-width: auto; column-count: 3; column-gap: 24px; }
 @media (max-width: 900px) { .memory-grid { column-count: 2; } }
 @media (max-width: 560px) { .memory-grid { column-count: 1; } }
+
+/* Project-wide mobile constraints */
+@media (max-width: 600px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 100%;
+    padding: 16px 10px 40px;
+  }
+  .auth {
+    width: auto;
+    max-width: none;
+    margin: 44px 8px 0;
+  }
+  .auth h1 {
+    font-size: 32px;
+  }
+  .card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 14px 12px;
+    box-shadow: 4px 4px 0 #000;
+  }
+  h1,
+  h2,
+  h3,
+  p,
+  label,
+  .bar-name,
+  .nav-link {
+    overflow-wrap: anywhere;
+  }
+  h2 {
+    font-size: 28px;
+  }
+  h3 {
+    font-size: 22px;
+  }
+  input,
+  textarea,
+  select {
+    min-width: 0;
+    font-size: 16px;
+  }
+  button,
+  .button {
+    max-width: 100%;
+    min-height: 44px;
+  }
+  .board,
+  .cardgrid,
+  .profile-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cardgrid,
+  .board {
+    width: 100%;
+    gap: 20px;
+  }
+  .cardgrid .card,
+  .board .note {
+    min-width: 0;
+    width: 100%;
+  }
+  .cols2,
+  .stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tabs {
+    width: 100%;
+    gap: 6px;
+  }
+  button.tab {
+    flex: 1 1 140px;
+    white-space: normal;
+  }
+  .scroll,
+  .att-scroll {
+    width: 100%;
+    max-width: 100%;
+  }
+  table {
+    max-width: 100%;
+  }
+  .fund-balance-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fund-actions,
+  .actions,
+  .memory-actions {
+    width: 100%;
+  }
+  .fund-actions button,
+  .actions button,
+  .memory-actions button {
+    flex: 1 1 140px;
+  }
+  .bar-profile {
+    max-width: calc(100vw - 98px);
+  }
+  .suggestion-circle {
+    right: 14px;
+    bottom: 16px;
+  }
+  img,
+  video,
+  canvas,
+  svg {
+    max-width: 100%;
+  }
+
+  /* Data tables: keep columns readable and allow touch scrolling inside their wrappers. */
+  .scroll {
+    width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .scroll table,
+  #expensePanel table {
+    width: max-content;
+    min-width: 100%;
+  }
+  .scroll th,
+  .scroll td,
+  #expensePanel th,
+  #expensePanel td {
+    white-space: nowrap;
+  }
+  .scroll th,
+  .scroll td {
+    padding: 7px 8px;
+    font-size: 14px;
+  }
+  .scroll table th:first-child,
+  .scroll table td:first-child,
+  #expensePanel table th:first-child,
+  #expensePanel table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #fff;
+    box-shadow: 1px 0 0 #000;
+  }
+  .fund-table {
+    min-width: 760px;
+    table-layout: fixed;
+  }
+  .fund-table th:first-child,
+  .fund-table td:first-child {
+    width: 135px;
+  }
+}

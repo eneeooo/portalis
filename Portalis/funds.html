@@ -249,7 +249,10 @@
         body.appendChild(tr);
       });
       table.appendChild(body);
-      box.appendChild(table);
+      const tableScroll = document.createElement("div");
+      tableScroll.className = "scroll";
+      tableScroll.appendChild(table);
+      box.appendChild(tableScroll);
       return total;
     }
     async function loadRoster() {
