@@ -3056,3 +3056,197 @@ body.has-fund-btn .online-panel:not(.fund-panel) { bottom: 226px; }
     width: 135px;
   }
 }
+
+/* Extra-small phones: keep controls comfortable without creating page overflow. */
+@media (max-width: 360px) {
+  .wrap {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .att-card {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .att-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .att-stat {
+    min-width: 0;
+  }
+  .att-stat-label {
+    font-size: 11px;
+  }
+  .att-stat-value {
+    font-size: 19px;
+  }
+  .att-table tbody tr {
+    grid-template-columns: minmax(0, 1fr) 64px;
+  }
+  .att-table tbody td.att-cell-td,
+  button.att-cell,
+  td.att-cell {
+    width: 64px;
+    min-width: 64px;
+  }
+  .att-who {
+    font-size: 14px;
+  }
+  .att-pager {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+  }
+  .att-pager-mid select {
+    font-size: 14px;
+  }
+  .att-date-tools-row {
+    grid-template-columns: 1fr;
+  }
+  .tabs button.tab {
+    flex-basis: 100%;
+  }
+}
+
+/* Mobile cards for funds and admin data tables */
+@media (max-width: 600px) {
+  .fund-roster-scroll,
+  #expensePanel .scroll,
+  .admin-users-table,
+  .admin-confession-table {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .fund-roster-scroll table,
+  #expensePanel .fund-expense-table,
+  .admin-users-table,
+  .admin-confession-table {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .fund-roster-scroll thead,
+  #expensePanel .fund-expense-table thead,
+  .admin-users-table thead,
+  .admin-confession-table thead {
+    display: none;
+  }
+
+  .fund-roster-scroll tbody,
+  #expensePanel .fund-expense-table tbody,
+  .admin-users-table tbody,
+  .admin-confession-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .fund-roster-scroll tbody tr,
+  #expensePanel .fund-expense-table tbody tr,
+  .admin-users-table tbody tr,
+  .admin-confession-table tbody tr {
+    display: grid;
+    width: 100%;
+    margin: 0 0 10px;
+    border: 2px solid #000;
+    background: #fff;
+    box-shadow: 3px 3px 0 #000;
+  }
+
+  .fund-roster-scroll tbody tr,
+  #expensePanel .fund-expense-table tbody tr {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-users-table tbody tr {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .admin-confession-table tbody tr {
+    grid-template-columns: 1fr;
+  }
+
+  .fund-roster-scroll tbody td,
+  #expensePanel .fund-expense-table tbody td,
+  .admin-users-table tbody td,
+  .admin-confession-table tbody td {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    padding: 7px 8px;
+    border: 0;
+    border-bottom: 1px solid #d4d4d4;
+    background: #fff;
+    box-shadow: none;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .fund-roster-scroll tbody td:last-child,
+  #expensePanel .fund-expense-table tbody td:last-child,
+  .admin-users-table tbody td:last-child,
+  .admin-confession-table tbody td:last-child {
+    border-bottom: 0;
+  }
+
+  .fund-roster-scroll tbody td::before,
+  #expensePanel .fund-expense-table tbody td::before,
+  .admin-users-table tbody td::before,
+  .admin-confession-table tbody td::before {
+    font-weight: bold;
+    opacity: .7;
+  }
+
+  .fund-roster-scroll tbody td:nth-child(1)::before { content: "Student no."; }
+  .fund-roster-scroll tbody td:nth-child(2)::before { content: "Name"; }
+  .fund-roster-scroll tbody td:nth-child(3)::before { content: "This period"; }
+  .fund-roster-scroll tbody td:nth-child(4)::before { content: "Total paid"; }
+  .fund-roster-scroll tbody td:nth-child(5)::before { content: "Advance"; }
+  .fund-roster-scroll tbody td:nth-child(6)::before { content: "Outstanding"; }
+  .fund-roster-scroll tbody td:nth-child(7)::before { content: "Status"; }
+
+  #expensePanel .fund-expense-table tbody td:nth-child(1)::before { content: "Date"; }
+  #expensePanel .fund-expense-table tbody td:nth-child(2)::before { content: "Description"; }
+  #expensePanel .fund-expense-table tbody td:nth-child(3)::before { content: "Quantity"; }
+  #expensePanel .fund-expense-table tbody td:nth-child(4)::before { content: "Unit amount"; }
+  #expensePanel .fund-expense-table tbody td:nth-child(5)::before { content: "Total"; }
+  #expensePanel .fund-expense-table tbody td:nth-child(6)::before { content: "Action"; }
+
+  .admin-users-table tbody td:nth-child(1)::before { content: "Student no."; }
+  .admin-users-table tbody td:nth-child(2)::before { content: "Name"; }
+  .admin-users-table tbody td:nth-child(3)::before { content: "Email"; }
+  .admin-users-table tbody td:nth-child(4)::before { content: "Class title"; }
+  .admin-users-table tbody td:nth-child(5)::before { content: "Role"; }
+  .admin-users-table tbody td:nth-child(6)::before { content: "Actions"; }
+
+  .admin-users-table tbody td {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+  .admin-users-table .user-actions {
+    flex-wrap: wrap;
+  }
+  .admin-users-table .role-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-confession-table tbody td:nth-child(1)::before { content: "Posted"; }
+  .admin-confession-table tbody td:nth-child(2)::before { content: "Posted by"; }
+  .admin-confession-table tbody td:nth-child(3)::before { content: "Feeling"; }
+  .admin-confession-table tbody td:nth-child(4)::before { content: "Confession"; }
+  .admin-confession-table tbody td:nth-child(5)::before { content: "Status"; }
+
+  .fund-roster-scroll .fund-status,
+  #expensePanel .fund-expense-table button,
+  .admin-users-table button {
+    width: auto;
+  }
+  #expensePanel .fund-expense-table button {
+    min-height: 44px;
+  }
+}

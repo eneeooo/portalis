@@ -62,7 +62,7 @@
         <button id="printFund" class="ghost">Print fund report</button>
       </div>
       <p class="hint">The workbook follows the class roster layout with student name, number, weekly status, and advance payment.</p>
-      <div class="scroll">
+      <div class="scroll fund-roster-scroll">
         <table class="fund-table">
           <thead><tr><th>Student number</th><th>Full name</th><th>This period</th><th>Total paid</th><th>Advance credit</th><th>Outstanding</th><th>Status / edit</th></tr></thead>
           <tbody id="roster"></tbody>
@@ -231,7 +231,7 @@
         return total;
       }
       const table = document.createElement("table");
-      table.className = "fund-table";
+      table.className = "fund-table fund-expense-table";
       table.innerHTML = "<thead><tr><th>Date</th><th>Description</th><th>Quantity</th><th>Unit amount</th><th>Total</th>" + (ctx.isAdmin ? "<th>Action</th>" : "") + "</tr></thead>";
       const body = document.createElement("tbody");
       expenses.forEach(expense => {
