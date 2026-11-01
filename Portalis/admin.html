@@ -233,8 +233,8 @@
         tdRole.appendChild(sel);
         const shownEmail = u.email || "Not set";
         tr.append(
-          el("td", "", u.student_number || "—"),
-          el("td", "", u.full_name || "—"),
+          el("td", "admin-student-number", u.student_number || "—"),
+          el("td", "admin-student-name", u.full_name || "—"),
           el("td", "", shownEmail),
           el("td", "", profileTitle(u)),
           tdRole,

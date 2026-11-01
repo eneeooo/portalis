@@ -301,8 +301,8 @@
         const debt = debtByUser[student.user_id];
         const tr = document.createElement("tr");
         tr.append(
-          el("td", "", student.student_number || "Not assigned"),
-          el("td", "", student.full_name || "Student"),
+          el("td", "fund-student-number", student.student_number || "Not assigned"),
+          el("td", "fund-student-name", student.full_name || "Student"),
           el("td", "", "Due ₱" + Number(student.amount_due).toFixed(2) + " · paid ₱" + Number(student.amount_paid).toFixed(2)),
           el("td", "", "₱" + safeNumber(debt ? debt.total_paid : 0).toFixed(2)),
           el("td", "", "₱" + safeNumber(debt ? debt.advance_credit : 0).toFixed(2)),
