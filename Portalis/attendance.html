@@ -190,7 +190,7 @@
       $("nextDate").disabled = i < 0 || i >= sessions.length - 1;
       pick.disabled = !sessions.length;
       $("dateCount").textContent = sessions.length ? (i + 1) + " of " + sessions.length : "";
-      $("pager").style.display = sessions.length ? "flex" : "none";
+      $("pager").style.display = sessions.length ? "" : "none";
 
       const tools = $("dateTools");
       tools.replaceChildren();

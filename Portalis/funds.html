@@ -165,9 +165,14 @@
     }
     async function loadMyBalance() {
       $("roster").innerHTML = "";
-      const { data, error } = await sb.rpc("get_my_fund_balance", { p_fund_id: selectedFund.id });
+      const [myBalanceResult, fundTotalResult] = await Promise.all([
+        sb.rpc("get_my_fund_balance", { p_fund_id: selectedFund.id }),
+        sb.rpc("get_fund_total_balance", { p_fund_id: selectedFund.id })
+      ]);
+      const error = myBalanceResult.error;
       if (error) { message(error.message, true); return; }
-      const balance = Array.isArray(data) ? data[0] : data;
+      const balance = Array.isArray(myBalanceResult.data) ? myBalanceResult.data[0] : myBalanceResult.data;
+      const fundTotal = Array.isArray(fundTotalResult.data) ? fundTotalResult.data[0] : fundTotalResult.data;
       if (!balance) {
         $("summary").textContent = selectedFund.title + " has no collection periods yet.";
         return;
@@ -190,7 +195,7 @@
         balanceCard("Advance credit", balance.advance_credit, "balance-advance")
       );
       $("summary").appendChild(totals);
-      await loadExpenses();
+      await loadExpenses(fundTotal ? fundTotal.total_collected : 0);
     }
     function safeNumber(value, fallback = 0) {
       const number = Number(value);

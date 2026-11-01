@@ -2729,22 +2729,49 @@ button.att-cell, td.att-cell { min-width: 120px; }
   .att-pager-mid { min-width: 0; flex-basis: auto; gap: 4px; }
   .att-pager-mid select { min-width: 0; width: 100%; font-size: 15px; }
   .att-pager-count { font-size: 12px; }
-  .att-scroll { max-height: 64vh; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-  .att-table { width: max-content; min-width: 100%; table-layout: fixed; font-size: 14px; }
-  .att-table .att-name-col { width: 145px; min-width: 145px; max-width: 145px; }
-  .att-table thead th.att-date { width: 96px; min-width: 96px; }
+  .att-scroll { max-height: none; overflow: visible; border: 0; background: transparent; }
+  .att-table { display: block; width: 100%; min-width: 0; table-layout: auto; font-size: 15px; }
+  .att-table thead { display: block; margin-bottom: 8px; }
+  .att-table thead tr { display: grid; grid-template-columns: 1fr; border: 2px solid #000; }
+  .att-table thead th.att-name-col { display: none; }
+  .att-table thead th.att-date { width: 100%; min-width: 0; position: static; display: block; border-right: 0; padding: 10px; background: #fff3a0 !important; }
   .att-table thead th.att-total,
   .att-table td.att-total,
   .att-table tfoot td.att-total,
-  .att-table .att-total { width: 34px; min-width: 34px; max-width: 34px; padding: 6px 1px; }
-  button.att-cell, td.att-cell, .att-cell-td { width: 86px; min-width: 86px; }
-  button.att-cell, td.att-cell { height: 44px; }
-  .att-who { gap: 4px; padding: 7px 6px; font-size: 14px; }
+  .att-table .att-total { display: none; }
+  .att-table tbody { display: block; }
+  .att-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) 76px; align-items: stretch; margin-bottom: 7px; border: 2px solid #000; background: #fff; box-shadow: 2px 2px 0 #000; }
+  .att-table tbody tr.att-me { background: #fff8c9; }
+  .att-table tbody tr.att-me th.att-name-col,
+  .att-table tbody tr.att-me td { background-color: transparent; }
+  .att-table tbody th.att-name-col { position: static; width: auto; min-width: 0; max-width: none; border-right: 1px solid #c7c9cf; border-bottom: 0; box-shadow: none; }
+  .att-table tbody td.att-cell-td { width: 76px; min-width: 76px; border-right: 0; border-bottom: 0; }
+  button.att-cell, td.att-cell { width: 76px; min-width: 76px; height: 56px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 1px; font-size: 20px; line-height: 1; }
+  button.att-cell { padding: 4px 2px; }
+  button.att-cell::after { font-family: "Patrick Hand", "Comic Sans MS", cursive; font-size: 10px; line-height: 1.1; }
+  button.att-cell:not([class*="st-"])::after,
+  td.att-cell:not([class*="st-"])::after { content: "Blank"; font-size: 10px; line-height: 1.1; }
+  button.att-cell.st-present::after { content: "Present"; }
+  button.att-cell.st-absent::after { content: "Absent"; }
+  button.att-cell.st-late::after { content: "Late"; }
+  button.att-cell.st-excused::after { content: "Excused"; }
+  td.att-cell.st-present::after { content: "Present"; }
+  td.att-cell.st-absent::after { content: "Absent"; }
+  td.att-cell.st-late::after { content: "Late"; }
+  td.att-cell.st-excused::after { content: "Excused"; }
+  td.att-cell:not([class*="st-"])::after { content: "Blank"; }
+  .att-table tfoot { display: none; }
+  .att-who { min-height: 56px; gap: 5px; padding: 7px 8px; font-size: 15px; }
   .att-no { min-width: 20px; }
-  .att-date-main { font-size: 13px; }
-  .att-date-sub { font-size: 11px; }
+  .att-date-main { font-size: 17px; }
+  .att-date-sub { font-size: 13px; margin-top: 2px; }
   .att-legend { gap: 4px 10px; font-size: 13px; }
   .att-key { width: 20px; height: 20px; }
+  .att-add { grid-template-columns: 1fr; }
+  .att-add button { width: 100%; min-height: 44px; }
+  .att-subbar { align-items: flex-start; }
+  .att-date-tools-row { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+  .att-date-tools-row .att-mini { min-height: 44px; width: 100%; margin: 0; font-size: 14px; }
 }
 
 /* ==========================================================================
