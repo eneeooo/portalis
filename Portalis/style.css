@@ -699,9 +699,11 @@ button.tab.on {
 .fmt-list {
   margin: 6px 0 8px;
   padding-left: 24px;
+  list-style-position: outside;
 }
 .fmt-list li {
   margin: 2px 0;
+  overflow-wrap: anywhere;
 }
 .actions {
   display: flex;
@@ -2952,6 +2954,22 @@ body.has-fund-btn .online-panel:not(.fund-panel) { bottom: 226px; }
     max-width: 100%;
     min-height: 44px;
   }
+  button.dot {
+    width: clamp(22px, 7vw, 32px);
+    height: clamp(22px, 7vw, 32px);
+    min-width: clamp(22px, 7vw, 32px);
+    min-height: clamp(22px, 7vw, 32px);
+    aspect-ratio: 1;
+    flex: 0 0 auto;
+  }
+  button.photo-dot {
+    width: clamp(12px, 4vw, 16px);
+    height: clamp(12px, 4vw, 16px);
+    min-width: clamp(12px, 4vw, 16px);
+    min-height: clamp(12px, 4vw, 16px);
+    aspect-ratio: 1;
+    flex: 0 0 auto;
+  }
   .board,
   .cardgrid,
   .profile-grid {
@@ -2986,6 +3004,45 @@ body.has-fund-btn .online-panel:not(.fund-panel) { bottom: 226px; }
   }
   table {
     max-width: 100%;
+  }
+  .fmt-list {
+    margin: 8px 0 10px;
+    padding-left: 20px;
+    max-width: 100%;
+  }
+  ul.fmt-list {
+    list-style-type: disc;
+  }
+  ol.fmt-list {
+    list-style-type: decimal;
+  }
+  .fmt-list li {
+    padding-left: 2px;
+    line-height: 1.35;
+  }
+  .filters {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+    margin-top: 24px;
+    justify-items: center;
+  }
+  button.fbtn {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding-left: 5px;
+    padding-right: 5px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+    font-size: clamp(15px, 4vw, 18px);
+    line-height: 1.05;
+  }
+  button.dot {
+    width: clamp(22px, 7vw, 32px);
+    height: clamp(22px, 7vw, 32px);
   }
   .fund-balance-cards {
     grid-template-columns: minmax(0, 1fr);
@@ -3152,13 +3209,37 @@ body.has-fund-btn .online-panel:not(.fund-panel) { bottom: 226px; }
     box-shadow: 3px 3px 0 #000;
   }
 
+  .fund-roster-scroll tbody,
+  .admin-users-table tbody {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+    gap: 12px;
+  }
+
+  .fund-roster-scroll tbody tr,
+  .admin-users-table tbody tr {
+    min-height: clamp(300px, 85vw, 380px);
+    margin: 0;
+    align-content: start;
+    border-radius: 0;
+    box-shadow: 4px 4px 0 #000;
+  }
+
+  .fund-roster-scroll tbody td,
+  .admin-users-table tbody td {
+    min-height: 42px;
+    padding: 8px 10px;
+    grid-template-columns: minmax(110px, 38%) minmax(0, 1fr);
+    border-bottom: 1px solid #000;
+  }
+
   .fund-roster-scroll tbody tr,
   #expensePanel .fund-expense-table tbody tr {
     grid-template-columns: 1fr;
   }
 
   .admin-users-table tbody tr {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
   }
 
   .admin-confession-table tbody tr {
