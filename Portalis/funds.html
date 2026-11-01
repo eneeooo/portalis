@@ -12,6 +12,10 @@
     <h2>Class funds</h2>
     <p class="hint">Collection periods are added manually by admins. Admins and officers can enter each student's total received; payments cover the oldest periods first and carry forward as advance credit. Payment records are visible only to admins and officers.</p>
     <p id="msg" class="msg"></p>
+    <div id="fundAdminTabs" class="tabs" style="display:none">
+      <button id="fundToolsTab" class="tab on" type="button">Fund and collection period tools</button>
+      <button id="fundExpensesTab" class="tab" type="button">Fund expenses</button>
+    </div>
     <div id="adminTools" class="card" style="display:none">
       <h3>Fund and collection period tools</h3>
       <div class="cols2">
@@ -31,11 +35,26 @@
       <input id="periodEnd" type="date">
       <button id="addPeriod">Add period</button>
     </div>
-    <div class="card">
+    <div id="fundViewCard" class="card">
       <label for="fundPick">Choose a fund</label>
       <select id="fundPick"></select>
       <div id="periods" class="week-list"></div>
       <div id="summary"></div>
+    </div>
+    <div id="expensePanel" class="card">
+      <h3>Fund expenses</h3>
+      <div id="expenseForm" style="display:none">
+        <div class="cols2">
+          <div><label for="expenseDescription">Description</label><input id="expenseDescription" maxlength="200" placeholder="e.g. Event materials"></div>
+          <div><label for="expenseAmount">Unit amount (₱)</label><input id="expenseAmount" type="number" min="0.01" step="0.01" placeholder="0.00"></div>
+        </div>
+        <label for="expenseQuantity">Quantity (optional)</label>
+        <input id="expenseQuantity" type="number" min="1" step="1" value="1" placeholder="1">
+        <label for="expenseDate">Expense date</label>
+        <input id="expenseDate" type="date">
+        <button id="addExpense">Add expense</button>
+      </div>
+      <div id="expenses"></div>
     </div>
     <div id="adminRoster" style="display:none">
       <div class="fund-actions">
@@ -65,8 +84,24 @@
       renderBar(ctx, "funds");
       $("adminTools").style.display = ctx.isAdmin ? "block" : "none";
       $("adminRoster").style.display = ctx.isAdmin ? "block" : "none";
+      $("expenseForm").style.display = ctx.isAdmin ? "block" : "none";
+      $("fundAdminTabs").style.display = ctx.isAdmin ? "flex" : "none";
+      $("expensePanel").style.display = ctx.isAdmin ? "none" : "block";
+      $("fundViewCard").style.display = ctx.isAdmin ? "block" : "block";
+      $("expenseDate").value = new Date().toISOString().slice(0, 10);
       await loadFunds();
     }
+    function selectFundAdminTab(tab) {
+      const toolsActive = tab === "tools";
+      $("adminTools").style.display = toolsActive ? "block" : "none";
+      $("expensePanel").style.display = toolsActive ? "none" : "block";
+      $("fundViewCard").style.display = toolsActive ? "block" : "none";
+      $("adminRoster").style.display = toolsActive && ctx.isAdmin ? "block" : "none";
+      $("fundToolsTab").classList.toggle("on", toolsActive);
+      $("fundExpensesTab").classList.toggle("on", !toolsActive);
+    }
+    $("fundToolsTab").onclick = () => selectFundAdminTab("tools");
+    $("fundExpensesTab").onclick = () => selectFundAdminTab("expenses");
     async function loadFunds() {
       const { data, error } = await sb.from("funds").select("id,title,amount_per_period").order("created_at");
       if (error) { message(error.message, true); return; }
@@ -125,6 +160,7 @@
       else if (ctx.isAdmin) {
         $("summary").textContent = "No collection periods yet.";
         $("roster").innerHTML = "";
+        await loadExpenses();
       } else await loadMyBalance();
     }
     async function loadMyBalance() {
@@ -154,6 +190,7 @@
         balanceCard("Advance credit", balance.advance_credit, "balance-advance")
       );
       $("summary").appendChild(totals);
+      await loadExpenses();
     }
     function safeNumber(value, fallback = 0) {
       const number = Number(value);
@@ -164,22 +201,78 @@
       card.append(el("span", "fund-balance-label", label), el("strong", "fund-balance-amount", "₱" + safeNumber(amount).toFixed(2)));
       return card;
     }
+    async function loadExpenses(totalCollected) {
+      if (!selectedFund) return 0;
+      const { data, error } = await sb.from("fund_expenses")
+        .select("id,description,amount,quantity,expense_date,created_at")
+        .eq("fund_id", selectedFund.id)
+        .order("expense_date", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (error) { message(error.message, true); return 0; }
+      const expenses = data || [];
+      const expenseTotal = expense => safeNumber(expense.amount) * safeNumber(expense.quantity, 1);
+      const total = expenses.reduce((sum, expense) => sum + expenseTotal(expense), 0);
+      const box = $("expenses"); box.innerHTML = "";
+      if (totalCollected !== undefined) {
+        const cards = el("div", "fund-balance-cards");
+        cards.append(
+          balanceCard("Total funds collected", totalCollected - total, "balance-paid"),
+          balanceCard("Total expenses", total, "balance-outstanding")
+        );
+        box.appendChild(cards);
+      }
+      if (!expenses.length) {
+        box.appendChild(el("p", "hint", "No expenses recorded yet."));
+        return total;
+      }
+      const table = document.createElement("table");
+      table.className = "fund-table";
+      table.innerHTML = "<thead><tr><th>Date</th><th>Description</th><th>Quantity</th><th>Unit amount</th><th>Total</th>" + (ctx.isAdmin ? "<th>Action</th>" : "") + "</tr></thead>";
+      const body = document.createElement("tbody");
+      expenses.forEach(expense => {
+        const tr = document.createElement("tr");
+        const quantity = Math.max(1, Math.floor(safeNumber(expense.quantity, 1)));
+        tr.append(
+          el("td", "", expense.expense_date || ""),
+          el("td", "", expense.description),
+          el("td", "", String(quantity)),
+          el("td", "", "₱" + safeNumber(expense.amount).toFixed(2)),
+          el("td", "", "₱" + expenseTotal(expense).toFixed(2))
+        );
+        if (ctx.isAdmin) {
+          const action = el("td");
+          const remove = el("button", "danger small", "Remove");
+          remove.onclick = () => deleteExpense(expense);
+          action.appendChild(remove);
+          tr.appendChild(action);
+        }
+        body.appendChild(tr);
+      });
+      table.appendChild(body);
+      box.appendChild(table);
+      return total;
+    }
     async function loadRoster() {
       if (!ctx.isAdmin || !selectedPeriod) return;
-      const [periodResult, debtResult, myBalanceResult] = await Promise.all([
+      const [periodResult, debtResult, myBalanceResult, expenseResult] = await Promise.all([
         sb.rpc("get_fund_roster", { p_period_id: selectedPeriod.id }),
         sb.rpc("get_fund_debt_summary", { p_fund_id: selectedFund.id }),
-        sb.rpc("get_my_fund_balance", { p_fund_id: selectedFund.id })
+        sb.rpc("get_my_fund_balance", { p_fund_id: selectedFund.id }),
+        sb.from("fund_expenses").select("amount,quantity").eq("fund_id", selectedFund.id)
       ]);
-      if (periodResult.error || debtResult.error || myBalanceResult.error) {
-        message((periodResult.error || debtResult.error || myBalanceResult.error).message, true);
+      if (periodResult.error || debtResult.error || myBalanceResult.error || expenseResult.error) {
+        message((periodResult.error || debtResult.error || myBalanceResult.error || expenseResult.error).message, true);
         return;
       }
       roster = periodResult.data || [];
       const debtRows = debtResult.data || [];
+      const expenseRows = expenseResult.data || [];
       const myBalance = Array.isArray(myBalanceResult.data) ? myBalanceResult.data[0] : myBalanceResult.data;
       const debtByUser = Object.fromEntries(debtRows.map(x => [x.user_id, x]));
-      const totalFunds = debtRows.reduce((sum, user) => sum + safeNumber(user.total_paid), 0);
+      const grossTotalFunds = debtRows.reduce((sum, user) => sum + safeNumber(user.total_paid), 0);
+      const totalExpenses = expenseRows.reduce((sum, expense) =>
+        sum + safeNumber(expense.amount) * safeNumber(expense.quantity, 1), 0);
+      const totalFunds = grossTotalFunds - totalExpenses;
       const debtors = debtRows.filter(x => Number(x.total_debt) > 0).length;
       $("summary").innerHTML = "";
       $("summary").appendChild(el("h3", "", selectedFund.title + " payment summary"));
@@ -194,6 +287,7 @@
       );
       $("summary").appendChild(myBalanceCards);
       $("summary").append(el("p", "hint", debtors + " student(s) still have an unpaid balance across " + selectedFund.title + "."));
+      await loadExpenses(grossTotalFunds);
       const body = $("roster"); body.innerHTML = "";
       roster.forEach(student => {
         const debt = debtByUser[student.user_id];
@@ -424,6 +518,46 @@
       document.body.classList.add("fund-printing");
       window.addEventListener("afterprint", () => document.body.classList.remove("fund-printing"), { once: true });
       window.print();
+    }
+    $("addExpense").onclick = async () => {
+      if (!selectedFund) return message("Choose a fund first.", true);
+      const description = $("expenseDescription").value.trim();
+      const rawAmount = $("expenseAmount").value.trim();
+      const amount = Number(rawAmount);
+      const rawQuantity = $("expenseQuantity").value.trim();
+      const quantity = rawQuantity === "" ? 1 : Number(rawQuantity);
+      const expense_date = $("expenseDate").value;
+      if (!description || !expense_date || !Number.isFinite(amount) || amount <= 0 || amount > 99999999.99 || !/^\d+(?:\.\d{1,2})?$/.test(rawAmount)) {
+        return message("Enter a description, valid date, and expense amount with no more than two decimal places.", true);
+      }
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 9999) {
+        return message("Quantity must be a whole number from 1 to 9999.", true);
+      }
+      const { error } = await sb.from("fund_expenses").insert({
+        fund_id: selectedFund.id,
+        description,
+        amount,
+        quantity,
+        expense_date,
+        recorded_by: ctx.user.id
+      });
+      if (error) { message(error.message, true); return; }
+      $("expenseDescription").value = "";
+      $("expenseAmount").value = "";
+      $("expenseQuantity").value = "1";
+      $("expenseDate").value = new Date().toISOString().slice(0, 10);
+      message("Expense added. Available funds were recalculated.", false);
+      await loadPeriods();
+    };
+    async function deleteExpense(expense) {
+      if (!expense) return;
+      const quantity = Math.max(1, Math.floor(safeNumber(expense.quantity, 1)));
+      const total = safeNumber(expense.amount) * quantity;
+      if (!confirm("Remove the ₱" + total.toFixed(2) + " expense \"" + expense.description + "\"?")) return;
+      const { error } = await sb.from("fund_expenses").delete().eq("id", expense.id);
+      if (error) { message(error.message, true); return; }
+      message("Expense removed. Available funds were recalculated.", false);
+      await loadPeriods();
     }
     $("exportXlsx").onclick = async () => {
       if (!selectedFund) return;

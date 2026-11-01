@@ -32,13 +32,13 @@
 
     <section class="card att-card" aria-label="Attendance sheet">
       <div class="att-pager" id="pager">
-        <button id="prevDate" type="button" class="att-nav" aria-label="Previous date">&#8249; Previous</button>
+        <button id="prevDate" type="button" class="att-nav" aria-label="Previous date"><span aria-hidden="true">&#8249;</span><span class="att-nav-label"> Previous</span></button>
         <div class="att-pager-mid">
           <label for="datePick" class="att-pager-label">Date</label>
           <select id="datePick" aria-label="Choose a date"></select>
           <span id="dateCount" class="att-pager-count"></span>
         </div>
-        <button id="nextDate" type="button" class="att-nav" aria-label="Next date">Next &#8250;</button>
+        <button id="nextDate" type="button" class="att-nav" aria-label="Next date"><span class="att-nav-label">Next </span><span aria-hidden="true">&#8250;</span></button>
       </div>
       <div class="att-subbar">
         <div id="dateTools" class="att-date-tools-row"></div>

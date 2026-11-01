@@ -2511,6 +2511,70 @@ button.export-format.on { background: #000; color: #fff; box-shadow: 4px 4px 0 #
   .att-name-col { min-width: 190px; }
   .att-legend { margin-left: 0; }
   .export-formats { grid-template-columns: 1fr; }
+  .att-heading { display: block; }
+  .att-export-btn { width: 100%; }
+  .att-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .att-stat { padding: 10px; }
+  .att-stat-value { font-size: 22px; }
+  .att-card { padding: 12px 8px; }
+  .att-pager {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 6px;
+  }
+  button.att-nav {
+    min-width: 44px;
+    width: 44px;
+    padding: 6px 2px;
+    font-size: 24px;
+  }
+  .att-nav-label { display: none; }
+  .att-pager-mid {
+    min-width: 0;
+    flex-basis: auto;
+    gap: 4px;
+  }
+  .att-pager-mid select {
+    min-width: 0;
+    width: 100%;
+    font-size: 15px;
+  }
+  .att-pager-count { font-size: 12px; }
+  .att-scroll {
+    max-height: 64vh;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .att-table { width: max-content; min-width: 100%; table-layout: fixed; font-size: 14px; }
+  .att-table .att-name-col {
+    width: 145px;
+    min-width: 145px;
+    max-width: 145px;
+  }
+  .att-table thead th.att-date {
+    width: 96px;
+    min-width: 96px;
+  }
+  .att-table thead th.att-total,
+  .att-table td.att-total,
+  .att-table tfoot td.att-total,
+  .att-table .att-total {
+    width: 34px;
+    min-width: 34px;
+    max-width: 34px;
+    padding: 6px 1px;
+  }
+  button.att-cell,
+  td.att-cell,
+  .att-cell-td { width: 86px; min-width: 86px; }
+  button.att-cell, td.att-cell { height: 44px; }
+  .att-who { gap: 4px; padding: 7px 6px; font-size: 14px; }
+  .att-no { min-width: 20px; }
+  .att-date-main { font-size: 13px; }
+  .att-date-sub { font-size: 11px; }
+  .att-legend { gap: 4px 10px; font-size: 13px; }
+  .att-key { width: 20px; height: 20px; }
 }
 
 /* ==========================================================================
@@ -2652,6 +2716,36 @@ button.att-cell, td.att-cell { min-width: 120px; }
 .att-name-col { min-width: 0; max-width: none; }
 .att-date-sub { margin-bottom: 0; }
 .att-foot-count { text-align: center; }
+@media (max-width: 600px) {
+  .att-heading { display: block; }
+  .att-export-btn { width: 100%; }
+  .att-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .att-stat { padding: 10px; }
+  .att-stat-value { font-size: 22px; }
+  .att-card { padding: 12px 8px; }
+  .att-pager { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 6px; }
+  button.att-nav { min-width: 44px; width: 44px; padding: 6px 2px; font-size: 24px; }
+  .att-nav-label { display: none; }
+  .att-pager-mid { min-width: 0; flex-basis: auto; gap: 4px; }
+  .att-pager-mid select { min-width: 0; width: 100%; font-size: 15px; }
+  .att-pager-count { font-size: 12px; }
+  .att-scroll { max-height: 64vh; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .att-table { width: max-content; min-width: 100%; table-layout: fixed; font-size: 14px; }
+  .att-table .att-name-col { width: 145px; min-width: 145px; max-width: 145px; }
+  .att-table thead th.att-date { width: 96px; min-width: 96px; }
+  .att-table thead th.att-total,
+  .att-table td.att-total,
+  .att-table tfoot td.att-total,
+  .att-table .att-total { width: 34px; min-width: 34px; max-width: 34px; padding: 6px 1px; }
+  button.att-cell, td.att-cell, .att-cell-td { width: 86px; min-width: 86px; }
+  button.att-cell, td.att-cell { height: 44px; }
+  .att-who { gap: 4px; padding: 7px 6px; font-size: 14px; }
+  .att-no { min-width: 20px; }
+  .att-date-main { font-size: 13px; }
+  .att-date-sub { font-size: 11px; }
+  .att-legend { gap: 4px 10px; font-size: 13px; }
+  .att-key { width: 20px; height: 20px; }
+}
 
 /* ==========================================================================
    MEMORIES
