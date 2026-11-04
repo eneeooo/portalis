@@ -46,12 +46,20 @@
       const feed = $("feed"); feed.innerHTML = "";
       if (!data.length) feed.appendChild(el("p", "empty", "No confessions yet."));
       data.forEach(item => {
-        const card = el("article", "note confession-note feeling-" + (item.feeling || "other"));
-        card.append(
-          el("span", "feeling-label", feelingLabel(item.feeling)),
-          el("p", "confession", item.content),
-          el("small", "", fmtDate(item.created_at))
-        );
+        const isLong = String(item.content || "").length > 220;
+        const card = el("article", "note confession-note" + (isLong ? " is-folded" : "") + " feeling-" + (item.feeling || "other"));
+        card.appendChild(el("span", "feeling-label", feelingLabel(item.feeling)));
+        if (isLong) {
+          card.appendChild(el("p", "confession confession-preview", foldedPreview(item.content)));
+          const foldTip = el("button", "confession-fold-tip", "");
+          foldTip.type = "button";
+          foldTip.setAttribute("aria-label", "Open the full confession note");
+          foldTip.onclick = () => openConfession(item);
+          card.appendChild(foldTip);
+        } else {
+          card.appendChild(el("p", "confession", item.content));
+        }
+        card.appendChild(el("small", "", fmtDate(item.created_at)));
         if (ctx.role === "admin") {
           const remove = el("button", "ghost small", "Delete");
           remove.onclick = async () => {
@@ -64,6 +72,54 @@
         }
         feed.appendChild(card);
       });
+    }
+    function foldedPreview(content) {
+      const text = String(content || "").trim();
+      if (text.length <= 220) return text;
+      const clipped = text.slice(0, 220);
+      const lastSpace = clipped.lastIndexOf(" ");
+      return (lastSpace > 160 ? clipped.slice(0, lastSpace) : clipped).trim() + "...";
+    }
+    function openConfession(item) {
+      const dialog = el("div", "modal-backdrop confession-modal-backdrop");
+      const card = el("article", "modal-card note confession-modal-note feeling-" + (item.feeling || "other"));
+      card.setAttribute("role", "dialog");
+      card.setAttribute("aria-modal", "true");
+      card.setAttribute("aria-label", "Confession note");
+      card.append(
+        el("span", "feeling-label", feelingLabel(item.feeling)),
+        el("p", "confession confession-modal-copy", item.content),
+        el("small", "confession-modal-date", fmtDate(item.created_at))
+      );
+      const actions = el("div", "confession-modal-actions");
+      if (ctx.role === "admin") {
+        const remove = el("button", "danger small", "Delete");
+        remove.type = "button";
+        remove.onclick = async () => {
+          if (!confirm("Delete this confession?")) return;
+          const { error } = await sb.from("confessions").delete().eq("id", item.id);
+          if (error) { $("msg").className = "msg err"; $("msg").textContent = error.message; return; }
+          close();
+          await load();
+        };
+        actions.appendChild(remove);
+      }
+      const closeButton = el("button", "ghost", "Close");
+      closeButton.type = "button";
+      actions.appendChild(closeButton);
+      card.appendChild(actions);
+      dialog.appendChild(card);
+
+      const close = () => {
+        dialog.remove();
+        document.removeEventListener("keydown", onKey);
+      };
+      const onKey = event => { if (event.key === "Escape") close(); };
+      closeButton.onclick = close;
+      dialog.onclick = event => { if (event.target === dialog) close(); };
+      document.addEventListener("keydown", onKey);
+      document.body.appendChild(dialog);
+      closeButton.focus();
     }
     function feelingLabel(feeling) {
       const labels = {

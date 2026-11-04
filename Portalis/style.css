@@ -1216,6 +1216,36 @@ label[for="photo"]:hover {
 .feeling-other {
   --c: #fff8ca;
 }
+.confession-modal-backdrop {
+  overflow-y: auto;
+}
+.confession-modal-note {
+  max-width: 680px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  text-align: left;
+  transform: none;
+  background: var(--c, #fff);
+}
+.confession-modal-note .confession-modal-copy {
+  margin: 18px 0;
+  font-family: "Comic Sans MS", "Patrick Hand", cursive;
+  font-size: clamp(20px, 4vw, 28px);
+  line-height: 1.45;
+}
+.confession-modal-date {
+  display: block;
+  margin-bottom: 14px;
+}
+.confession-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.confession-modal-actions button {
+  margin: 0;
+}
 .feeling-label {
   display: inline-block;
   border: 1px solid #000;
@@ -1225,6 +1255,55 @@ label[for="photo"]:hover {
 }
 .confession-note .confession {
   margin: 12px 0 18px;
+}
+.confession-note.is-folded {
+  cursor: default;
+}
+.confession-note.is-folded::after {
+  content: "";
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 64px;
+  height: 64px;
+  z-index: 2;
+  border-top: 3px solid #000;
+  border-left: 3px solid #000;
+  background: #fff;
+  box-shadow: -5px -5px 0 -2px #fff;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  pointer-events: none;
+}
+.confession-fold-tip {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  width: 82px;
+  height: 82px;
+  margin: 0;
+  padding: 0;
+  z-index: 3;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.confession-fold-tip:hover,
+.confession-fold-tip:focus-visible {
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(.96);
+  transform: none;
+}
+.confession-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  min-height: 100px;
+  padding-right: 58px;
+  padding-bottom: 58px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
 }
 .confession-note small {
   margin-top: auto;
