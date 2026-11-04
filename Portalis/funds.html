@@ -201,6 +201,23 @@
       const number = Number(value);
       return Number.isFinite(number) ? number : fallback;
     }
+    function surnameFromName(fullName) {
+      const name = String(fullName || "").trim().replace(/\s+/g, " ");
+      if (!name) return "";
+      if (name.includes(",")) return name.split(",", 1)[0].trim();
+      const parts = name.split(" ");
+      return parts[parts.length - 1] || name;
+    }
+    function compareBySurname(a, b) {
+      const surnameComparison = surnameFromName(a.full_name)
+        .localeCompare(surnameFromName(b.full_name), undefined, { sensitivity: "base" });
+      if (surnameComparison) return surnameComparison;
+      const nameComparison = String(a.full_name || "")
+        .localeCompare(String(b.full_name || ""), undefined, { sensitivity: "base" });
+      if (nameComparison) return nameComparison;
+      return String(a.student_number || "")
+        .localeCompare(String(b.student_number || ""), undefined, { numeric: true, sensitivity: "base" });
+    }
     function balanceCard(label, amount, className) {
       const card = el("div", "fund-balance-card " + className);
       card.append(el("span", "fund-balance-label", label), el("strong", "fund-balance-amount", "₱" + safeNumber(amount).toFixed(2)));
@@ -297,7 +314,7 @@
       $("summary").append(el("p", "hint", debtors + " student(s) still have an unpaid balance across " + selectedFund.title + "."));
       await loadExpenses(grossTotalFunds);
       const body = $("roster"); body.innerHTML = "";
-      roster.forEach(student => {
+      [...roster].sort(compareBySurname).forEach(student => {
         const debt = debtByUser[student.user_id];
         const tr = document.createElement("tr");
         tr.append(
@@ -406,7 +423,7 @@
         "Advance Payment"
       ];
       const studentRows = Array.from(studentsById.values())
-        .sort((a, b) => String(a.student_number || "").localeCompare(String(b.student_number || "")))
+        .sort(compareBySurname)
         .map(student => [
           student.full_name,
           student.student_number || "",
@@ -492,7 +509,7 @@
       });
       const periods = Array.from(periodsByLabel.values()).sort((a, b) => a.starts_on.localeCompare(b.starts_on));
       const students = Array.from(studentsById.values())
-        .sort((a, b) => String(a.student_number || "").localeCompare(String(b.student_number || "")));
+        .sort(compareBySurname);
       const totals = students;
       const totalPaid = totals.reduce((sum, student) => sum + student.total_paid, 0);
       const totalAdvance = totals.reduce((sum, student) => sum + student.advance_credit, 0);
