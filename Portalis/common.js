@@ -233,10 +233,11 @@ function installBarMenuStyles() {
   if (document.getElementById("barMenuStyle")) return;
   const style = document.createElement("style");
   style.id = "barMenuStyle";
+  /* Collapse the dense pill nav below ~980px so tablets and narrow Windows windows get a Menu instead of a tall wrapping bar. */
   style.textContent =
     ".bar-who { display: contents; }" +
     "button.menu-toggle { display: none; }" +
-    "@media (max-width: 700px) {" +
+    "@media (max-width: 980px) {" +
     "  .bar { justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 24px; }" +
     "  .bar-profile { flex: 1; min-width: 0; flex-direction: row; text-align: left; gap: 10px; }" +
     "  .bar-profile .bar-avatar { width: 42px; height: 42px; flex: none; font-size: 17px; }" +
@@ -314,7 +315,7 @@ function renderBar(ctx, active) {
   const nav = el("nav", "nav");
   nav.id = "barNav";
   bar.appendChild(makeMenuToggle(bar, nav));
-  const links = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"], ["funds.html", "Class funds", "funds"], ["attendance.html", "Attendance", "attendance"], ["memories.html", "Memories", "memories"], ["confessions.html", "Confessions", "confessions"], ["profile.html", "Profile", "profile"]];
+  const links = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"], ["java-compiler.html", "Java compiler", "java-compiler"], ["funds.html", "Class funds", "funds"], ["attendance.html", "Attendance", "attendance"], ["memories.html", "Memories", "memories"], ["confessions.html", "Confessions", "confessions"], ["profile.html", "Profile", "profile"]];
   if (ctx.role === "admin") links.push(["admin.html", "Admin", "admin"]);
   if (ctx.role === "officer") links.push(["officer.html", "Officer", "officer"]);
   if (ctx.isAdmin) links.push(["manage.html", "Manage reviewers", "manage"]);

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Portalis - Java compiler</title>
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/lib/codemirror.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/addon/fold/foldgutter.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/addon/hint/show-hint.min.css" />
+  </head>
+  <body>
+    <div class="wrap java-wide">
+      <div id="bar"></div>
+      <h2>Java compiler</h2>
+      <p class="hint">Paste any Java program and run it - the class name doesn't matter. Type your answers right in the terminal.</p>
+      <p class="java-privacy">
+        Code is sent to Judge0 Community Edition (Java 17) to compile and run. Because Judge0 can't pause a running program, Portalis
+        <strong>re-runs your program with each answer you type</strong> and shows it as one live session. This is why random numbers and
+        the current time can look different after every answer.
+      </p>
+
+      <section class="java-workspace" aria-label="Java coding workspace">
+        <div class="java-project-controls">
+          <label for="projectSelect">Saved projects</label>
+          <select id="projectSelect" aria-label="Choose a saved Java project"></select>
+          <button id="newProject" type="button">New project</button>
+          <select id="templateSelect" aria-label="Start a new project from a template">
+            <option value="">New from template…</option>
+            <option>Hello World</option>
+            <option>Ask for your name (Scanner)</option>
+            <option>Calculator (switch)</option>
+            <option>Loops and arrays</option>
+            <option>Class and object</option>
+          </select>
+          <button id="deleteProject" class="ghost" type="button">Delete</button>
+        </div>
+
+        <div class="java-grid">
+          <div class="java-col">
+            <div class="java-title-row">
+              <label for="projectTitle">Project name</label>
+              <input id="projectTitle" maxlength="80" autocomplete="off" />
+            </div>
+
+            <div class="java-editor-heading">
+              <label id="sourceFileLabel" for="sourceCode">Main.java</label>
+              <span class="hint" id="editorStats"></span>
+            </div>
+            <textarea id="sourceCode" class="java-editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Java source code"></textarea>
+
+            <div class="java-actions">
+              <button id="runCode" type="button" class="java-run">▶ Run</button>
+              <button id="stopCode" type="button" class="danger" hidden>■ Stop</button>
+              <button id="replayCode" type="button" class="ghost" title="Run again and feed the same answers automatically" disabled>↻ Run with same inputs</button>
+              <button id="downloadJava" type="button" class="ghost" title="Download your code as a .java file">⬇ Export .java</button>
+              <button id="copyCode" type="button" class="ghost">Copy code</button>
+              <button id="saveProject" type="button" class="ghost">Save now</button>
+              <span class="java-fontbtns" aria-label="Editor text size">
+                <button id="fontDown" type="button" class="ghost" title="Smaller text">A−</button>
+                <button id="fontUp" type="button" class="ghost" title="Bigger text">A+</button>
+              </span>
+            </div>
+            <p id="runStatus" class="msg" role="status" aria-live="polite"></p>
+            <p id="saveStatus" class="hint" role="status" aria-live="polite"></p>
+
+            <section id="problems" class="java-problems" aria-live="polite">
+              <header class="java-problems-head">
+                <strong>Problems</strong>
+                <span id="problemCount" class="java-problem-count">No problems</span>
+              </header>
+              <div id="problemList" class="java-diagnostics"></div>
+              <details id="rawCompiler" hidden>
+                <summary>Show raw compiler output</summary>
+                <pre id="rawCompilerText" class="java-raw"></pre>
+              </details>
+            </section>
+
+            <details class="java-legend">
+              <summary>Color guide (what each color means)</summary>
+              <ul>
+                <li><span class="lg lg-keyword">public static</span> keywords &amp; primitive types</li>
+                <li><span class="lg lg-control">if for while return</span> control flow</li>
+                <li><span class="lg lg-class">String Scanner</span> class names</li>
+                <li><span class="lg lg-func">println()</span> methods</li>
+                <li><span class="lg lg-var">count</span> variables</li>
+                <li><span class="lg lg-const">MAX_SIZE</span> constants</li>
+                <li><span class="lg lg-string">"text"</span> strings</li>
+                <li><span class="lg lg-number">42</span> numbers</li>
+                <li><span class="lg lg-comment">// comment</span> comments</li>
+                <li><span class="lg lg-b0">(</span><span class="lg lg-b1">[</span><span class="lg lg-b2">{</span> matching brackets share a color</li>
+                <li><span class="lg lg-err">red line</span> an error on that line (click ✨ for a quick fix)</li>
+                <li><span class="lg lg-in1">1</span><span class="lg lg-in2">2</span><span class="lg lg-in3">3</span> the line that read your 1st, 2nd, 3rd... input</li>
+              </ul>
+              <p class="hint">Tips: type <code>sout</code>, <code>psvm</code>, <code>fori</code>, <code>scan</code> then press Tab. Ctrl+Space shows suggestions. Ctrl+/ comments a line. Hover over terminal output to see which line printed it.</p>
+            </details>
+          </div>
+
+          <div class="java-col java-col-term">
+            <section class="java-terminal" id="terminal" aria-label="Interactive terminal">
+              <header class="term-head">
+                <span class="term-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+                <strong>Terminal</strong>
+                <span id="termState" class="term-state term-state-idle">ready</span>
+                <span class="term-spacer"></span>
+                <button id="termEof" type="button" class="term-btn" title="End of input (Ctrl+D) - for programs that read until there is no more input" disabled>Ctrl+D</button>
+                <button id="termUndo" type="button" class="term-btn" title="Remove the last answer and run again" disabled>Undo</button>
+                <button id="termCopy" type="button" class="term-btn">Copy</button>
+                <button id="termClear" type="button" class="term-btn">Clear</button>
+              </header>
+              <pre id="termBody" class="term-body" role="log" aria-live="polite" aria-label="Program output"></pre>
+              <div id="inputChips" class="java-input-chips" hidden></div>
+            </section>
+            <p class="hint term-note">Press <strong>▶ Run</strong>. When the program asks for something, type the answer in the terminal and press <strong>Enter</strong>. Each answer gets a color, and the same color marks the line in your code that read it.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/lib/codemirror.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/mode/clike/clike.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/addon/selection/active-line.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/addon/comment/comment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/addon/fold/foldcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/addon/fold/foldgutter.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/addon/fold/brace-fold.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/addon/hint/show-hint.min.js"></script>
+    <script src="config.js"></script>
+    <script src="common.js"></script>
+    <script src="java-tools.js?v=2"></script>
+    <script src="java-compiler.js?v=2"></script>
+  </body>
+</html>

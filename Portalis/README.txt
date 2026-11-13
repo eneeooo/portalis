@@ -16,6 +16,7 @@ FEATURES
   - Public birthday sticky notes with an on-demand birthday melody, animated
     confetti, private received wishes, and birthday-student greetings visible to everyone.
   - Reviewer quizzes, saved attempts, score summaries, class rankings, and admin attempt graph.
+  - Java compiler workspace with Judge0 Community Edition Java execution, an interactive terminal (answers are typed in the output and replayed), VS Code-style colors, red error lines with quick fixes, automatic class-name handling, .java export, and private, per-account saved projects. Files: java-compiler.html, java-compiler.js (page), java-tools.js (logic).
   - Officer moderation page for reviewing pending notes, managing all notes, and deleting suggestions.
   - Admin-only student and officer password resets to @Default.
   - Class representatives have position titles displayed in place of their account-role badge.
@@ -71,6 +72,7 @@ SETUP
   3f6. Run migration_admin_only_note_edits.sql after migration_officer_role.sql.
        It restricts note edits to Admins and Officers.
   3g. Run migration_quiz_ranking.sql after setup.sql to enable quiz rankings.
+  3h. Run migration_java_projects.sql to enable the Java compiler's per-account saved projects.
   4. For a standard Supabase Auth setup, run migration_optional_email.sql,
      then migration_supabase_auth_restore.sql. If migration_custom_auth.sql
      was already applied, run only migration_supabase_auth_restore.sql.

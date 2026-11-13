@@ -45,6 +45,14 @@ Built using HTML, CSS, and JavaScript, Portalis uses **Supabase** as its backend
 - Who's online: a floating button above the suggestion button shows a live list
   of classmates currently in Portalis, with optional join notifications.
 - Responsive static frontend backed by Supabase Auth, Postgres, and Storage.
+- Java compiler workspace: VS Code-style syntax colors, line numbers, red error
+  lines with plain-English explanations and one-click quick fixes, an
+  interactive terminal (type answers right in the output; each answer is color
+  coded and linked to the code line that read it), any class name works without
+  editing, snippets/autocomplete, .java export, and per-account cloud-saved
+  projects. Runs on Judge0 Community Edition (Java 17). Judge0 cannot pause a
+  program, so each typed answer re-runs the program with all answers so far
+  (see `Portalis/java-tools.js`).
 
 ## Technologies Used
 
@@ -83,6 +91,8 @@ view-profile and the online list (it also sets the school-year roster order; edi
 Then run `Portalis\migration_profile_nickname_online.sql` (nicknames, Get to know me
 notes, working online list). Then run `Portalis\migration_memories_and_updates.sql` (Memories tab, confession
 full names for admins, nicknames in attendance). Then run `Portalis\migration_memories_multi_photos.sql` (several photos per memory).
+Run `Portalis\migration_java_projects.sql` to enable private, per-account
+Java projects in the Java compiler tab.
 Optionally run `Portalis\migration_seed_get_to_know.sql`
 once to fill in the answers from the class "Get to know each other" document;
 it only fills fields that are still empty.
