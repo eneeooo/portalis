@@ -12,109 +12,116 @@
   <body>
     <div class="wrap java-wide">
       <div id="bar"></div>
-      <h2>Java compiler</h2>
-      <p class="hint">Paste any Java program and run it - the class name doesn't matter. Type your answers right in the terminal.</p>
-      <p class="java-privacy">
-        Code is sent to Judge0 Community Edition (Java 17) to compile and run. Because Judge0 can't pause a running program, Portalis
-        <strong>re-runs your program with each answer you type</strong> and shows it as one live session. This is why random numbers and
-        the current time can look different after every answer.
-      </p>
 
-      <section class="java-workspace" aria-label="Java coding workspace">
-        <div class="java-project-controls">
-          <label for="projectSelect">Saved projects</label>
-          <select id="projectSelect" aria-label="Choose a saved Java project"></select>
-          <button id="newProject" type="button">New project</button>
-          <select id="templateSelect" aria-label="Start a new project from a template">
-            <option value="">New from template…</option>
-            <option>Hello World</option>
-            <option>Ask for your name (Scanner)</option>
-            <option>Calculator (switch)</option>
-            <option>Loops and arrays</option>
-            <option>Class and object</option>
-          </select>
-          <button id="deleteProject" class="ghost" type="button">Delete</button>
+      <div class="java-pagehead">
+        <h2>Java compiler</h2>
+        <button id="infoBtn" type="button" class="java-round-btn" aria-expanded="false" aria-controls="infoPanel" title="How does this work?">i</button>
+      </div>
+      <p class="hint java-lede">Paste any Java program and run it. Type your answers right in the terminal.</p>
+      <div id="infoPanel" class="java-info" hidden>
+        <p>Your code is compiled and run by Judge0 Community Edition (Java 17).</p>
+        <p>Judge0 can't pause a running program, so Portalis <strong>re-runs your program with every answer you type</strong> and shows it as one live session. That is why random numbers and the current time can look different after each answer.</p>
+        <p>Any class name works, so you can paste code without changing it.</p>
+      </div>
+
+      <section class="java-app" aria-label="Java coding workspace">
+        <div class="java-toolbar">
+          <input id="projectTitle" class="java-name" maxlength="80" autocomplete="off" aria-label="Project name" placeholder="Project name" />
+          <select id="projectSelect" class="java-projects" aria-label="Switch project"></select>
+          <div class="java-menu-wrap">
+            <button id="newBtn" type="button" class="java-soft-btn" aria-haspopup="true" aria-expanded="false" aria-controls="newMenu">+ New ▾</button>
+            <div id="newMenu" class="java-menu" hidden>
+              <button id="newProject" type="button">Blank project</button>
+              <p class="java-menu-label">From a template</p>
+            </div>
+          </div>
         </div>
 
         <div class="java-grid">
-          <div class="java-col">
-            <div class="java-title-row">
-              <label for="projectTitle">Project name</label>
-              <input id="projectTitle" maxlength="80" autocomplete="off" />
+          <div class="java-editor-card">
+            <div class="java-tabbar">
+              <span id="sourceFileLabel" class="java-tab">Main.java</span>
+              <span class="java-spacer"></span>
+              <button id="runCode" type="button" class="java-run" title="Run (Ctrl+Enter)">▶ Run</button>
+              <button id="stopCode" type="button" class="java-stop" hidden>■ Stop</button>
+              <button id="replayCode" type="button" class="java-tab-btn" title="Run again and feed the same answers automatically" disabled>↻ Same inputs</button>
+              <div class="java-menu-wrap">
+                <button id="moreBtn" type="button" class="java-tab-btn java-icon" aria-label="More actions" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenu">⋯</button>
+                <div id="moreMenu" class="java-menu java-menu-right" hidden>
+                  <button id="downloadJava" type="button">⬇ Export .java</button>
+                  <button id="copyCode" type="button">Copy code</button>
+                  <div class="java-menu-row" data-keep-open>
+                    <span>Text size</span>
+                    <button id="fontDown" type="button" data-keep-open aria-label="Smaller text">A−</button>
+                    <button id="fontUp" type="button" data-keep-open aria-label="Bigger text">A+</button>
+                  </div>
+                  <hr />
+                  <button id="saveProject" type="button">Save now</button>
+                  <button id="deleteProject" type="button" class="java-menu-danger">Delete project</button>
+                </div>
+              </div>
             </div>
 
-            <div class="java-editor-heading">
-              <label id="sourceFileLabel" for="sourceCode">Main.java</label>
-              <span class="hint" id="editorStats"></span>
-            </div>
             <textarea id="sourceCode" class="java-editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Java source code"></textarea>
 
-            <div class="java-actions">
-              <button id="runCode" type="button" class="java-run">▶ Run</button>
-              <button id="stopCode" type="button" class="danger" hidden>■ Stop</button>
-              <button id="replayCode" type="button" class="ghost" title="Run again and feed the same answers automatically" disabled>↻ Run with same inputs</button>
-              <button id="downloadJava" type="button" class="ghost" title="Download your code as a .java file">⬇ Export .java</button>
-              <button id="copyCode" type="button" class="ghost">Copy code</button>
-              <button id="saveProject" type="button" class="ghost">Save now</button>
-              <span class="java-fontbtns" aria-label="Editor text size">
-                <button id="fontDown" type="button" class="ghost" title="Smaller text">A−</button>
-                <button id="fontUp" type="button" class="ghost" title="Bigger text">A+</button>
-              </span>
+            <div class="java-statusbar">
+              <button id="problemsToggle" type="button" class="java-problems-toggle ok" aria-expanded="false" aria-controls="problems">✔ No problems</button>
+              <span id="runStatus" class="java-status-msg" role="status" aria-live="polite"></span>
+              <span class="java-spacer"></span>
+              <span id="saveStatus" class="java-status-save" role="status" aria-live="polite"></span>
+              <span id="editorStats" class="java-status-stats"></span>
+              <button id="guideBtn" type="button" class="java-round-btn small" title="Color guide and shortcuts" aria-label="Color guide and shortcuts">?</button>
             </div>
-            <p id="runStatus" class="msg" role="status" aria-live="polite"></p>
-            <p id="saveStatus" class="hint" role="status" aria-live="polite"></p>
 
-            <section id="problems" class="java-problems" aria-live="polite">
-              <header class="java-problems-head">
-                <strong>Problems</strong>
-                <span id="problemCount" class="java-problem-count">No problems</span>
-              </header>
+            <section id="problems" class="java-problems" hidden>
               <div id="problemList" class="java-diagnostics"></div>
               <details id="rawCompiler" hidden>
                 <summary>Show raw compiler output</summary>
                 <pre id="rawCompilerText" class="java-raw"></pre>
               </details>
             </section>
-
-            <details class="java-legend">
-              <summary>Color guide (what each color means)</summary>
-              <ul>
-                <li><span class="lg lg-keyword">public static</span> keywords &amp; primitive types</li>
-                <li><span class="lg lg-control">if for while return</span> control flow</li>
-                <li><span class="lg lg-class">String Scanner</span> class names</li>
-                <li><span class="lg lg-func">println()</span> methods</li>
-                <li><span class="lg lg-var">count</span> variables</li>
-                <li><span class="lg lg-const">MAX_SIZE</span> constants</li>
-                <li><span class="lg lg-string">"text"</span> strings</li>
-                <li><span class="lg lg-number">42</span> numbers</li>
-                <li><span class="lg lg-comment">// comment</span> comments</li>
-                <li><span class="lg lg-b0">(</span><span class="lg lg-b1">[</span><span class="lg lg-b2">{</span> matching brackets share a color</li>
-                <li><span class="lg lg-err">red line</span> an error on that line (click ✨ for a quick fix)</li>
-                <li><span class="lg lg-in1">1</span><span class="lg lg-in2">2</span><span class="lg lg-in3">3</span> the line that read your 1st, 2nd, 3rd... input</li>
-              </ul>
-              <p class="hint">Tips: type <code>sout</code>, <code>psvm</code>, <code>fori</code>, <code>scan</code> then press Tab. Ctrl+Space shows suggestions. Ctrl+/ comments a line. Hover over terminal output to see which line printed it.</p>
-            </details>
           </div>
 
-          <div class="java-col java-col-term">
-            <section class="java-terminal" id="terminal" aria-label="Interactive terminal">
-              <header class="term-head">
-                <span class="term-lights" aria-hidden="true"><i></i><i></i><i></i></span>
-                <strong>Terminal</strong>
-                <span id="termState" class="term-state term-state-idle">ready</span>
-                <span class="term-spacer"></span>
-                <button id="termEof" type="button" class="term-btn" title="End of input (Ctrl+D) - for programs that read until there is no more input" disabled>Ctrl+D</button>
-                <button id="termUndo" type="button" class="term-btn" title="Remove the last answer and run again" disabled>Undo</button>
-                <button id="termCopy" type="button" class="term-btn">Copy</button>
-                <button id="termClear" type="button" class="term-btn">Clear</button>
-              </header>
-              <pre id="termBody" class="term-body" role="log" aria-live="polite" aria-label="Program output"></pre>
-              <div id="inputChips" class="java-input-chips" hidden></div>
-            </section>
-            <p class="hint term-note">Press <strong>▶ Run</strong>. When the program asks for something, type the answer in the terminal and press <strong>Enter</strong>. Each answer gets a color, and the same color marks the line in your code that read it.</p>
-          </div>
+          <section class="java-terminal" id="terminal" aria-label="Interactive terminal">
+            <header class="term-head">
+              <span class="term-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <strong>Terminal</strong>
+              <span id="termState" class="term-state term-state-idle">ready</span>
+              <span class="term-spacer"></span>
+              <button id="termEof" type="button" class="term-btn" title="End of input (Ctrl+D). For programs that read until there is no more input." hidden>Ctrl+D</button>
+              <button id="termUndo" type="button" class="term-btn term-icon" title="Undo the last answer and run again" aria-label="Undo last answer" disabled>⌫</button>
+              <button id="termCopy" type="button" class="term-btn term-icon" title="Copy terminal text" aria-label="Copy terminal text">⧉</button>
+              <button id="termClear" type="button" class="term-btn term-icon" title="Clear terminal" aria-label="Clear terminal">✕</button>
+            </header>
+            <pre id="termBody" class="term-body" role="log" aria-live="polite" aria-label="Program output"></pre>
+            <div id="inputChips" class="java-input-chips" hidden></div>
+          </section>
         </div>
       </section>
+    </div>
+
+    <div id="guideModal" class="java-modal" hidden>
+      <div class="java-modal-card" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+        <header>
+          <h3 id="guideTitle">Color guide and shortcuts</h3>
+          <button id="guideClose" type="button" class="java-round-btn" aria-label="Close">✕</button>
+        </header>
+        <ul class="java-legend">
+          <li><span class="lg lg-keyword">public static</span> keywords and primitive types</li>
+          <li><span class="lg lg-control">if for while return</span> control flow</li>
+          <li><span class="lg lg-class">String Scanner</span> class names</li>
+          <li><span class="lg lg-func">println()</span> methods</li>
+          <li><span class="lg lg-var">count</span> variables</li>
+          <li><span class="lg lg-const">MAX_SIZE</span> constants</li>
+          <li><span class="lg lg-string">"text"</span> strings</li>
+          <li><span class="lg lg-number">42</span> numbers</li>
+          <li><span class="lg lg-comment">// note</span> comments</li>
+          <li><span class="lg lg-b0">(</span><span class="lg lg-b1">[</span><span class="lg lg-b2">{</span> matching brackets share a color</li>
+          <li><span class="lg lg-err">red line</span> an error on that line (click ✨ for a quick fix)</li>
+          <li><span class="lg lg-in1">1</span><span class="lg lg-in2">2</span><span class="lg lg-in3">3</span> the line that read your 1st, 2nd, 3rd input</li>
+        </ul>
+        <p class="hint">Type <code>sout</code>, <code>psvm</code>, <code>fori</code> or <code>scan</code> and press Tab. Ctrl+Space suggests words. Ctrl+/ comments a line. Ctrl+Enter runs. Hover over terminal output to see which line printed it.</p>
+      </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -131,6 +138,6 @@
     <script src="config.js"></script>
     <script src="common.js"></script>
     <script src="java-tools.js?v=2"></script>
-    <script src="java-compiler.js?v=2"></script>
+    <script src="java-compiler.js?v=3"></script>
   </body>
 </html>

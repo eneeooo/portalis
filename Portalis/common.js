@@ -249,6 +249,8 @@ function installBarMenuStyles() {
     "  button.menu-toggle:focus-visible { outline: 3px solid #000; outline-offset: 3px; }" +
     "  button.menu-toggle svg { width: 18px; height: 18px; display: block; }" +
     "  .bar .nav, .bar .profile-controls { display: none; }" +
+    "  .bar .nav-group, .bar .nav-more, .bar .nav-more .nav-more-panel { display: contents; }" +
+    "  .bar .nav-divider, .bar button.nav-more-btn { display: none; }" +
     "  .bar.menu-open .nav { display: flex; flex: 0 0 100%; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 2px dashed #000; }" +
     "  .bar.menu-open .nav-link { justify-content: flex-start; width: 100%; min-height: 44px; padding: 8px 16px; font-size: 18px; border-radius: 14px; }" +
     "  .bar.menu-open .profile-controls { display: flex; flex: 0 0 100%; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; padding-top: 10px; border-top: 2px dashed #000; }" +
@@ -278,6 +280,32 @@ function makeMenuToggle(bar, nav) {
     if (event.key === "Escape" && bar.classList.contains("menu-open")) { set(false); toggle.focus(); }
   });
   return toggle;
+}
+
+function makeAdminMenu(linkElements, isActive) {
+  const wrap = el("div", "nav-more");
+  const button = el("button", "nav-link nav-more-btn" + (isActive ? " on" : ""));
+  button.type = "button";
+  button.setAttribute("aria-haspopup", "true");
+  button.setAttribute("aria-controls", "barAdminMenu");
+  button.append("Admin ", el("span", "nav-caret", "\u25be"));
+  const panel = el("div", "nav-more-panel");
+  panel.id = "barAdminMenu";
+  linkElements.forEach(link => panel.appendChild(link));
+  const set = open => {
+    wrap.classList.toggle("open", open);
+    button.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+  set(false);
+  button.onclick = event => { event.stopPropagation(); set(!wrap.classList.contains("open")); };
+  document.addEventListener("click", event => {
+    if (wrap.classList.contains("open") && !wrap.contains(event.target)) set(false);
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && wrap.classList.contains("open")) { set(false); button.focus(); }
+  });
+  wrap.append(button, panel);
+  return wrap;
 }
 
 function renderBar(ctx, active) {
@@ -315,16 +343,38 @@ function renderBar(ctx, active) {
   const nav = el("nav", "nav");
   nav.id = "barNav";
   bar.appendChild(makeMenuToggle(bar, nav));
-  const links = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"], ["java-compiler.html", "Java compiler", "java-compiler"], ["funds.html", "Class funds", "funds"], ["attendance.html", "Attendance", "attendance"], ["memories.html", "Memories", "memories"], ["confessions.html", "Confessions", "confessions"], ["profile.html", "Profile", "profile"]];
-  if (ctx.role === "admin") links.push(["admin.html", "Admin", "admin"]);
-  if (ctx.role === "officer") links.push(["officer.html", "Officer", "officer"]);
-  if (ctx.isAdmin) links.push(["manage.html", "Manage reviewers", "manage"]);
-  links.forEach(l => {
+  const makeLink = l => {
     const a = el("a", "nav-link" + (active === l[2] ? " on" : ""), l[1]);
     if (active === l[2]) a.setAttribute("aria-current", "page");
     a.href = l[0];
-    nav.appendChild(a);
-  });
+    return a;
+  };
+  const makeGroup = (label, items) => {
+    const group = el("div", "nav-group");
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", label);
+    items.forEach(item => group.appendChild(item));
+    return group;
+  };
+  const makeDivider = () => {
+    const divider = el("span", "nav-divider");
+    divider.setAttribute("aria-hidden", "true");
+    return divider;
+  };
+  const studyLinks = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"], ["java-compiler.html", "Java compiler", "java-compiler"]];
+  const classLinks = [["funds.html", "Class funds", "funds"], ["attendance.html", "Attendance", "attendance"], ["memories.html", "Memories", "memories"], ["confessions.html", "Confessions", "confessions"]];
+  const adminLinks = [];
+  if (ctx.role === "admin") adminLinks.push(["admin.html", "Admin", "admin"]);
+  if (ctx.role === "officer") adminLinks.push(["officer.html", "Officer", "officer"]);
+  if (ctx.isAdmin) adminLinks.push(["manage.html", "Manage reviewers", "manage"]);
+  const accountItems = [makeLink(["profile.html", "Profile", "profile"])];
+  if (adminLinks.length === 1) accountItems.push(makeLink(adminLinks[0]));
+  else if (adminLinks.length > 1) accountItems.push(makeAdminMenu(adminLinks.map(makeLink), adminLinks.some(l => l[2] === active)));
+  nav.appendChild(makeGroup("Study", studyLinks.map(makeLink)));
+  nav.appendChild(makeDivider());
+  nav.appendChild(makeGroup("Class", classLinks.map(makeLink)));
+  nav.appendChild(makeDivider());
+  nav.appendChild(makeGroup("Account", accountItems));
   bar.appendChild(nav);
   const right = el("div", "right profile-controls");
   right.appendChild(el("span", "badge profile-role", profileTitle(ctx.profile)));

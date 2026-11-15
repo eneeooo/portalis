@@ -56,6 +56,7 @@
   var controller = null;
   var lintTimer = 0;
   var hoverLine = null;
+  var problemsOpen = false;
 
   var term = { segments: [], status: "idle", stateText: "idle", waiting: null, stderr: "", hint: null, footer: "", pendingEcho: null, message: "", retry: false };
   var compileDiags = [];  // {handle, ...diag}
@@ -226,8 +227,9 @@
             var row = el("div", "java-inline-row");
             row.appendChild(el("span", "java-inline-icon", p.severity === "error" ? "✖" : "▲"));
             row.appendChild(el("span", "java-inline-msg", p.message));
-            if (p.fixes && p.fixes[0]) row.appendChild(fixButton(p.fixes[0], "java-inline-fix"));
+            (p.fixes || []).slice(0, 2).forEach(function (f) { row.appendChild(fixButton(f, "java-inline-fix")); });
             box.appendChild(row);
+            if (p.explanation) box.appendChild(el("div", "java-inline-why", p.explanation));
           });
           decorations.widgets.push(editor.addLineWidget(Number(key), box, { coverGutter: false, noHScroll: true, above: false }));
         });
@@ -240,8 +242,20 @@
     list.replaceChildren();
     var errors = problems.filter(function (p) { return p.severity === "error"; }).length;
     var warns = problems.length - errors;
-    $("problemCount").textContent = problems.length ? errors + " error" + (errors === 1 ? "" : "s") + (warns ? ", " + warns + " warning" + (warns === 1 ? "" : "s") : "") : "No problems";
-    panel.className = "java-problems" + (errors ? " has-errors" : problems.length ? " has-warnings" : "");
+    var toggle = $("problemsToggle");
+    if (!problems.length) {
+      toggle.textContent = "✔ No problems";
+      toggle.className = "java-problems-toggle ok";
+      problemsOpen = false;
+    } else {
+      var parts = [];
+      if (errors) parts.push("✖ " + errors + " error" + (errors === 1 ? "" : "s"));
+      if (warns) parts.push("▲ " + warns + " warning" + (warns === 1 ? "" : "s"));
+      toggle.textContent = parts.join(" · ") + (problemsOpen ? "  ▾" : "  ▸");
+      toggle.className = "java-problems-toggle " + (errors ? "has-errors" : "has-warnings");
+    }
+    toggle.setAttribute("aria-expanded", problemsOpen ? "true" : "false");
+    panel.hidden = !(problemsOpen && problems.length);
     problems.forEach(function (p) {
       var card = el("section", "java-diagnostic-card" + (p.severity === "error" ? "" : " warn"));
       var head = el("strong", "", "Line " + (p.line + 1) + ": " + p.message);
@@ -426,6 +440,9 @@
     if (term.status === "running" && term.pendingEcho === null && !term.segments.length) {
       frag.appendChild(el("span", "t-info", "Compiling and running…"));
     }
+    if (term.status === "idle" && !term.segments.length && !term.message && !term.stderr) {
+      frag.appendChild(el("span", "t-placeholder", "Press ▶ Run.\nWhen the program asks for something, type your answer here and press Enter.\nEach answer gets a color, and the same color marks the line of code that read it."));
+    }
 
     body.replaceChildren(frag);
     body.scrollTop = body.scrollHeight;
@@ -437,7 +454,7 @@
     }
     if (promptInput) promptInput.input.focus({ preventScroll: true });
 
-    $("termEof").disabled = term.status !== "waiting";
+    $("termEof").hidden = term.status !== "waiting";
     $("termUndo").disabled = !session.inputs.length || term.status === "running";
     $("stopCode").hidden = term.status !== "running";
     $("runCode").disabled = false;
@@ -527,13 +544,15 @@
   function setRunStatus(text, isError) {
     var status = $("runStatus");
     status.textContent = text;
-    status.className = "msg" + (isError ? " err" : "");
+    status.className = "java-status-msg" + (isError ? " err" : "");
+    clearTimeout(setRunStatus.timer);
+    if (text && !isError) setRunStatus.timer = setTimeout(function () { status.textContent = ""; }, 6000);
   }
 
   function setSaveStatus(text, isError) {
     var status = $("saveStatus");
     status.textContent = text;
-    status.className = "hint" + (isError ? " err" : "");
+    status.className = "java-status-save" + (isError ? " err" : "");
   }
 
   function startRun(replay) {
@@ -748,9 +767,16 @@
     $("deleteProject").disabled = projects.length === 0;
   }
 
+  function savedText(timestamp) {
+    var when = new Date(timestamp);
+    var today = new Date();
+    var sameDay = when.toDateString() === today.toDateString();
+    return "Saved " + (sameDay ? when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : when.toLocaleDateString([], { month: "short", day: "numeric" }));
+  }
+
   function updateStats() {
     var code = getSource();
-    $("editorStats").textContent = code.split("\n").length + " lines · " + code.length.toLocaleString() + " / " + MAX_SOURCE_LENGTH.toLocaleString() + " characters";
+    $("editorStats").textContent = code.split("\n").length + " lines · " + code.length.toLocaleString() + " / " + MAX_SOURCE_LENGTH.toLocaleString();
     $("sourceFileLabel").textContent = T.sourceFileName(code);
   }
 
@@ -768,7 +794,7 @@
     resetTerminal("");
     updateStats();
     runLint();
-    setSaveStatus("Saved " + new Date(project.updated_at).toLocaleString(), false);
+    setSaveStatus(savedText(project.updated_at), false);
   }
 
   async function createProject(title, code) {
@@ -813,7 +839,7 @@
       refreshProjectSelect();
       if (currentProjectId === res.data.id) {
         $("projectSelect").value = res.data.id;
-        setSaveStatus("Saved " + new Date(res.data.updated_at).toLocaleString(), false);
+        setSaveStatus(savedText(res.data.updated_at), false);
       }
       return true;
     } catch (error) {
@@ -1022,6 +1048,26 @@
     if (editor) editor.refresh();
   }
 
+  // Small dropdown menus: open on click, close on outside click, Escape, or after picking an item.
+  function wireMenu(button, panel) {
+    function set(open) {
+      panel.hidden = !open;
+      button.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    button.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var willOpen = panel.hidden;
+      document.querySelectorAll(".java-menu").forEach(function (m) { if (m !== panel && !m.hidden) { m.hidden = true; var b = document.querySelector('[aria-controls="' + m.id + '"]'); if (b) b.setAttribute("aria-expanded", "false"); } });
+      set(willOpen);
+    });
+    panel.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t.tagName === "BUTTON" && !t.hasAttribute("data-keep-open")) set(false);
+    });
+    document.addEventListener("click", function (e) { if (!panel.hidden && !panel.contains(e.target)) set(false); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !panel.hidden) { set(false); button.focus(); } });
+  }
+
   function wireEvents() {
     projectTitle.addEventListener("input", scheduleSave);
     $("runCode").addEventListener("click", function () { startRun(false); });
@@ -1055,21 +1101,41 @@
       hoverLine = null;
     });
     $("saveProject").addEventListener("click", async function () { clearTimeout(saveTimer); await enqueueSave(); });
-    $("newProject").addEventListener("click", async function () {
+    async function newFrom(title, code) {
       clearTimeout(saveTimer);
       await enqueueSave();
-      try { await createProject("Untitled Java project", STARTER_CODE); setSaveStatus("New project saved.", false); }
+      try { await createProject(title, code); setSaveStatus("New project created", false); }
       catch (error) { setSaveStatus("Could not create project: " + error.message, true); }
+    }
+    $("newProject").addEventListener("click", function () { newFrom("Untitled Java project", STARTER_CODE); });
+    Object.keys(TEMPLATES).forEach(function (name) {
+      var item = document.createElement("button");
+      item.type = "button";
+      item.textContent = name;
+      item.addEventListener("click", function () { newFrom(name, TEMPLATES[name]); });
+      $("newMenu").appendChild(item);
     });
-    $("templateSelect").addEventListener("change", async function (event) {
-      var name = event.target.value;
-      event.target.value = "";
-      if (!name || !TEMPLATES[name]) return;
-      clearTimeout(saveTimer);
-      await enqueueSave();
-      try { await createProject(name, TEMPLATES[name]); setSaveStatus("New project saved from the “" + name + "” template.", false); }
-      catch (error) { setSaveStatus("Could not create project: " + error.message, true); }
+    wireMenu($("newBtn"), $("newMenu"));
+    wireMenu($("moreBtn"), $("moreMenu"));
+
+    $("infoBtn").addEventListener("click", function () {
+      var panel = $("infoPanel");
+      panel.hidden = !panel.hidden;
+      $("infoBtn").setAttribute("aria-expanded", panel.hidden ? "false" : "true");
     });
+    $("problemsToggle").addEventListener("click", function () {
+      if (!allProblems().length) return;
+      problemsOpen = !problemsOpen;
+      renderProblems();
+    });
+    function setGuide(open) {
+      $("guideModal").hidden = !open;
+      if (open) $("guideClose").focus(); else $("guideBtn").focus();
+    }
+    $("guideBtn").addEventListener("click", function () { setGuide(true); });
+    $("guideClose").addEventListener("click", function () { setGuide(false); });
+    $("guideModal").addEventListener("click", function (e) { if (e.target === $("guideModal")) setGuide(false); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !$("guideModal").hidden) setGuide(false); });
     $("projectSelect").addEventListener("change", async function (event) {
       var selectedId = event.target.value;
       clearTimeout(saveTimer);

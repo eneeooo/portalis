@@ -761,86 +761,405 @@ button.small {
 /* Java compiler workspace */
 :root {
   --java-font: 15px;
+  --java-h: clamp(540px, calc(100vh - 300px), 820px);
 }
 .wrap.java-wide {
   max-width: 1440px;
 }
-.java-privacy {
-  margin: 0 0 18px;
-  padding: 10px 12px;
+.java-pagehead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.java-pagehead h2 {
+  margin: 0;
+}
+.java-lede {
+  margin: 4px 0 14px;
+}
+button.java-round-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid #000;
+  border-radius: 50%;
+  background: #fff;
+  color: #000;
+  font: bold 15px/1 Georgia, serif;
+  box-shadow: none;
+}
+button.java-round-btn:hover {
+  background: #000;
+  color: #fff;
+  box-shadow: none;
+}
+button.java-round-btn.small {
+  width: 22px;
+  height: 22px;
+  border-color: #6b7280;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+button.java-round-btn.small:hover {
+  background: #cbd5e1;
+  color: #1e1e1e;
+}
+.java-info {
+  max-width: 720px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
   border: 2px dashed #000;
   background: #fff3a0;
 }
-.java-workspace {
-  display: grid;
-  gap: 12px;
-  border: 3px solid #000;
-  background: #fff;
-  box-shadow: 5px 5px 0 #000;
-  padding: clamp(12px, 2vw, 20px);
+.java-info p {
+  margin: 4px 0;
 }
-.java-project-controls,
-.java-editor-heading,
-.java-actions,
-.java-title-row {
+
+/* toolbar */
+.java-app {
+  display: grid;
+  gap: 14px;
+}
+.java-toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
-.java-project-controls select {
-  flex: 1 1 200px;
-  min-width: 0;
-}
-.java-project-controls #templateSelect {
-  flex: 0 1 220px;
-}
-.java-title-row input {
+.java-toolbar .java-name {
   flex: 1 1 220px;
+  max-width: 340px;
   min-width: 0;
+  padding: 6px 10px;
+  font-weight: bold;
 }
-.java-editor-heading {
-  justify-content: space-between;
+.java-toolbar .java-projects {
+  flex: 0 1 220px;
+  width: auto;
+  min-width: 0;
+  padding: 6px 10px;
 }
+.java-menu-wrap {
+  position: relative;
+}
+.java-app button.java-soft-btn {
+  margin: 0;
+  padding: 6px 14px;
+  background: #fff;
+  color: #000;
+}
+.java-app button.java-soft-btn:hover {
+  background: #000;
+  color: #fff;
+  box-shadow: none;
+}
+.java-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 70;
+  display: grid;
+  gap: 2px;
+  min-width: 230px;
+  padding: 6px;
+  border: 2px solid #000;
+  background: #fff;
+  box-shadow: 4px 4px 0 #000;
+}
+.java-menu[hidden] {
+  display: none;
+}
+.java-menu.java-menu-right {
+  left: auto;
+  right: 0;
+}
+.java-menu button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: #000;
+  text-align: left;
+  box-shadow: none;
+}
+.java-menu button:hover {
+  background: #f6b8dc;
+  color: #000;
+  box-shadow: none;
+}
+.java-menu button.java-menu-danger {
+  color: #b00020;
+}
+.java-menu button.java-menu-danger:hover {
+  background: #b00020;
+  color: #fff;
+}
+.java-menu hr {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid #ccc;
+}
+.java-menu-label {
+  margin: 6px 10px 2px;
+  color: #666;
+  font-size: 14px;
+}
+.java-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+}
+.java-menu-row span {
+  flex: 1 1 auto;
+}
+.java-menu .java-menu-row button {
+  width: auto;
+  padding: 2px 10px;
+  border: 1px solid #000;
+}
+
+/* editor + terminal */
 .java-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
+  gap: 18px;
+  align-items: stretch;
 }
 @media (min-width: 1080px) {
   .java-grid {
-    grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr);
+    grid-template-columns: minmax(0, 1.3fr) minmax(340px, 1fr);
   }
-  .java-col-term {
-    position: sticky;
-    top: 12px;
+  .java-editor-card,
+  .java-terminal {
+    height: var(--java-h);
   }
 }
-.java-col {
-  display: grid;
-  gap: 10px;
+@media (max-width: 1079px) {
+  .java-editor-card {
+    height: min(66vh, 600px);
+    min-height: 380px;
+  }
+  .java-terminal {
+    height: min(52vh, 440px);
+    min-height: 280px;
+  }
+}
+.java-editor-card {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  border: 2px solid #000;
+  background: #1e1e1e;
+  box-shadow: 4px 4px 0 #000;
+}
+.java-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px 0 0;
+  background: #252526;
+  border-bottom: 1px solid #3c3c3c;
+}
+.java-tab {
+  margin-top: 2px;
+  padding: 7px 16px;
+  border-top: 2px solid #4fc1ff;
+  background: #1e1e1e;
+  color: #fff;
+  font: 14px/1.2 Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+.java-spacer {
+  flex: 1 1 auto;
+}
+.java-app button.java-run,
+.java-app button.java-stop,
+.java-app button.java-tab-btn {
+  margin: 0 0 6px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 15px;
+  box-shadow: none;
+}
+.java-app button.java-run {
+  border-color: #2ea043;
+  background: #2ea043;
+  color: #fff;
+  font-weight: bold;
+}
+.java-app button.java-run:hover {
+  background: #3fb950;
+  color: #fff;
+  box-shadow: none;
+}
+.java-app button.java-stop {
+  border-color: #da3633;
+  background: #da3633;
+  color: #fff;
+}
+.java-app button.java-stop:hover {
+  background: #f85149;
+  color: #fff;
+  box-shadow: none;
+}
+.java-app button.java-tab-btn {
+  border-color: #5a5a5a;
+  background: transparent;
+  color: #d4d4d4;
+}
+.java-app button.java-tab-btn:hover:not(:disabled) {
+  background: #3a3d41;
+  color: #fff;
+  box-shadow: none;
+}
+.java-app button.java-tab-btn.java-icon {
+  padding: 4px 10px;
+  font-weight: bold;
+  letter-spacing: 1px;
 }
 .java-editor {
+  flex: 1 1 0;
   width: 100%;
-  min-height: 52vh;
+  min-height: 0;
   margin: 0;
   padding: 12px;
-  border: 2px solid #000;
+  border: 0;
   border-radius: 0;
   background: #1e1e1e;
   color: #d4d4d4;
   font: var(--java-font) / 1.5 Consolas, "Courier New", monospace;
   tab-size: 4;
+  resize: none;
 }
-.java-workspace .CodeMirror {
-  width: 100%;
-  height: min(58vh, 640px);
-  min-height: 320px;
-  border: 2px solid #000;
+.java-editor-card .CodeMirror {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  border: 0;
   font: var(--java-font) / 1.5 Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+/* status bar */
+.java-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border-top: 1px solid #3c3c3c;
+  background: #252526;
+  color: #9da5b4;
+  font: 13px/1.4 Consolas, "Cascadia Mono", monospace;
+}
+.java-statusbar button.java-problems-toggle {
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #9da5b4;
+  font: inherit;
   box-shadow: none;
+}
+.java-statusbar button.java-problems-toggle:hover {
+  background: #3a3d41;
+  color: #fff;
+  box-shadow: none;
+}
+.java-statusbar button.java-problems-toggle.ok {
+  color: #72dc91;
+  cursor: default;
+}
+.java-statusbar button.java-problems-toggle.has-errors {
+  background: #8d1717;
+  color: #fff;
+}
+.java-statusbar button.java-problems-toggle.has-warnings {
+  background: #7a5e00;
+  color: #fff;
+}
+.java-status-msg {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9ecbff;
+}
+.java-status-msg.err,
+.java-status-save.err {
+  color: #ff7b72;
+  font-weight: bold;
+}
+.java-status-save,
+.java-status-stats {
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .java-status-stats {
+    display: none;
+  }
+}
+.java-problems {
+  max-height: 210px;
+  padding: 8px;
+  overflow: auto;
+  border-top: 1px solid #3c3c3c;
+  background: #f4f4f4;
+}
+.java-problems[hidden] {
+  display: none;
+}
+.java-diagnostics {
+  display: grid;
+  gap: 8px;
+}
+.java-diagnostic-card {
+  margin: 0;
+  padding: 8px 10px;
+  border: 2px solid #b52929;
+  background: #fff;
+}
+.java-diagnostic-card.warn { border-color: #b58a00; }
+.java-diagnostic-card strong {
+  display: block;
+  color: #8d1717;
+  overflow-wrap: anywhere;
+}
+.java-diagnostic-card.warn strong { color: #7a5e00; }
+.java-diagnostic-card p { margin: 5px 0; }
+.java-diagnostic-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.java-diagnostic-actions button { margin: 2px 0; }
+.java-line-jump {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #8d1717;
+  text-decoration: underline;
+}
+.java-raw {
+  max-height: 160px;
+  margin: 6px 0 0;
+  padding: 8px;
+  overflow: auto;
+  background: #171923;
+  color: #f5f5f5;
+  font: 13px/1.4 Consolas, monospace;
+  white-space: pre-wrap;
 }
 
 /* VS Code (Dark+) colors */
@@ -1000,7 +1319,7 @@ button.small {
 }
 .java-inline-problem {
   margin: 2px 0 4px 36px;
-  padding: 4px 8px;
+  padding: 4px 10px;
   border-left: 3px solid #ff5555;
   background: #2b1d1d;
   color: #ffb4b4;
@@ -1013,85 +1332,37 @@ button.small {
   flex-wrap: wrap;
 }
 .java-inline-icon { color: #ff6b6b; }
-.java-inline-msg { flex: 1 1 auto; overflow-wrap: anywhere; }
+.java-inline-msg { flex: 1 1 auto; font-weight: bold; overflow-wrap: anywhere; }
+.java-inline-why {
+  margin: 2px 0 2px 22px;
+  color: #d7a8a8;
+  white-space: normal;
+}
 button.java-inline-fix {
   margin: 0;
   padding: 1px 8px;
   border: 1px solid #8190a3;
+  border-radius: 4px;
   background: #2d333b;
   color: #fff;
   font-size: 13px;
   box-shadow: none;
 }
-
-/* problems panel */
-.java-problems {
-  display: grid;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 2px solid #000;
-  background: #f4f4f4;
-}
-.java-problems.has-errors { background: #fff0f0; border-color: #b52929; }
-.java-problems.has-warnings { background: #fffbe5; }
-.java-problems-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-.java-problem-count { opacity: 0.8; }
-.java-diagnostics {
-  display: grid;
-  gap: 8px;
-}
-.java-diagnostic-card {
-  margin: 0;
-  padding: 8px 10px;
-  border: 2px solid #b52929;
-  background: #fff;
-}
-.java-diagnostic-card.warn { border-color: #b58a00; }
-.java-diagnostic-card strong {
-  display: block;
-  color: #8d1717;
-  overflow-wrap: anywhere;
-}
-.java-diagnostic-card.warn strong { color: #7a5e00; }
-.java-diagnostic-card p { margin: 5px 0; }
-.java-diagnostic-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.java-diagnostic-actions button { margin: 2px 0; }
-.java-line-jump {
-  border: 0;
-  padding: 0;
-  background: transparent;
+button.java-inline-fix:hover {
+  background: #3b82f6;
+  color: #fff;
   box-shadow: none;
-  color: #8d1717;
-  text-decoration: underline;
-}
-.java-raw {
-  max-height: 220px;
-  margin: 6px 0 0;
-  padding: 8px;
-  overflow: auto;
-  background: #171923;
-  color: #f5f5f5;
-  font: 13px/1.4 Consolas, monospace;
-  white-space: pre-wrap;
 }
 
 /* terminal */
 .java-terminal {
   display: grid;
-  grid-template-rows: auto minmax(220px, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
   border: 2px solid #000;
   background: #0c0c0c;
   color: #e6e6e6;
-  min-width: 0;
+  box-shadow: 4px 4px 0 #000;
 }
 .term-head {
   display: flex;
@@ -1122,17 +1393,30 @@ button.term-btn {
   margin: 0;
   padding: 1px 9px;
   border: 1px solid #666;
+  border-radius: 4px;
   background: #3a3a3a;
   color: #fff;
   font-size: 14px;
   box-shadow: none;
 }
-button.term-btn:hover:not(:disabled) { background: #505050; }
+button.term-btn[hidden] { display: none; }
+button.term-btn.term-icon {
+  min-width: 28px;
+  padding: 1px 6px;
+  border-color: transparent;
+  background: transparent;
+  color: #bbb;
+}
+button.term-btn:hover:not(:disabled) {
+  background: #505050;
+  color: #fff;
+  box-shadow: none;
+}
+button.term-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .term-body {
+  min-height: 0;
   margin: 0;
   padding: 12px;
-  min-height: 220px;
-  max-height: min(58vh, 620px);
   overflow: auto;
   background: #0c0c0c;
   color: #e6e6e6;
@@ -1141,6 +1425,7 @@ button.term-btn:hover:not(:disabled) { background: #505050; }
   overflow-wrap: anywhere;
   cursor: text;
 }
+.t-placeholder { color: #6b7280; }
 .t-out[data-line]:hover { background: rgba(79, 193, 255, 0.15); cursor: pointer; }
 .t-in {
   color: var(--c);
@@ -1159,7 +1444,8 @@ button.term-btn:hover:not(:disabled) { background: #505050; }
 }
 .t-pending { opacity: 0.65; }
 .t-prompt { white-space: nowrap; }
-.t-input {
+.t-input,
+.t-input:focus {
   min-width: 1ch;
   max-width: 100%;
   margin: 0;
@@ -1189,14 +1475,16 @@ button.term-btn:hover:not(:disabled) { background: #505050; }
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-  padding: 8px 10px;
+  flex-wrap: nowrap;
+  padding: 6px 10px;
+  overflow-x: auto;
   border-top: 1px solid #333;
   background: #141414;
 }
-.chips-title { color: #9aa4b2; font-size: 14px; }
+.chips-title { flex: none; color: #9aa4b2; font-size: 14px; }
 button.java-input-chip {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 8px;
   margin: 0;
@@ -1206,6 +1494,11 @@ button.java-input-chip {
   background: #202630;
   color: #fff;
   font: 13px/1.4 Consolas, monospace;
+  box-shadow: none;
+}
+button.java-input-chip:hover {
+  background: #2d3646;
+  color: #fff;
   box-shadow: none;
 }
 .java-input-chip-number {
@@ -1219,27 +1512,42 @@ button.java-input-chip {
   color: #9aa4b2;
   text-decoration: underline;
 }
-.term-note { margin: 0; }
 
-/* misc */
-.java-actions {
-  margin: 2px 0;
-}
-button.java-run {
-  background: #b9f0b0;
-  font-weight: bold;
-}
-.java-fontbtns { display: inline-flex; gap: 6px; margin-left: auto; }
-.java-legend {
-  padding: 6px 10px;
-  border: 2px dashed #000;
-  background: #fffdf0;
-}
-.java-legend ul {
+/* color guide popup */
+.java-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 6px 14px;
-  margin: 8px 0;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.java-modal[hidden] {
+  display: none;
+}
+.java-modal-card {
+  width: min(560px, 100%);
+  max-height: 90vh;
+  padding: 16px 18px;
+  overflow: auto;
+  border: 3px solid #000;
+  background: #fff;
+  box-shadow: 6px 6px 0 #000;
+}
+.java-modal-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.java-modal-card h3 {
+  margin: 0;
+}
+.java-legend {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
   padding: 0;
   list-style: none;
 }
@@ -1267,6 +1575,8 @@ button.java-run {
 .lg-in1 { color: #10131a; background: #54d6ff !important; }
 .lg-in2 { color: #10131a; background: #ffba55 !important; }
 .lg-in3 { color: #10131a; background: #bd91ff !important; }
+
+/* autocomplete popup */
 .CodeMirror-hints {
   z-index: 50;
   font-family: Consolas, "Courier New", monospace;
@@ -1279,18 +1589,22 @@ li.CodeMirror-hint-active { background: #094771; color: #fff; }
 .java-hint-class { color: #4ec9b0; }
 .java-hint-method { color: #dcdcaa; }
 .java-hint-snippet { color: #c586c0; }
-.java-workspace button:disabled,
-.java-workspace select:disabled {
+/* the site's base button/flex rules would otherwise beat the browser's [hidden] */
+.java-app [hidden],
+.java-info[hidden],
+.java-modal[hidden] {
+  display: none !important;
+}
+.java-app button:disabled,
+.java-app select:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
 @media (max-width: 520px) {
-  .java-project-controls > button {
-    flex: 1 1 auto;
-  }
-  .java-workspace .CodeMirror {
-    height: 45vh;
-    min-height: 280px;
+  .java-toolbar .java-name,
+  .java-toolbar .java-projects {
+    flex: 1 1 100%;
+    max-width: none;
   }
   .t-input { font-size: 16px; }
 }
@@ -4095,5 +4409,141 @@ body.has-fund-btn .online-panel:not(.fund-panel) { bottom: calc(226px + env(safe
   }
   #expensePanel .fund-expense-table button {
     min-height: 44px;
+  }
+}
+
+/* ===== Desktop top bar (981px and up): profile + actions on row 1, grouped links on row 2 ===== */
+@media (min-width: 981px) {
+  .bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "profile controls"
+      "nav nav";
+    align-items: center;
+    column-gap: 16px;
+    row-gap: 10px;
+    padding: 12px 20px;
+  }
+  .bar .bar-profile {
+    grid-area: profile;
+    flex-direction: row;
+    align-items: center;
+    justify-self: start;
+    gap: 12px;
+    min-width: 0;
+    text-align: left;
+  }
+  .bar .bar-profile .bar-avatar {
+    width: 46px;
+    height: 46px;
+    flex: none;
+    font-size: 18px;
+  }
+  .bar .bar-who {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+  }
+  .bar .bar-profile .bar-name {
+    max-width: 340px;
+    font-size: 19px;
+  }
+  .bar .bar-profile .bar-student-number {
+    font-size: 14px;
+  }
+  .bar .profile-controls {
+    grid-area: controls;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-self: end;
+    gap: 10px;
+  }
+  .bar .profile-controls button {
+    margin: 0;
+    min-height: 38px;
+    padding: 4px 16px;
+  }
+  .bar .nav {
+    grid-area: nav;
+    flex: none;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 6px 10px;
+    padding-top: 10px;
+    border-top: 2px dashed #000;
+  }
+  .bar .nav-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .bar .nav-divider {
+    width: 2px;
+    height: 26px;
+    border-radius: 2px;
+    background: #000;
+    opacity: 0.25;
+  }
+  .bar .nav-more {
+    position: relative;
+  }
+  .bar button.nav-more-btn {
+    margin: 0;
+    gap: 6px;
+    background: #fff;
+    color: #000;
+  }
+  .bar button.nav-more-btn.on {
+    background: #f6b8dc;
+    font-weight: bold;
+  }
+  .bar button.nav-more-btn:hover {
+    background: #fff0f8;
+    color: #000;
+    box-shadow: 2px 2px 0 #000;
+  }
+  .bar .nav-more-btn .nav-caret {
+    font-size: 12px;
+    transition: transform 0.15s;
+  }
+  .bar .nav-more.open .nav-caret {
+    transform: rotate(180deg);
+  }
+  .bar .nav-more-panel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 60;
+    min-width: 210px;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border: 3px solid #000;
+    background: #fff;
+    box-shadow: 5px 5px 0 #000;
+  }
+  .bar .nav-more.open .nav-more-panel {
+    display: flex;
+  }
+  .bar .nav-more-panel .nav-link {
+    justify-content: flex-start;
+    width: 100%;
+    border-radius: 12px;
+  }
+}
+/* tighter links on narrow desktops so the single row of links doesn't wrap */
+@media (min-width: 981px) and (max-width: 1140px) {
+  .bar .nav-link {
+    padding: 5px 9px;
+    font-size: 16px;
+  }
+  .bar .nav {
+    gap: 6px;
   }
 }
