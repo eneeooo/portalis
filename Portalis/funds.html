@@ -7,68 +7,114 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap fund-page">
     <div id="bar"></div>
-    <h2>Class funds</h2>
-    <p class="hint">Collection periods are added manually by admins. Admins and officers can enter each student's total received; payments cover the oldest periods first and carry forward as advance credit. Payment records are visible only to admins and officers.</p>
+    <header class="page-head accent-green">
+      <div>
+        <h2>Class funds</h2>
+        <p class="hint page-sub">Collections, balances and expenses for each class fund.</p>
+      </div>
+      <label class="fund-picker" for="fundPick"><span>Fund</span><select id="fundPick"></select></label>
+    </header>
+    <details class="page-note">
+      <summary>How payments work</summary>
+      <p>Collection periods are added manually by admins. Admins and officers can enter each student's total received; payments cover the oldest periods first and carry forward as advance credit. Payment records are visible only to admins and officers.</p>
+    </details>
     <p id="msg" class="msg"></p>
-    <div id="fundAdminTabs" class="tabs" style="display:none">
-      <button id="fundToolsTab" class="tab on" type="button">Fund and collection period tools</button>
-      <button id="fundExpensesTab" class="tab" type="button">Fund expenses</button>
+
+    <div id="fundAdminTabs" class="seg" style="display:none" role="tablist" aria-label="Fund sections">
+      <button id="fundToolsTab" class="seg-btn on" type="button">Collections</button>
+      <button id="fundExpensesTab" class="seg-btn" type="button">Expenses</button>
     </div>
-    <div id="adminTools" class="card" style="display:none">
-      <h3>Fund and collection period tools</h3>
-      <div class="cols2">
-        <div><label for="fundTitle">New fund title</label><input id="fundTitle" maxlength="100" placeholder="e.g. Event fund"></div>
-        <div><label for="fundAmount">Amount per period (₱)</label><input id="fundAmount" type="number" min="0" step="0.01" value="10"></div>
-      </div>
-      <label for="firstPeriod">First collection period</label>
-      <input id="firstPeriod" maxlength="100" placeholder="e.g. One-time collection">
-      <button id="createFund">Create fund</button>
-      <button id="deleteFund" class="danger" type="button">Delete selected fund</button>
-      <p class="hint">Deleting a fund permanently removes its periods and payment records. The Class Fund cannot be deleted.</p>
-      <div class="cols2">
-        <div><label for="periodLabel">Period label</label><input id="periodLabel" maxlength="100" placeholder="Week 2 (Sept 7–13)"></div>
-        <div><label for="periodStart">Start date</label><input id="periodStart" type="date"></div>
-      </div>
-      <label for="periodEnd">End date</label>
-      <input id="periodEnd" type="date">
-      <button id="addPeriod">Add period</button>
-    </div>
-    <div id="fundViewCard" class="card">
-      <label for="fundPick">Choose a fund</label>
-      <select id="fundPick"></select>
+
+    <section id="fundViewCard" class="fund-board" aria-label="Fund collections">
       <div id="periods" class="week-list"></div>
-      <div id="summary"></div>
-    </div>
-    <div id="expensePanel" class="card">
-      <h3>Fund expenses</h3>
-      <div id="expenseForm" style="display:none">
-        <div class="cols2">
-          <div><label for="expenseDescription">Description</label><input id="expenseDescription" maxlength="200" placeholder="e.g. Event materials"></div>
-          <div><label for="expenseAmount">Unit amount (₱)</label><input id="expenseAmount" type="number" min="0.01" step="0.01" placeholder="0.00"></div>
+      <div id="summary" class="fund-summary"></div>
+    </section>
+
+    <div id="adminTools" class="fund-admin" style="display:none">
+      <details class="fund-drawer">
+        <summary><span class="fund-plus" aria-hidden="true">+</span> New fund</summary>
+        <div class="fund-drawer-body">
+          <div class="cols2">
+            <div><label for="fundTitle">New fund title</label><input id="fundTitle" maxlength="100" placeholder="e.g. Event fund"></div>
+            <div><label for="fundAmount">Amount per period (₱)</label><input id="fundAmount" type="number" min="0" step="0.01" value="10"></div>
+          </div>
+          <label for="firstPeriod">First collection period</label>
+          <input id="firstPeriod" maxlength="100" placeholder="e.g. One-time collection">
+          <button id="createFund">Create fund</button>
         </div>
-        <label for="expenseQuantity">Quantity (optional)</label>
-        <input id="expenseQuantity" type="number" min="1" step="1" value="1" placeholder="1">
-        <label for="expenseDate">Expense date</label>
-        <input id="expenseDate" type="date">
-        <button id="addExpense">Add expense</button>
-      </div>
-      <div id="expenses"></div>
+      </details>
+      <details class="fund-drawer">
+        <summary><span class="fund-plus" aria-hidden="true">+</span> Add collection period</summary>
+        <div class="fund-drawer-body">
+          <div class="cols2">
+            <div><label for="periodLabel">Period label</label><input id="periodLabel" maxlength="100" placeholder="Week 2 (Sept 7–13)"></div>
+            <div><label for="periodStart">Start date</label><input id="periodStart" type="date"></div>
+          </div>
+          <label for="periodEnd">End date</label>
+          <input id="periodEnd" type="date">
+          <button id="addPeriod">Add period</button>
+        </div>
+      </details>
+      <details class="fund-drawer fund-drawer-danger">
+        <summary>Fund settings</summary>
+        <div class="fund-drawer-body">
+          <button id="deleteFund" class="danger" type="button">Delete selected fund</button>
+          <p class="hint">Deleting a fund permanently removes its periods and payment records. The Class Fund cannot be deleted.</p>
+        </div>
+      </details>
     </div>
-    <div id="adminRoster" style="display:none">
-      <div class="fund-actions">
-        <button id="exportXlsx" class="ghost">Export whole fund as XLSX</button>
-        <button id="printFund" class="ghost">Print fund report</button>
+
+    <div id="adminRoster" class="fund-roster-card" style="display:none">
+      <div class="fund-roster-head">
+        <div>
+          <h3>Student payments</h3>
+          <p class="hint" id="rosterPeriod"></p>
+        </div>
+        <div class="fund-actions">
+          <button id="exportXlsx" class="ghost" title="The workbook follows the class roster layout with student name, number, weekly status, and advance payment.">Export XLSX</button>
+          <button id="printFund" class="ghost">Print report</button>
+        </div>
       </div>
-      <p class="hint">The workbook follows the class roster layout with student name, number, weekly status, and advance payment.</p>
+      <div class="fund-filters">
+        <input id="rosterSearch" type="search" placeholder="Search name or student number" aria-label="Search students" autocomplete="off">
+        <div id="rosterChips" class="fund-chips" role="group" aria-label="Filter by status for this period">
+          <button type="button" class="fund-chip on" data-filter="all">All <b>0</b></button>
+          <button type="button" class="fund-chip" data-filter="paid">Paid <b>0</b></button>
+          <button type="button" class="fund-chip" data-filter="partial">Partial <b>0</b></button>
+          <button type="button" class="fund-chip" data-filter="unpaid">Unpaid <b>0</b></button>
+        </div>
+      </div>
       <div class="scroll fund-roster-scroll">
-        <table class="fund-table">
+        <table class="fund-table fund-roster-table">
           <thead><tr><th>Student number</th><th>Full name</th><th>This period</th><th>Total paid</th><th>Advance credit</th><th>Outstanding</th><th>Status / edit</th></tr></thead>
           <tbody id="roster"></tbody>
         </table>
       </div>
+      <p id="rosterEmpty" class="hint" hidden>No students match this filter.</p>
     </div>
+
+    <section id="expensePanel" class="fund-board" aria-label="Fund expenses">
+      <div class="fund-section-head"><h3>Fund expenses</h3></div>
+      <div id="expenseForm" style="display:none">
+        <details class="fund-drawer">
+          <summary><span class="fund-plus" aria-hidden="true">+</span> Add expense</summary>
+          <div class="fund-drawer-body">
+            <div class="cols2">
+              <div><label for="expenseDescription">Description</label><input id="expenseDescription" maxlength="200" placeholder="e.g. Event materials"></div>
+              <div><label for="expenseAmount">Unit amount (₱)</label><input id="expenseAmount" type="number" min="0.01" step="0.01" placeholder="0.00"></div>
+            </div>
+            <label for="expenseQuantity">Quantity (optional)</label>
+            <input id="expenseQuantity" type="number" min="1" step="1" value="1" placeholder="1">
+            <label for="expenseDate">Expense date</label>
+            <input id="expenseDate" type="date">
+            <button id="addExpense">Add expense</button>
+          </div>
+        </details>
+      </div>
+      <div id="expenses"></div>
+    </section>
     <div id="fundPrint"></div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -108,7 +154,11 @@
       funds = data || [];
       const pick = $("fundPick"); pick.innerHTML = "";
       funds.forEach(f => { const o = el("option", "", f.title); o.value = f.id; pick.appendChild(o); });
-      if (!funds.length) { $("summary").textContent = "No funds have been set up yet."; $("roster").innerHTML = ""; return; }
+      if (!funds.length) {
+        showEmpty($("summary"), "🪙", "No funds yet", ctx.isAdmin ? "Open “+ New fund” below to create the first one." : "Your officers haven't set up a fund yet.");
+        $("roster").innerHTML = "";
+        return;
+      }
       selectedFund = funds.find(f => f.id === selectedFundId) || funds[0];
       selectedFundId = selectedFund.id;
       pick.value = selectedFund.id;
@@ -118,6 +168,14 @@
       selectedFund = funds.find(f => String(f.id) === $("fundPick").value);
       selectedFundId = selectedFund.id;
       await loadPeriods();
+    };
+    $("rosterSearch").oninput = applyRosterFilter;
+    $("rosterChips").onclick = event => {
+      const chip = event.target.closest(".fund-chip");
+      if (!chip) return;
+      rosterFilter = chip.dataset.filter;
+      document.querySelectorAll("#rosterChips .fund-chip").forEach(c => c.classList.toggle("on", c === chip));
+      applyRosterFilter();
     };
     async function loadPeriods() {
       if (!selectedFund) return;
@@ -133,12 +191,22 @@
         const unpaidPeriodIds = new Set((unpaidIds || []).map(row => String(row.period_id)));
         visiblePeriods = periods.filter(period => unpaidPeriodIds.has(String(period.id)));
       }
+      // choose the selected period first so its chip is highlighted on the very first draw
+      selectedPeriod = visiblePeriods.find(p => selectedPeriod && p.id === selectedPeriod.id) ||
+        (ctx.isAdmin ? visiblePeriods[visiblePeriods.length - 1] : visiblePeriods[0]) || null;
       const box = $("periods"); box.innerHTML = "";
+      const today = manilaToday();
       visiblePeriods.forEach(p => {
         const row = el("div", "fund-period-control");
-        const b = el("button", "ghost" + (selectedPeriod && p.id === selectedPeriod.id ? " on" : ""), p.label);
-        b.onclick = () => { selectedPeriod = p; loadPeriods(); };
-        row.appendChild(b);
+        const kind = p.starts_on > today ? "upcoming" : (p.ends_on && p.ends_on < today) ? "past" : "now";
+        const chip = el("button", "fund-period is-" + kind + (selectedPeriod && p.id === selectedPeriod.id ? " on" : ""));
+        chip.type = "button";
+        if (!ctx.isAdmin) chip.appendChild(el("i", "fund-dot due"));
+        chip.appendChild(el("span", "fund-period-name", p.label));
+        if (kind === "now") chip.appendChild(el("span", "fund-period-tag", "This week"));
+        else if (kind === "upcoming") chip.appendChild(el("span", "fund-period-tag", "Upcoming"));
+        chip.onclick = () => { selectedPeriod = p; loadPeriods(); };
+        row.appendChild(chip);
         if (ctx.isAdmin) {
           const remove = el("button", "danger small", "Remove");
           remove.type = "button";
@@ -149,16 +217,17 @@
         box.appendChild(row);
       });
       if (!ctx.isAdmin && !visiblePeriods.length) {
-        box.appendChild(el("p", "hint", periods.length
-          ? "All available weeks are paid."
-          : "No collection periods have been added yet."));
+        const none = el("div");
+        showEmpty(none, periods.length ? "🎉" : "🗓️", periods.length ? "All caught up" : "No collection periods yet",
+          periods.length ? "All available weeks are paid." : "Collection periods will show up here once they are added.");
+        box.appendChild(none.firstChild);
       }
       $("deleteFund").disabled = selectedFund.title.trim().toLowerCase() === "class fund";
       selectedPeriod = visiblePeriods.find(p => selectedPeriod && p.id === selectedPeriod.id) ||
         (ctx.isAdmin ? visiblePeriods[visiblePeriods.length - 1] : visiblePeriods[0]) || null;
       if (selectedPeriod && ctx.isAdmin) await loadRoster();
       else if (ctx.isAdmin) {
-        $("summary").textContent = "No collection periods yet.";
+        showEmpty($("summary"), "🗓️", "No collection periods yet", "Open “+ Add collection period” below to start collecting.");
         $("roster").innerHTML = "";
         await loadExpenses();
       } else await loadMyBalance();
@@ -174,7 +243,7 @@
       const balance = Array.isArray(myBalanceResult.data) ? myBalanceResult.data[0] : myBalanceResult.data;
       const fundTotal = Array.isArray(fundTotalResult.data) ? fundTotalResult.data[0] : fundTotalResult.data;
       if (!balance) {
-        $("summary").textContent = selectedFund.title + " has no collection periods yet.";
+        showEmpty($("summary"), "🗓️", selectedFund.title + " has no collection periods yet", "Check back once your officers add one.");
         return;
       }
       $("summary").innerHTML = "";
@@ -194,7 +263,12 @@
         balanceCard("Outstanding", balance.outstanding, "balance-outstanding"),
         balanceCard("Advance credit", balance.advance_credit, "balance-advance")
       );
-      $("summary").appendChild(totals);
+      const owes = safeNumber(balance.outstanding) > 0.004;
+      const stamp = el("div", "fund-stamp " + (owes ? "due" : "paid"), owes ? "DUE " + peso(balance.outstanding) : "PAID UP");
+      stamp.setAttribute("role", "status");
+      const mine = el("div", "fund-mine");
+      mine.append(totals, stamp);
+      $("summary").appendChild(mine);
       await loadExpenses(fundTotal ? fundTotal.total_collected : 0);
     }
     function safeNumber(value, fallback = 0) {
@@ -218,10 +292,66 @@
       return String(a.student_number || "")
         .localeCompare(String(b.student_number || ""), undefined, { numeric: true, sensitivity: "base" });
     }
+    function peso(value) {
+      return "₱" + safeNumber(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function manilaToday() {
+      return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    }
+    function initialsOf(fullName) {
+      const words = String(fullName || "").replace(/,/g, " ").trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return "?";
+      return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
+    }
+    function avatarFor(fullName, key) {
+      const avatar = el("span", "fund-avatar", initialsOf(fullName));
+      let hash = 0;
+      String(key || fullName || "").split("").forEach(ch => { hash = (hash * 31 + ch.charCodeAt(0)) % 360; });
+      avatar.style.background = "hsl(" + hash + " 70% 82%)";
+      avatar.setAttribute("aria-hidden", "true");
+      return avatar;
+    }
+    function showEmpty(box, icon, title, text) {
+      box.innerHTML = "";
+      const wrap = el("div", "fund-empty");
+      wrap.append(el("span", "fund-empty-icon", icon), el("strong", "", title));
+      if (text) wrap.appendChild(el("span", "hint", text));
+      box.appendChild(wrap);
+    }
     function balanceCard(label, amount, className) {
-      const card = el("div", "fund-balance-card " + className);
-      card.append(el("span", "fund-balance-label", label), el("strong", "fund-balance-amount", "₱" + safeNumber(amount).toFixed(2)));
+      const tone = /expense/i.test(label) ? "pink" : /collected/i.test(label) ? "green" : /advance/i.test(label) ? "yellow" : "blue";
+      const icon = { pink: "🧾", green: "💰", yellow: "⭐", blue: "📌" }[tone];
+      const card = el("div", "fund-balance-card note-" + tone + " " + className);
+      card.append(el("span", "fund-note-icon", icon), el("span", "fund-balance-label", label), el("strong", "fund-balance-amount", peso(amount)));
       return card;
+    }
+    function progressBar(label, done, total) {
+      const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(done / total * 100))) : 0;
+      const box = el("div", "fund-progress");
+      const head = el("div", "fund-progress-head");
+      head.append(el("span", "", label), el("strong", "", peso(done) + " of " + peso(total) + " · " + pct + "%"));
+      const track = el("div", "fund-progress-track");
+      track.setAttribute("role", "progressbar");
+      track.setAttribute("aria-valuemin", "0");
+      track.setAttribute("aria-valuemax", "100");
+      track.setAttribute("aria-valuenow", String(pct));
+      track.setAttribute("aria-label", label);
+      const fill = el("i", "fund-progress-fill" + (pct >= 100 ? " full" : ""));
+      fill.style.width = pct + "%";
+      track.appendChild(fill);
+      box.append(head, track);
+      return box;
+    }
+    let rosterFilter = "all";
+    function applyRosterFilter() {
+      const query = $("rosterSearch").value.trim().toLowerCase();
+      let shown = 0;
+      document.querySelectorAll("#roster tr").forEach(tr => {
+        const match = (rosterFilter === "all" || tr.dataset.status === rosterFilter) && (!query || (tr.dataset.name || "").includes(query));
+        tr.classList.toggle("is-hidden", !match);
+        if (match) shown++;
+      });
+      $("rosterEmpty").hidden = shown > 0 || !document.querySelector("#roster tr");
     }
     async function loadExpenses(totalCollected) {
       if (!selectedFund) return 0;
@@ -244,38 +374,38 @@
         box.appendChild(cards);
       }
       if (!expenses.length) {
-        box.appendChild(el("p", "hint", "No expenses recorded yet."));
+        const none = el("div");
+        showEmpty(none, "🧾", "No expenses yet", ctx.isAdmin ? "Use “+ Add expense” above to record one." : "Nothing has been spent from this fund yet.");
+        box.appendChild(none.firstChild);
         return total;
       }
-      const table = document.createElement("table");
-      table.className = "fund-table fund-expense-table";
-      table.innerHTML = "<thead><tr><th>Date</th><th>Description</th><th>Quantity</th><th>Unit amount</th><th>Total</th>" + (ctx.isAdmin ? "<th>Action</th>" : "") + "</tr></thead>";
-      const body = document.createElement("tbody");
+      const list = el("div", "fund-receipts");
       expenses.forEach(expense => {
-        const tr = document.createElement("tr");
         const quantity = Math.max(1, Math.floor(safeNumber(expense.quantity, 1)));
-        tr.append(
-          el("td", "", expense.expense_date || ""),
-          el("td", "", expense.description),
-          el("td", "", String(quantity)),
-          el("td", "", "₱" + safeNumber(expense.amount).toFixed(2)),
-          el("td", "", "₱" + expenseTotal(expense).toFixed(2))
-        );
-        if (ctx.isAdmin) {
-          const action = el("td");
-          const remove = el("button", "danger small", "Remove");
-          remove.onclick = () => deleteExpense(expense);
-          action.appendChild(remove);
-          tr.appendChild(action);
+        const card = el("article", "fund-receipt");
+        const when = expense.expense_date ? new Date(expense.expense_date + "T12:00:00") : null;
+        const date = el("div", "fund-receipt-date");
+        if (when && !isNaN(when)) {
+          date.append(el("span", "fund-receipt-month", when.toLocaleDateString("en-US", { month: "short" })), el("strong", "fund-receipt-day", String(when.getDate())), el("span", "fund-receipt-year", String(when.getFullYear())));
+        } else {
+          date.appendChild(el("span", "fund-receipt-month", "—"));
         }
-        body.appendChild(tr);
+        const info = el("div", "fund-receipt-info");
+        info.append(el("strong", "", expense.description), el("span", "hint", quantity + " × " + peso(expense.amount)));
+        card.append(date, info, el("div", "fund-receipt-total", peso(expenseTotal(expense))));
+        if (ctx.isAdmin) {
+          const remove = el("button", "danger small", "Remove");
+          remove.type = "button";
+          remove.onclick = () => deleteExpense(expense);
+          card.appendChild(remove);
+        }
+        list.appendChild(card);
       });
-      table.appendChild(body);
-      const tableScroll = document.createElement("div");
-      tableScroll.className = "scroll";
-      tableScroll.appendChild(table);
-      box.appendChild(tableScroll);
+      const sum = el("div", "fund-receipt-sum");
+      sum.append(el("span", "", expenses.length + " expense" + (expenses.length === 1 ? "" : "s")), el("strong", "", "Total " + peso(total)));
+      box.append(list, sum);
       return total;
+
     }
     async function loadRoster() {
       if (!ctx.isAdmin || !selectedPeriod) return;
@@ -299,11 +429,14 @@
         sum + safeNumber(expense.amount) * safeNumber(expense.quantity, 1), 0);
       const totalFunds = grossTotalFunds - totalExpenses;
       const debtors = debtRows.filter(x => Number(x.total_debt) > 0).length;
+      const paidTowardDues = debtRows.reduce((sum, user) => sum + Math.max(0, safeNumber(user.total_paid) - safeNumber(user.advance_credit)), 0);
+      const totalOwed = debtRows.reduce((sum, user) => sum + safeNumber(user.total_debt), 0);
       $("summary").innerHTML = "";
       $("summary").appendChild(el("h3", "", selectedFund.title + " payment summary"));
       const balanceCards = el("div", "fund-balance-cards");
-      balanceCards.append(balanceCard("Total funds collected", totalFunds, "balance-paid"));
+      balanceCards.append(balanceCard("Total funds collected", totalFunds, "balance-paid"), balanceCard("Still owed by class", totalOwed, "balance-outstanding"));
       $("summary").appendChild(balanceCards);
+      if (paidTowardDues + totalOwed > 0) $("summary").appendChild(progressBar("Dues collected", paidTowardDues, paidTowardDues + totalOwed));
       $("summary").appendChild(el("h3", "", "Your balance"));
       const myBalanceCards = el("div", "fund-balance-cards");
       myBalanceCards.append(
@@ -314,29 +447,39 @@
       $("summary").append(el("p", "hint", debtors + " student(s) still have an unpaid balance across " + selectedFund.title + "."));
       await loadExpenses(grossTotalFunds);
       const body = $("roster"); body.innerHTML = "";
+      const counts = { all: 0, paid: 0, partial: 0, unpaid: 0 };
       [...roster].sort(compareBySurname).forEach(student => {
         const debt = debtByUser[student.user_id];
+        const isPartial = Number(student.amount_paid) > 0 && !student.is_paid;
+        const state = student.is_paid ? "paid" : isPartial ? "partial" : "unpaid";
+        counts.all++; counts[state]++;
         const tr = document.createElement("tr");
+        tr.dataset.status = state;
+        tr.dataset.name = ((student.full_name || "") + " " + (student.student_number || "")).toLowerCase();
+        const nameCell = el("td", "fund-student-name");
+        nameCell.append(avatarFor(student.full_name, student.user_id), el("span", "fund-student-text", student.full_name || "Student"));
         tr.append(
           el("td", "fund-student-number", student.student_number || "Not assigned"),
-          el("td", "fund-student-name", student.full_name || "Student"),
-          el("td", "", "Due ₱" + Number(student.amount_due).toFixed(2) + " · paid ₱" + Number(student.amount_paid).toFixed(2)),
-          el("td", "", "₱" + safeNumber(debt ? debt.total_paid : 0).toFixed(2)),
-          el("td", "", "₱" + safeNumber(debt ? debt.advance_credit : 0).toFixed(2)),
-          el("td", "", "₱" + safeNumber(debt ? debt.total_debt : 0).toFixed(2))
+          nameCell,
+          el("td", "num", "Due " + peso(student.amount_due) + " · paid " + peso(student.amount_paid)),
+          el("td", "num", peso(debt ? debt.total_paid : 0)),
+          el("td", "num", peso(debt ? debt.advance_credit : 0)),
+          el("td", "num", peso(debt ? debt.total_debt : 0))
         );
-        const status = el("td");
-        const isPartial = Number(student.amount_paid) > 0 && !student.is_paid;
-        const statusLabel = student.is_paid ? "✓" : isPartial ? "Partial" : "✗";
-        const statusBadge = el("span", "fund-status " + (student.is_paid ? "paid" : isPartial ? "partial" : "unpaid"), statusLabel);
-        statusBadge.setAttribute("aria-label", student.is_paid ? "Paid" : isPartial ? "Partial payment" : "Unpaid");
-        statusBadge.title = student.is_paid ? "Paid" : isPartial ? "Partial payment" : "Unpaid";
+        const status = el("td", "fund-status-cell");
+        const statusText = state === "paid" ? "Paid" : state === "partial" ? "Partial payment" : "Unpaid";
+        const statusBadge = el("span", "fund-status " + state, state === "paid" ? "✓ Paid" : state === "partial" ? "Partial" : "✗ Unpaid");
+        statusBadge.setAttribute("aria-label", statusText);
+        statusBadge.title = statusText;
         status.appendChild(statusBadge);
         const button = el("button", "ghost small", "Edit total");
         button.onclick = () => editPayment(student, debt);
         status.appendChild(button);
         tr.appendChild(status); body.appendChild(tr);
       });
+      $("rosterPeriod").textContent = selectedPeriod ? "Showing: " + selectedPeriod.label : "";
+      document.querySelectorAll("#rosterChips .fund-chip").forEach(chip => { chip.querySelector("b").textContent = String(counts[chip.dataset.filter] || 0); });
+      applyRosterFilter();
     }
     async function editPayment(student, debt) {
       const current = safeNumber(debt ? debt.total_paid : 0);

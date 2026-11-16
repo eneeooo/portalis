@@ -7,35 +7,56 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap mem-page">
     <div id="bar"></div>
-    <h2>Memories</h2>
-    <p class="hint">Share photos of our class moments. Every photo and every comment is checked by an admin or officer before everyone can see it.</p>
+    <header class="page-head accent-orange">
+      <div>
+        <h2>Memories</h2>
+        <p class="hint page-sub" id="memSummary">Photos of our class moments.</p>
+      </div>
+      <button id="memCompose" type="button" class="compose-btn" aria-expanded="false" aria-controls="memComposer">📸 Post a memory</button>
+    </header>
+    <details class="page-note">
+      <summary>How approval works</summary>
+      <p>Every photo and every comment is checked by an admin or officer before everyone can see it.</p>
+    </details>
+    <p id="msg" class="msg" role="status"></p>
 
-    <section class="card memory-form" aria-label="Post a memory">
+    <section id="memComposer" class="card memory-form mem-composer" hidden aria-label="Post a memory">
       <h3>Post a memory</h3>
       <label for="mTitle">Title</label>
       <input id="mTitle" maxlength="80" placeholder="e.g. Intramurals day">
       <label for="mPhoto" class="memory-photo-label">Photos</label>
-      <div class="file-row">
+      <div class="file-row mem-drop" id="memDrop">
         <input id="mPhoto" type="file" accept="image/*" multiple class="file-input">
         <label for="mPhoto" class="file-btn">Choose photos</label>
         <span id="mFile" class="file-name">No photos chosen (up to 10)</span>
+        <span class="mem-drop-hint">or drop them here</span>
       </div>
       <div id="mPreviews" class="memory-previews" hidden></div>
       <p class="hint memory-approval">An admin or officer checks every photo before it is shown to the class.</p>
-      <button id="mPost" type="button">Post memory</button>
-      <p id="msg" class="msg" role="status"></p>
+      <div class="mem-composer-actions">
+        <button id="mPost" type="button">Post memory</button>
+        <button id="memCancel" type="button" class="ghost">Cancel</button>
+      </div>
     </section>
 
-    <section id="queueBox" style="display:none">
+    <section id="queueBox" class="mem-queue" style="display:none">
       <h3 id="queueTitle">Waiting for approval</h3>
       <div id="queue" class="memory-grid"></div>
     </section>
 
-    <h3 id="feedTitle">Class memories</h3>
-    <div id="feed" class="memory-grid"></div>
-    <p id="empty" class="empty" style="display:none">No memories yet. Be the first to post one!</p>
+    <div id="memToolbar" class="mem-toolbar" hidden>
+      <input id="memSearch" type="search" placeholder="Search by title or name" aria-label="Search memories" autocomplete="off">
+      <div id="memChips" class="mem-chips" role="group" aria-label="Show">
+        <button type="button" class="mem-chip on" data-scope="all">All</button>
+        <button type="button" class="mem-chip" data-scope="mine">My posts</button>
+      </div>
+      <span id="memCount" class="mem-count" role="status"></span>
+    </div>
+    <div id="feed" class="mem-feed"></div>
+    <p id="memNoMatch" class="hint" hidden>No memories match your search.</p>
+    <div id="empty" class="mem-empty" style="display:none"><span class="mem-empty-icon" aria-hidden="true">📷</span><strong>No memories yet</strong><span class="hint">Be the first to post one!</span></div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -45,6 +66,17 @@
     const $ = id => document.getElementById(id);
     const BUCKET = "memories";
     let ctx, memories = [], urls = {}, chosen = [];
+    let memScope = "all";
+    function setComposer(open) {
+      $("memComposer").hidden = !open;
+      $("memCompose").setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) $("mTitle").focus();
+    }
+    function photoCount(m) { return 1 + (Array.isArray(m.extra_paths) ? m.extra_paths.length : 0); }
+    function monthTitle(iso) {
+      const when = new Date(iso);
+      return isNaN(when) ? "Earlier" : when.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    }
     const MAX_PHOTOS = 10;
 
     function message(text, bad) { $("msg").className = "msg" + (bad ? " err" : " ok"); $("msg").textContent = text; }
@@ -407,14 +439,42 @@
 
     function render() {
       const pending = memories.filter(m => m.status === "pending");
-      const approved = memories.filter(m => m.status === "approved");
+      const approved = memories.filter(m => m.status === "approved").sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       const queueBox = $("queueBox");
       queueBox.style.display = pending.length ? "block" : "none";
       $("queueTitle").textContent = ctx.isAdmin ? "Waiting for approval (" + pending.length + ")" : "Your posts waiting for approval";
       $("queue").replaceChildren(...pending.map(card));
-      $("feed").replaceChildren(...approved.map(card));
+
+      const query = $("memSearch").value.trim().toLowerCase();
+      const shown = approved.filter(m =>
+        (memScope === "all" || m.user_id === ctx.user.id) &&
+        (!query || (String(m.title || "") + " " + String(m.author_name || "")).toLowerCase().includes(query)));
+      const groups = [];
+      const byMonth = {};
+      shown.forEach(m => {
+        const title = monthTitle(m.created_at);
+        if (!byMonth[title]) {
+          const section = el("section", "mem-month");
+          const head = el("h3", "mem-month-title", title);
+          const grid = el("div", "memory-grid");
+          section.append(head, grid);
+          byMonth[title] = { section, grid, head, count: 0 };
+          groups.push(byMonth[title]);
+        }
+        byMonth[title].grid.appendChild(card(m));
+        byMonth[title].count++;
+      });
+      groups.forEach(g => g.head.appendChild(el("span", "mem-month-count", g.count + (g.count === 1 ? " memory" : " memories"))));
+      $("feed").replaceChildren(...groups.map(g => g.section));
+
+      const photos = approved.reduce((sum, m) => sum + photoCount(m), 0);
+      $("memSummary").textContent = approved.length
+        ? approved.length + (approved.length === 1 ? " memory" : " memories") + " · " + photos + (photos === 1 ? " photo" : " photos") + " of our class moments"
+        : "Photos of our class moments.";
+      $("memToolbar").hidden = !approved.length;
+      $("memCount").textContent = approved.length && shown.length !== approved.length ? "Showing " + shown.length + " of " + approved.length : "";
+      $("memNoMatch").hidden = !approved.length || shown.length > 0;
       $("empty").style.display = approved.length ? "none" : "block";
-      $("feedTitle").style.display = approved.length ? "block" : "none";
     }
 
     async function removeMemory(m, isReject) {
@@ -513,6 +573,7 @@
         chosen = [];
         renderPreviews();
         message(ctx.isAdmin ? "Memory posted." : "Thanks! Your memory will appear after an admin or officer approves it.", false);
+        setComposer(false);
         await load();
       } catch (error) {
         if (uploaded.length) await sb.storage.from(BUCKET).remove(uploaded);
@@ -521,6 +582,24 @@
         button.disabled = false;
       }
     };
+
+    $("memCompose").onclick = () => setComposer($("memComposer").hidden);
+    $("memCancel").onclick = () => setComposer(false);
+    $("memSearch").oninput = render;
+    $("memChips").onclick = event => {
+      const chip = event.target.closest(".mem-chip");
+      if (!chip) return;
+      memScope = chip.dataset.scope;
+      document.querySelectorAll("#memChips .mem-chip").forEach(c => c.classList.toggle("on", c === chip));
+      render();
+    };
+    ["dragenter", "dragover"].forEach(type => $("memDrop").addEventListener(type, event => { event.preventDefault(); $("memDrop").classList.add("dragging"); }));
+    ["dragleave", "drop"].forEach(type => $("memDrop").addEventListener(type, event => { event.preventDefault(); $("memDrop").classList.remove("dragging"); }));
+    $("memDrop").addEventListener("drop", event => {
+      const dropped = event.dataTransfer && event.dataTransfer.files;
+      if (!dropped || !dropped.length) return;
+      try { $("mPhoto").files = dropped; $("mPhoto").onchange(); } catch (_) { message("Drag and drop is not supported here. Use Choose photos instead.", true); }
+    });
 
     /* ---------- full-size photo viewer ---------- */
     function openPhoto(m, startIndex) {

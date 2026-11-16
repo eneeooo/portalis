@@ -7,9 +7,9 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap att-page">
     <div id="bar"></div>
-    <div class="att-heading">
+    <div class="att-heading page-head accent-blue">
       <div>
         <h2>Attendance</h2>
         <p class="hint" id="intro">BSIT-12 class attendance. Everyone can view the sheet; only admins and officers can mark it.</p>
@@ -34,8 +34,8 @@
       <div class="att-pager" id="pager">
         <button id="prevDate" type="button" class="att-nav" aria-label="Previous date"><span aria-hidden="true">&#8249;</span><span class="att-nav-label"> Previous</span></button>
         <div class="att-pager-mid">
-          <label for="datePick" class="att-pager-label">Date</label>
-          <select id="datePick" aria-label="Choose a date"></select>
+          <div id="dateStrip" class="att-strip" role="group" aria-label="Class dates"></div>
+          <select id="datePick" aria-label="Choose a date" hidden></select>
           <span id="dateCount" class="att-pager-count"></span>
         </div>
         <button id="nextDate" type="button" class="att-nav" aria-label="Next date"><span class="att-nav-label">Next </span><span aria-hidden="true">&#8250;</span></button>
@@ -48,6 +48,16 @@
           <li><span class="att-key st-late">L</span> Late</li>
           <li><span class="att-key st-excused">E</span> Excused</li>
         </ul>
+      </div>
+      <div class="att-filterbar" id="filterBar" style="display:none">
+        <input id="attSearch" type="search" placeholder="Search student" aria-label="Search students" autocomplete="off">
+        <div class="att-chips" id="attChips" role="group" aria-label="Filter by mark">
+          <button type="button" class="att-chip on" data-filter="all">All</button>
+          <button type="button" class="att-chip" data-filter="absent">Absent</button>
+          <button type="button" class="att-chip" data-filter="late">Late</button>
+          <button type="button" class="att-chip" data-filter="none">Not marked</button>
+        </div>
+        <span id="filterCount" role="status"></span>
       </div>
       <div class="att-scroll"><table class="att-table" id="sheet"></table></div>
       <p id="empty" class="empty" style="display:none"></p>
@@ -89,6 +99,54 @@
     function weekday(iso) { return dateObj(iso).toLocaleDateString("en-US", { weekday: "short" }); }
     function monthLabel(key) { return dateObj(key + "-01").toLocaleDateString("en-US", { month: "long", year: "numeric" }); }
     function fullName(st) { return st.display_name; }
+    function initialsOf(name) {
+      const words = String(name || "").replace(/,/g, " ").trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return "?";
+      return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
+    }
+    function avatarEl(student) {
+      const a = el("span", "att-avatar", initialsOf(fullName(student)));
+      let hash = 0;
+      String(student.user_id || fullName(student)).split("").forEach(ch => { hash = (hash * 31 + ch.charCodeAt(0)) % 360; });
+      a.style.background = "hsl(" + hash + " 70% 82%)";
+      a.setAttribute("aria-hidden", "true");
+      return a;
+    }
+    function rateOf(c) {
+      const denom = c.present + c.late + c.absent;
+      return denom ? Math.round((c.present + c.late) / denom * 100) : null;
+    }
+    function fillRate(td, c) {
+      const pct = rateOf(c);
+      td.className = "att-total att-rate " + (pct === null ? "" : pct >= 90 ? "good" : pct >= 75 ? "ok" : "low");
+      td.replaceChildren();
+      const wrap = el("div", "att-rate-wrap");
+      const bar = el("span", "att-rate-bar");
+      const fill = document.createElement("i");
+      fill.style.width = (pct === null ? 0 : pct) + "%";
+      bar.appendChild(fill);
+      wrap.append(bar, el("span", "att-rate-text", pct === null ? "\u2014" : pct + "%"));
+      td.title = pct === null ? "No attendance recorded yet" : pct + "% of marked dates attended (excused not counted)";
+      td.appendChild(wrap);
+    }
+    function markedOn(session) {
+      let n = 0;
+      students.forEach(st => { if (marks.get(keyOf(session.id, st.user_id))) n++; });
+      return n;
+    }
+    let attFilter = "all";
+    function applyFilter() {
+      const q = $("attSearch").value.trim().toLowerCase();
+      let shown = 0, total = 0;
+      document.querySelectorAll("#sheet tbody tr").forEach(tr => {
+        total++;
+        const ok = (attFilter === "all" || tr.dataset.status === attFilter) && (!q || (tr.dataset.name || "").includes(q));
+        tr.classList.toggle("att-hide", !ok);
+        if (ok) shown++;
+      });
+      $("filterCount").textContent = total && shown !== total ? "Showing " + shown + " of " + total : "";
+      $("filterBar").style.display = total ? "" : "none";
+    }
     function friendly(error) {
       const text = (error && error.message) || String(error);
       if (/function .*get_attendance_roster|attendance_(sessions|records)|schema cache|does not exist/i.test(text)) {
@@ -192,6 +250,29 @@
       $("dateCount").textContent = sessions.length ? (i + 1) + " of " + sessions.length : "";
       $("pager").style.display = sessions.length ? "" : "none";
 
+      const strip = $("dateStrip");
+      strip.replaceChildren();
+      const todayIso = manilaToday();
+      sessions.forEach(s => {
+        const isCurrent = s.id === currentId;
+        const chip = el("button", "att-day" + (isCurrent ? " on" : "") + (s.session_date === todayIso ? " today" : ""));
+        chip.type = "button";
+        chip.append(
+          el("span", "att-day-wd", weekday(s.session_date)),
+          el("span", "att-day-num", String(dateObj(s.session_date).getDate())),
+          el("span", "att-day-mon", dateObj(s.session_date).toLocaleDateString("en-US", { month: "short" }))
+        );
+        const marked = markedOn(s);
+        chip.appendChild(el("i", "att-day-dot" + (students.length && marked >= students.length ? " dot-full" : marked ? " dot-part" : "")));
+        chip.title = longDate(s.session_date) + (s.label ? " \u00b7 " + s.label : "") + " \u2014 " + marked + " of " + students.length + " marked";
+        chip.setAttribute("aria-label", chip.title);
+        chip.setAttribute("aria-pressed", isCurrent ? "true" : "false");
+        chip.onclick = () => { currentId = s.id; render(); };
+        strip.appendChild(chip);
+      });
+      const active = strip.querySelector(".att-day.on");
+      if (active) strip.scrollLeft = Math.max(0, active.offsetLeft - strip.clientWidth / 2 + active.offsetWidth / 2);
+
       const tools = $("dateTools");
       tools.replaceChildren();
       const s = currentSession();
@@ -220,6 +301,7 @@
       renderStats(session);
       const table = $("sheet");
       table.replaceChildren();
+      $("filterBar").style.display = "none";
       $("empty").style.display = session ? "none" : "block";
       $("empty").textContent = canEdit
         ? "No class dates yet. Add the first date above to start recording attendance."
@@ -238,24 +320,32 @@
       [["P", "Present (all dates)"], ["L", "Late (all dates)"], ["A", "Absent (all dates)"], ["E", "Excused (all dates)"]].forEach(([short, full]) => {
         const t = el("th", "att-total", short); t.title = full; hr.appendChild(t);
       });
+      const rateTh = el("th", "att-total att-rate", "%");
+      rateTh.title = "Attendance rate: present + late out of present + late + absent (excused not counted)";
+      hr.appendChild(rateTh);
       thead.appendChild(hr);
       table.appendChild(thead);
 
       const tbody = document.createElement("tbody");
       students.forEach((student, i) => {
         const tr = el("tr", student.user_id === ctx.user.id ? "att-me" : "");
+        tr.dataset.name = fullName(student).toLowerCase();
+        tr.dataset.status = marks.get(keyOf(session.id, student.user_id)) || "none";
         const nameCell = el("th", "att-name-col");
         nameCell.scope = "row";
         const who = el("button", "att-who");
         who.type = "button";
         who.title = "View profile";
-        who.append(el("span", "att-no", (i + 1) + "."), el("span", "att-student", fullName(student)));
+        who.append(el("span", "att-no", (i + 1) + "."), avatarEl(student), el("span", "att-student", fullName(student)));
         who.onclick = () => openMemberProfile(student.user_id, student);
         nameCell.appendChild(who);
         tr.appendChild(nameCell);
         tr.appendChild(markCell(session, student));
         const c = countsFor(student.user_id, sessions);
         [c.present, c.late, c.absent, c.excused].forEach((n, idx) => tr.appendChild(el("td", "att-total" + (idx === 2 && n ? " att-total-bad" : ""), String(n))));
+        const rateTd = document.createElement("td");
+        fillRate(rateTd, c);
+        tr.appendChild(rateTd);
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
@@ -265,10 +355,11 @@
       fr.appendChild(el("th", "att-name-col", "Total present (incl. late)"));
       fr.appendChild(el("td", "att-foot-count", String(presentOn(session))));
       const blank = el("td", "att-total", "");
-      blank.colSpan = 4;
+      blank.colSpan = 5;
       fr.appendChild(blank);
       tfoot.appendChild(fr);
       table.appendChild(tfoot);
+      applyFilter();
     }
 
     function paintCell(node, status) {
@@ -303,6 +394,8 @@
       const previous = marks.get(key) || "";
       if (next) marks.set(key, next); else marks.delete(key);
       paintCell(button, next);
+      const rowEl = button.closest("tr");
+      if (rowEl) rowEl.dataset.status = next || "none";
       button.title = fullName(student) + ", " + shortDate(session.session_date) + ": " + (NAME[next] || "not recorded");
       refreshTotalsOnly();
       pendingWrites++;
@@ -313,6 +406,7 @@
         if (result.error) {
           if (previous) marks.set(key, previous); else marks.delete(key);
           paintCell(button, previous);
+          if (rowEl) rowEl.dataset.status = previous || "none";
           refreshTotalsOnly();
           message("Could not save: " + friendly(result.error), true);
         }
@@ -328,6 +422,8 @@
         [c.present, c.late, c.absent, c.excused].forEach((n, idx) => {
           if (cells[idx]) { cells[idx].textContent = String(n); cells[idx].classList.toggle("att-total-bad", idx === 2 && n > 0); }
         });
+        const rateCell = tr.querySelector("td.att-rate");
+        if (rateCell) fillRate(rateCell, c);
       });
       const session = currentSession();
       const foot = document.querySelector("#sheet tfoot .att-foot-count");
@@ -344,18 +440,30 @@
       const recorded = attended + me.absent + me.excused;
       let classMarked = 0, classAttended = 0;
       students.forEach(st => { const c = countsFor(st.user_id, sessions); classAttended += c.present + c.late; classMarked += c.present + c.late + c.absent; });
-      const card = (label, value, note) => {
-        const c = el("div", "att-stat");
-        c.append(el("span", "att-stat-label", label), el("strong", "att-stat-value", value));
-        if (note) c.appendChild(el("span", "att-stat-note", note));
+      const card = (label, value, note, tone, icon, pct) => {
+        const c = el("div", "att-stat tone-" + tone + (pct !== undefined ? " has-ring" : ""));
+        if (pct !== undefined) {
+          const text = el("div", "att-stat-text");
+          text.appendChild(el("span", "att-stat-label", label));
+          if (note) text.appendChild(el("span", "att-stat-note", note));
+          const ring = el("div", "att-ring");
+          ring.style.setProperty("--pct", String(pct));
+          ring.setAttribute("role", "img");
+          ring.setAttribute("aria-label", label + ": " + value);
+          ring.appendChild(el("span", "", value));
+          c.append(text, ring);
+        } else {
+          c.append(el("span", "att-stat-icon", icon), el("span", "att-stat-label", label), el("strong", "att-stat-value", value));
+          if (note) c.appendChild(el("span", "att-stat-note", note));
+        }
         box.appendChild(c);
       };
-      card("Class dates", String(sessions.length), "recorded so far");
-      if (session) card("Present on " + shortDate(session.session_date), presentOn(session) + " / " + students.length, "present or late");
-      card("Class attendance rate", classMarked ? Math.round(classAttended / classMarked * 100) + "%" : "\u2014", "all dates, excused not counted");
+      card("Class dates", String(sessions.length), "recorded so far", "blue", "\ud83d\udcc5");
+      if (session) card("Present on " + shortDate(session.session_date), presentOn(session) + " / " + students.length, "present or late", "green", "\u2705");
+      card("Class attendance rate", classMarked ? Math.round(classAttended / classMarked * 100) + "%" : "\u2014", "all dates, excused not counted", "yellow", "", classMarked ? Math.round(classAttended / classMarked * 100) : 0);
       if (students.some(s => s.user_id === ctx.user.id)) {
-        card("Your attendance", recorded ? attended + " / " + recorded : "\u2014", recorded ? "present or late, all dates" : "nothing recorded yet");
-        card("Your absences", String(me.absent), me.excused ? me.excused + " excused" : "all dates");
+        card("Your attendance", recorded ? attended + " / " + recorded : "\u2014", recorded ? "present or late, all dates" : "nothing recorded yet", "pink", "\ud83d\ude4b");
+        card("Your absences", String(me.absent), me.excused ? me.excused + " excused" : "all dates", "orange", "\u26a0\ufe0f");
       }
     }
 
@@ -398,6 +506,14 @@
       await loadAll();
     };
 
+    $("attSearch").oninput = applyFilter;
+    $("attChips").onclick = event => {
+      const chip = event.target.closest(".att-chip");
+      if (!chip) return;
+      attFilter = chip.dataset.filter;
+      document.querySelectorAll("#attChips .att-chip").forEach(c => c.classList.toggle("on", c === chip));
+      applyFilter();
+    };
     $("prevDate").onclick = () => goTo(-1);
     $("nextDate").onclick = () => goTo(1);
     $("datePick").onchange = () => { currentId = Number($("datePick").value); render(); };

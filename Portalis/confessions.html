@@ -7,34 +7,54 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap conf-page">
     <div id="bar"></div>
-    <h2>Anonymous confessions</h2>
-    <p class="hint">Posts are anonymous to All. Please keep posts respectful.</p>
-    <div class="card">
+    <header class="page-head accent-purple">
+      <div>
+        <h2>Anonymous confessions</h2>
+        <p class="hint page-sub">Posts are anonymous to All. Please keep posts respectful.</p>
+      </div>
+      <button id="composeToggle" type="button" class="compose-btn" aria-expanded="false" aria-controls="composer">✍️ Write a confession</button>
+    </header>
+    <p id="msg" class="msg" role="status"></p>
+
+    <section id="composer" class="conf-composer" hidden aria-label="Write a confession">
       <label for="content">Your confession</label>
       <textarea id="content" maxlength="1500" placeholder="Share something with the class..."></textarea>
-      <label for="feeling">How are you feeling?</label>
-      <select id="feeling">
-        <option value="in-love">In love</option>
-        <option value="happy">Happy</option>
-        <option value="sad">Sad</option>
-        <option value="anxious">Anxious</option>
-        <option value="grateful">Grateful</option>
-        <option value="hopeful">Hopeful</option>
-        <option value="other" selected>Other</option>
-      </select>
-      <button id="post">Post anonymously</button>
-      <p id="msg" class="msg"></p>
-    </div>
+      <div class="conf-count"><span id="contentCount">0</span> / 1500</div>
+      <span class="conf-label" id="feelingText">How are you feeling?</span>
+      <input type="hidden" id="feeling" value="other">
+      <div class="conf-feelings" role="radiogroup" aria-labelledby="feelingText">
+        <button type="button" role="radio" class="conf-feeling feeling-in-love" data-feeling="in-love" aria-checked="false">💕 In love</button>
+        <button type="button" role="radio" class="conf-feeling feeling-happy" data-feeling="happy" aria-checked="false">😊 Happy</button>
+        <button type="button" role="radio" class="conf-feeling feeling-sad" data-feeling="sad" aria-checked="false">😢 Sad</button>
+        <button type="button" role="radio" class="conf-feeling feeling-anxious" data-feeling="anxious" aria-checked="false">😰 Anxious</button>
+        <button type="button" role="radio" class="conf-feeling feeling-grateful" data-feeling="grateful" aria-checked="false">🙏 Grateful</button>
+        <button type="button" role="radio" class="conf-feeling feeling-hopeful" data-feeling="hopeful" aria-checked="false">🌱 Hopeful</button>
+        <button type="button" role="radio" class="conf-feeling feeling-other on" data-feeling="other" aria-checked="true">💭 Other</button>
+      </div>
+      <div class="conf-actions">
+        <button id="post" type="button">Post anonymously</button>
+        <button id="composeCancel" type="button" class="ghost">Cancel</button>
+      </div>
+    </section>
+
+    <div id="confFilters" class="conf-filters" role="group" aria-label="Filter by feeling" hidden></div>
     <div id="feed" class="confession-feed"></div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
   <script src="common.js"></script>
   <script>
-    let ctx;
+    let ctx, confessions = [], activeFeeling = "all";
     const $ = id => document.getElementById(id);
+    const EMOJI = { "in-love": "💕", happy: "😊", sad: "😢", anxious: "😰", grateful: "🙏", hopeful: "🌱", other: "💭" };
+    function feelingEmoji(feeling) { return EMOJI[feeling] || EMOJI.other; }
+    function setComposer(open) {
+      $("composer").hidden = !open;
+      $("composeToggle").setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) $("content").focus();
+    }
     async function init() {
       ctx = await requireAuth(); if (!ctx) return;
       renderBar(ctx, "confessions");
@@ -43,12 +63,37 @@
     async function load() {
       const { data, error } = await sb.from("confessions").select("id,content,feeling,created_at").order("created_at", { ascending: false });
       if (error) { $("msg").className = "msg err"; $("msg").textContent = error.message; return; }
+      confessions = data || [];
+      renderFilters();
+      renderFeed();
+    }
+    function renderFilters() {
+      const box = $("confFilters");
+      box.replaceChildren();
+      const counts = {};
+      confessions.forEach(c => { const k = c.feeling || "other"; counts[k] = (counts[k] || 0) + 1; });
+      if (activeFeeling !== "all" && !counts[activeFeeling]) activeFeeling = "all";
+      box.hidden = confessions.length < 2;
+      [["all", "All", confessions.length]].concat(Object.keys(EMOJI).filter(k => counts[k]).map(k => [k, feelingEmoji(k) + " " + feelingLabel(k), counts[k]])).forEach(([key, label, count]) => {
+        const chip = el("button", "conf-chip" + (key === "all" ? "" : " feeling-" + key) + (activeFeeling === key ? " on" : ""), label + " ");
+        chip.type = "button";
+        chip.append(el("b", "", String(count)));
+        chip.onclick = () => { activeFeeling = key; renderFilters(); renderFeed(); };
+        box.appendChild(chip);
+      });
+    }
+    function renderFeed() {
       const feed = $("feed"); feed.innerHTML = "";
-      if (!data.length) feed.appendChild(el("p", "empty", "No confessions yet."));
-      data.forEach(item => {
+      if (!confessions.length) {
+        const none = el("div", "conf-empty");
+        none.append(el("span", "conf-empty-icon", "🤫"), el("strong", "", "No confessions yet"), el("span", "hint", "Be the first - press “Write a confession”."));
+        feed.appendChild(none);
+        return;
+      }
+      confessions.filter(item => activeFeeling === "all" || (item.feeling || "other") === activeFeeling).forEach(item => {
         const isLong = String(item.content || "").length > 220;
         const card = el("article", "note confession-note" + (isLong ? " is-folded" : "") + " feeling-" + (item.feeling || "other"));
-        card.appendChild(el("span", "feeling-label", feelingLabel(item.feeling)));
+        card.appendChild(el("span", "feeling-label", feelingEmoji(item.feeling) + " " + feelingLabel(item.feeling)));
         if (isLong) {
           card.appendChild(el("p", "confession confession-preview", foldedPreview(item.content)));
           const foldTip = el("button", "confession-fold-tip", "");
@@ -87,7 +132,7 @@
       card.setAttribute("aria-modal", "true");
       card.setAttribute("aria-label", "Confession note");
       card.append(
-        el("span", "feeling-label", feelingLabel(item.feeling)),
+        el("span", "feeling-label", feelingEmoji(item.feeling) + " " + feelingLabel(item.feeling)),
         el("p", "confession confession-modal-copy", item.content),
         el("small", "confession-modal-date", fmtDate(item.created_at))
       );
@@ -133,9 +178,23 @@
       if (!content) { $("msg").className = "msg err"; $("msg").textContent = "Write a confession first."; return; }
       const { error } = await sb.from("confessions").insert({ content, feeling: $("feeling").value });
       if (error) { $("msg").className = "msg err"; $("msg").textContent = error.message; return; }
-      $("content").value = ""; $("msg").className = "msg ok"; $("msg").textContent = "Posted anonymously.";
+      $("content").value = ""; $("contentCount").textContent = "0"; $("msg").className = "msg ok"; $("msg").textContent = "Posted anonymously.";
+      setComposer(false);
       await load();
     };
+    $("composeToggle").onclick = () => setComposer($("composer").hidden);
+    $("composeCancel").onclick = () => setComposer(false);
+    $("content").oninput = () => {
+      const length = $("content").value.length;
+      $("contentCount").textContent = String(length);
+      $("contentCount").parentNode.classList.toggle("near", length > 1350);
+    };
+    document.querySelectorAll(".conf-feeling").forEach(button => {
+      button.onclick = () => {
+        $("feeling").value = button.dataset.feeling;
+        document.querySelectorAll(".conf-feeling").forEach(b => { b.classList.toggle("on", b === button); b.setAttribute("aria-checked", b === button ? "true" : "false"); });
+      };
+    });
     init();
   </script>
 </body>

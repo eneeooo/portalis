@@ -8,51 +8,97 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap admin-page">
     <div id="bar"></div>
+    <header class="page-head accent-pink">
+      <div>
+        <h2>Admin</h2>
+        <p class="hint page-sub">Review notes, manage students and moderate the class.</p>
+      </div>
+    </header>
     <p id="msg" class="msg"></p>
 
-    <h2>Review queue <span id="qcount" class="badge"></span></h2>
-    <p class="hint">Notes stay private to their author until you approve them.</p>
-    <div id="queue" class="board" style="margin-top:34px"></div>
-    <p id="qempty" class="empty" style="display:none">Nothing waiting for review.</p>
-
-    <div class="section">
-      <h2>All notes</h2>
-      <div id="filters" class="filters" style="margin-top:12px"></div>
-      <div id="board" class="board"></div>
+    <div class="admin-tabs" role="tablist" aria-label="Admin sections">
+      <button type="button" role="tab" id="tab-queue" class="admin-tab tone-pink on" data-pane="queue" aria-selected="true" aria-controls="pane-queue">
+        <span class="admin-tab-icon" aria-hidden="true">📝</span><span class="admin-tab-label">Review queue</span><strong id="qcount" class="admin-tab-count"></strong>
+      </button>
+      <button type="button" role="tab" id="tab-notes" class="admin-tab tone-blue" data-pane="notes" aria-selected="false" aria-controls="pane-notes">
+        <span class="admin-tab-icon" aria-hidden="true">🗂️</span><span class="admin-tab-label">All notes</span><strong id="notesCount" class="admin-tab-count"></strong>
+      </button>
+      <button type="button" role="tab" id="tab-users" class="admin-tab tone-green" data-pane="users" aria-selected="false" aria-controls="pane-users">
+        <span class="admin-tab-icon" aria-hidden="true">👥</span><span class="admin-tab-label">Users and roles</span><strong id="usersCount" class="admin-tab-count"></strong>
+      </button>
+      <button type="button" role="tab" id="tab-confessions" class="admin-tab tone-yellow" data-pane="confessions" aria-selected="false" aria-controls="pane-confessions">
+        <span class="admin-tab-icon" aria-hidden="true">🤫</span><span class="admin-tab-label">Confession log</span><strong id="clogCount" class="admin-tab-count"></strong>
+      </button>
+      <button type="button" role="tab" id="tab-suggestions" class="admin-tab tone-orange" data-pane="suggestions" aria-selected="false" aria-controls="pane-suggestions">
+        <span class="admin-tab-icon" aria-hidden="true">💡</span><span class="admin-tab-label">Suggestions</span><strong id="sugCount" class="admin-tab-count"></strong>
+      </button>
     </div>
 
-    <div class="section">
-      <h2>Users and roles</h2>
-      <div class="scroll">
+    <section id="pane-queue" class="admin-pane" role="tabpanel" aria-labelledby="tab-queue">
+      <p class="hint">Notes stay private to their author until you approve them.</p>
+      <div id="queue" class="board" style="margin-top:34px"></div>
+      <div id="qempty" class="admin-empty" style="display:none"><span class="admin-empty-icon" aria-hidden="true">🎉</span><strong>All caught up</strong><span class="hint">Nothing waiting for review.</span></div>
+    </section>
+
+    <section id="pane-notes" class="admin-pane" role="tabpanel" aria-labelledby="tab-notes" hidden>
+      <div id="filters" class="filters" style="margin-top:4px"></div>
+      <div id="board" class="board"></div>
+    </section>
+
+    <section id="pane-users" class="admin-pane" role="tabpanel" aria-labelledby="tab-users" hidden>
+      <div class="admin-toolbar">
+        <input id="userSearch" type="search" placeholder="Search name, student number or email" aria-label="Search users" autocomplete="off">
+        <div id="roleChips" class="admin-chips" role="group" aria-label="Filter by role">
+          <button type="button" class="admin-chip on" data-role="all">All <b>0</b></button>
+          <button type="button" class="admin-chip" data-role="admin">Admins <b>0</b></button>
+          <button type="button" class="admin-chip" data-role="officer">Officers <b>0</b></button>
+          <button type="button" class="admin-chip" data-role="user">Students <b>0</b></button>
+        </div>
+      </div>
+      <div class="scroll admin-table-scroll">
         <table class="admin-users-table">
           <thead><tr><th>Student number</th><th>Full name</th><th>Email</th><th>Class title</th><th style="width:160px">Access role</th><th>Actions</th></tr></thead>
           <tbody id="users"></tbody>
         </table>
       </div>
-    </div>
+      <p id="usersEmpty" class="hint" hidden>No users match this filter.</p>
+    </section>
 
-    <div class="section">
-      <h2>Confession log <span id="clogCount" class="badge"></span></h2>
-      <p class="hint">Only admins can see this. Confessions stay anonymous everywhere else, and entries remain here even after a confession is deleted.</p>
-      <button id="clogToggle" type="button" class="ghost" aria-expanded="false" aria-controls="clogBox">Show log</button>
+    <section id="pane-confessions" class="admin-pane" role="tabpanel" aria-labelledby="tab-confessions" hidden>
+      <div class="admin-veil" id="clogVeil">
+        <span class="admin-veil-icon" aria-hidden="true">🔒</span>
+        <div>
+          <strong>Hidden by default</strong>
+          <p class="hint">Only admins can see this. Confessions stay anonymous everywhere else, and entries remain here even after a confession is deleted.</p>
+        </div>
+        <button id="clogToggle" type="button" class="ghost" aria-expanded="false" aria-controls="clogBox">Show log</button>
+      </div>
       <div id="clogBox" hidden>
         <p id="clogMsg" class="msg" style="display:none"></p>
-        <div class="scroll">
+        <div class="admin-toolbar">
+          <input id="clogSearch" type="search" placeholder="Search confessions or names" aria-label="Search the confession log" autocomplete="off">
+          <div id="clogChips" class="admin-chips" role="group" aria-label="Filter by status">
+            <button type="button" class="admin-chip on" data-state="all">All <b>0</b></button>
+            <button type="button" class="admin-chip" data-state="live">Live <b>0</b></button>
+            <button type="button" class="admin-chip" data-state="deleted">Deleted <b>0</b></button>
+          </div>
+        </div>
+        <div class="scroll admin-table-scroll">
           <table class="admin-confession-table">
             <thead><tr><th style="width:150px">Posted</th><th style="width:200px">Posted by</th><th style="width:100px">Feeling</th><th>Confession</th><th style="width:130px">Status</th></tr></thead>
             <tbody id="clog"></tbody>
           </table>
         </div>
-        <p id="clogEmpty" class="empty" style="display:none">No confessions logged yet.</p>
+        <p id="clogEmpty" class="admin-empty" style="display:none"><span class="admin-empty-icon" aria-hidden="true">🤫</span><strong>No confessions logged yet</strong></p>
+        <p id="clogNoMatch" class="hint" hidden>No entries match this filter.</p>
       </div>
-    </div>
+    </section>
 
-    <div class="section">
-      <h2>Suggestions</h2>
-      <div id="suggestions"></div>
-    </div>
+    <section id="pane-suggestions" class="admin-pane" role="tabpanel" aria-labelledby="tab-suggestions" hidden>
+      <div id="suggestions" class="admin-suggestions"></div>
+    </section>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -64,11 +110,47 @@
     let ctx, notes = [], filter = "all";
     const msg = document.getElementById("msg");
     function err(t) { msg.className = "msg err"; msg.textContent = t; }
+    const PANES = ["queue", "notes", "users", "confessions", "suggestions"];
+    function showPane(name) {
+      if (!PANES.includes(name)) name = "queue";
+      PANES.forEach(p => {
+        const on = p === name;
+        document.getElementById("pane-" + p).hidden = !on;
+        const tab = document.getElementById("tab-" + p);
+        tab.classList.toggle("on", on);
+        tab.setAttribute("aria-selected", on ? "true" : "false");
+        tab.tabIndex = on ? 0 : -1;
+      });
+      try { history.replaceState(null, "", "#" + name); } catch (_) { /* file:// or sandboxed */ }
+    }
+    function initials(name) {
+      const words = String(name || "").replace(/,/g, " ").trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return "?";
+      return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
+    }
+    function avatar(name, key) {
+      const a = el("span", "admin-avatar", initials(name));
+      let hash = 0;
+      String(key || name || "").split("").forEach(ch => { hash = (hash * 31 + ch.charCodeAt(0)) % 360; });
+      a.style.background = "hsl(" + hash + " 70% 82%)";
+      a.setAttribute("aria-hidden", "true");
+      return a;
+    }
+    const FEELINGS = { "in-love": "💕", happy: "😊", sad: "😢", anxious: "😰", grateful: "🙏", hopeful: "🌱", other: "💭" };
+    document.querySelectorAll(".admin-tab").forEach(tab => { tab.onclick = () => showPane(tab.dataset.pane); });
+    document.querySelector(".admin-tabs").addEventListener("keydown", event => {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      const current = PANES.findIndex(p => document.getElementById("tab-" + p).classList.contains("on"));
+      const next = (current + (event.key === "ArrowRight" ? 1 : PANES.length - 1)) % PANES.length;
+      showPane(PANES[next]);
+      document.getElementById("tab-" + PANES[next]).focus();
+    });
     function ok(t) { msg.className = "msg ok"; msg.textContent = t; }
     async function init() {
       ctx = await requireAuth(true);
       if (!ctx) return;
       renderBar(ctx, "admin");
+      showPane((location.hash || "").slice(1));
       await loadUsers();
       await loadConfessionLog();
       await loadSuggestions();
@@ -92,29 +174,65 @@
       }
       renderConfessionLog();
     }
+    let clogState = "all";
     function renderConfessionLog() {
       const body = document.getElementById("clog");
       const empty = document.getElementById("clogEmpty");
       document.getElementById("clogCount").textContent = confessionLog.length ? confessionLog.length : "";
       body.innerHTML = "";
       empty.style.display = confessionLog.length ? "none" : "";
+      const counts = { all: confessionLog.length, live: 0, deleted: 0 };
       confessionLog.forEach(r => {
+        const isDeleted = !!r.deleted_at;
+        counts[isDeleted ? "deleted" : "live"]++;
         const tr = document.createElement("tr");
+        tr.dataset.state = isDeleted ? "deleted" : "live";
+        tr.dataset.search = ((r.author_name || "") + " " + (r.student_number || "") + " " + (r.content || "")).toLowerCase();
         const who = el("td", "");
-        who.appendChild(el("strong", "", r.author_name || "Unknown student"));
-        if (r.student_number) { who.appendChild(document.createElement("br")); who.appendChild(el("small", "", r.student_number)); }
+        const whoRow = el("div", "admin-who");
+        whoRow.appendChild(avatar(r.author_name, r.student_number));
+        const whoText = el("div", "admin-who-text");
+        whoText.appendChild(el("strong", "", r.author_name || "Unknown student"));
+        if (r.student_number) whoText.appendChild(el("small", "", r.student_number));
+        whoRow.appendChild(whoText);
+        who.appendChild(whoRow);
         const text = el("td", "", r.content);
         text.style.whiteSpace = "pre-wrap";
         text.style.overflowWrap = "anywhere";
-        const status = el("td", "", r.deleted_at ? "Deleted " + fmtDate(r.deleted_at) : "Live");
-        tr.append(el("td", "", fmtDate(r.posted_at)), who, el("td", "", String(r.feeling || "other").replace(/-/g, " ")), text, status);
+        const feelingKey = String(r.feeling || "other");
+        const feeling = el("td", "");
+        feeling.appendChild(el("span", "admin-feeling feeling-" + feelingKey, (FEELINGS[feelingKey] || FEELINGS.other) + " " + feelingKey.replace(/-/g, " ")));
+        const status = el("td", "");
+        status.appendChild(el("span", "admin-status " + (isDeleted ? "deleted" : "live"), isDeleted ? "Deleted " + fmtDate(r.deleted_at) : "Live"));
+        tr.append(el("td", "", fmtDate(r.posted_at)), who, feeling, text, status);
         body.appendChild(tr);
       });
+      document.querySelectorAll("#clogChips .admin-chip").forEach(chip => { chip.querySelector("b").textContent = String(counts[chip.dataset.state] || 0); });
+      applyConfessionFilter();
     }
+    function applyConfessionFilter() {
+      const q = document.getElementById("clogSearch").value.trim().toLowerCase();
+      let shown = 0;
+      document.querySelectorAll("#clog tr").forEach(tr => {
+        const match = (clogState === "all" || tr.dataset.state === clogState) && (!q || tr.dataset.search.includes(q));
+        tr.classList.toggle("is-hidden", !match);
+        if (match) shown++;
+      });
+      document.getElementById("clogNoMatch").hidden = shown > 0 || !confessionLog.length;
+    }
+    document.getElementById("clogSearch").oninput = applyConfessionFilter;
+    document.getElementById("clogChips").onclick = event => {
+      const chip = event.target.closest(".admin-chip");
+      if (!chip) return;
+      clogState = chip.dataset.state;
+      document.querySelectorAll("#clogChips .admin-chip").forEach(c => c.classList.toggle("on", c === chip));
+      applyConfessionFilter();
+    };
     document.getElementById("clogToggle").onclick = () => {
       const box = document.getElementById("clogBox");
       const button = document.getElementById("clogToggle");
       box.hidden = !box.hidden;
+      document.getElementById("clogVeil").classList.toggle("open", !box.hidden);
       button.textContent = box.hidden ? "Show log" : "Hide log";
       button.setAttribute("aria-expanded", box.hidden ? "false" : "true");
     };
@@ -132,13 +250,21 @@
         return user.role === "officer" ? titleOrder.length + 1 : titleOrder.length + 2;
       };
       data.sort((a, b) => rank(a) - rank(b));
+      adminUsersTotal = data.length;
+      document.getElementById("usersCount").textContent = data.length ? data.length : "";
+      const roleCounts = { all: data.length, admin: 0, officer: 0, user: 0 };
+      data.forEach(u => { roleCounts[u.role] = (roleCounts[u.role] || 0) + 1; });
+      document.querySelectorAll("#roleChips .admin-chip").forEach(chip => { chip.querySelector("b").textContent = String(roleCounts[chip.dataset.role] || 0); });
       data.forEach(u => {
         const tr = document.createElement("tr");
+        tr.dataset.role = u.role;
+        tr.dataset.search = ((u.full_name || "") + " " + (u.student_number || "") + " " + (u.email || "")).toLowerCase();
         const tdRole = document.createElement("td");
         const actionCell = document.createElement("td");
         const actions = el("div", "user-actions");
         const sel = el("select", "role-select");
         sel.setAttribute("aria-label", "Role for " + (u.full_name || u.email || "user"));
+        sel.dataset.role = u.role;
         ["user", "officer", "admin"].forEach(r => {
           const roleLabels = { user: "Student", officer: "Officer", admin: "Admin" };
           const o = el("option", "", roleLabels[r]);
@@ -162,7 +288,10 @@
             err(error.message);
           } else {
             u.role = nextRole;
+            sel.dataset.role = nextRole;
+            tr.dataset.role = nextRole;
             ok("Role updated.");
+            applyUserFilter();
           }
         };
         const reset = el("button", "ghost small user-action-circle reset-user-password-button", "↻");
@@ -232,9 +361,11 @@
         actionCell.appendChild(actions);
         tdRole.appendChild(sel);
         const shownEmail = u.email || "Not set";
+        const nameCell = el("td", "admin-student-name");
+        nameCell.append(avatar(u.full_name, u.id), el("span", "admin-name-text", u.full_name || "—"));
         tr.append(
           el("td", "admin-student-number", u.student_number || "—"),
-          el("td", "admin-student-name", u.full_name || "—"),
+          nameCell,
           el("td", "", shownEmail),
           el("td", "", profileTitle(u)),
           tdRole,
@@ -242,14 +373,40 @@
         );
         body.appendChild(tr);
       });
+      applyUserFilter();
     }
+    let adminUsersTotal = 0, userRole = "all";
+    function applyUserFilter() {
+      const q = document.getElementById("userSearch").value.trim().toLowerCase();
+      let shown = 0;
+      document.querySelectorAll("#users tr").forEach(tr => {
+        const match = (userRole === "all" || tr.dataset.role === userRole) && (!q || tr.dataset.search.includes(q));
+        tr.classList.toggle("is-hidden", !match);
+        if (match) shown++;
+      });
+      document.getElementById("usersEmpty").hidden = shown > 0 || !adminUsersTotal;
+    }
+    document.getElementById("userSearch").oninput = applyUserFilter;
+    document.getElementById("roleChips").onclick = event => {
+      const chip = event.target.closest(".admin-chip");
+      if (!chip) return;
+      userRole = chip.dataset.role;
+      document.querySelectorAll("#roleChips .admin-chip").forEach(c => c.classList.toggle("on", c === chip));
+      applyUserFilter();
+    };
 
     async function loadSuggestions() {
       const box = document.getElementById("suggestions");
       const { data, error } = await sb.from("suggestions").select("id,user_id,content,created_at").order("created_at", { ascending: false });
       if (error) { err(error.message); return; }
       box.innerHTML = "";
-      if (!data.length) { box.appendChild(el("p", "empty", "No suggestions yet.")); return; }
+      document.getElementById("sugCount").textContent = data.length ? data.length : "";
+      if (!data.length) {
+        const none = el("div", "admin-empty");
+        none.append(el("span", "admin-empty-icon", "💡"), el("strong", "", "No suggestions yet"), el("span", "hint", "Ideas from students will show up here."));
+        box.appendChild(none);
+        return;
+      }
       const { data: profiles, error: profileError } = await sb.from("profiles").select("id,full_name,student_number,role").in("id", data.map(x => x.user_id));
       if (profileError) { err(profileError.message); return; }
       const byId = Object.fromEntries(profiles.map(x => [x.id, x]));
@@ -349,7 +506,8 @@
 
     function render() {
       const pend = notes.filter(n => n.status === "pending").sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      document.getElementById("qcount").textContent = pend.length;
+      document.getElementById("qcount").textContent = pend.length ? pend.length : "";
+      document.getElementById("notesCount").textContent = notes.length ? notes.length : "";
       const queue = document.getElementById("queue");
       queue.innerHTML = "";
       document.getElementById("qempty").style.display = pend.length ? "none" : "block";
