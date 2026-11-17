@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Portalis - School calendar</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap events-page">
+    <div id="bar"></div>
+    <header class="page-head accent-teal">
+      <div>
+        <h2>School calendar</h2>
+        <p class="hint page-sub">School events, notices and schedules.</p>
+      </div>
+      <button id="addToggle" type="button" class="compose-btn" hidden aria-expanded="false" aria-controls="staffPanel">＋ Add events</button>
+    </header>
+    <p id="msg" class="msg" role="status"></p>
+
+    <section id="staffPanel" class="ev-staff" hidden aria-label="Add or edit events">
+      <div class="ev-staff-head">
+        <h3 id="staffTitle">Add events</h3>
+        <button id="staffClose" type="button" class="ghost">Close</button>
+      </div>
+      <details class="ev-guide">
+        <summary>Format guide (how to write an event)</summary>
+        <p>Start each event with <b>Event:</b> and leave a blank line between events. Everything is checked before it is saved.</p>
+        <table class="ev-guide-table">
+          <thead><tr><th>Line</th><th>What to write</th><th>Examples</th></tr></thead>
+          <tbody>
+            <tr><td><b>Event:</b></td><td>The name (required)</td><td>Intramurals Opening</td></tr>
+            <tr><td><b>Date:</b></td><td>One day or a range (required)</td><td>Nov 20, 2026 &nbsp;·&nbsp; Dec 1-5, 2026 &nbsp;·&nbsp; 2026-11-20</td></tr>
+            <tr><td><b>Time:</b></td><td>Start, or start - end. Leave out or write All day.</td><td>8:00 AM - 5:00 PM &nbsp;·&nbsp; 1pm &nbsp;·&nbsp; All day</td></tr>
+            <tr><td><b>Place:</b></td><td>Where (optional)</td><td>School gym</td></tr>
+            <tr><td><b>Details:</b></td><td>Notes for the class (optional, can use several lines)</td><td>Wear your PE uniform.</td></tr>
+          </tbody>
+        </table>
+        <pre class="ev-guide-example" id="evExample"></pre>
+        <button id="evUseExample" type="button" class="ghost small">Use this example</button>
+      </details>
+      <label for="evText">Paste or type your events</label>
+      <textarea id="evText" rows="9" spellcheck="false" placeholder="Event: Intramurals Opening&#10;Date: Nov 20, 2026&#10;Time: 8:00 AM - 5:00 PM&#10;Place: School gym&#10;Details: Wear your PE uniform. Bring water.&#10;&#10;Event: Midterm Exams&#10;Date: Dec 1-5, 2026&#10;Time: All day"></textarea>
+      <div class="ev-staff-actions">
+        <button id="evCheck" type="button">Check events</button>
+        <button id="evTemplate" type="button" class="ghost">Insert blank template</button>
+        <button id="evClear" type="button" class="ghost">Clear</button>
+      </div>
+      <div id="evPreview" class="ev-preview" aria-live="polite"></div>
+      <div id="evSaveRow" class="ev-save-row" hidden>
+        <button id="evSave" type="button">Save events</button>
+        <span id="evSaveHint" class="hint"></span>
+      </div>
+    </section>
+
+    <div class="ev-layout">
+      <section class="ev-cal-card" aria-label="Month calendar">
+        <div class="ev-cal-head">
+          <button id="calPrev" type="button" class="cal-nav" aria-label="Previous month">‹</button>
+          <h3 id="calTitle">Month</h3>
+          <button id="calNext" type="button" class="cal-nav" aria-label="Next month">›</button>
+          <button id="calToday" type="button" class="cal-today-btn">Today</button>
+        </div>
+        <div id="bigCal"></div>
+      </section>
+      <aside class="ev-side">
+        <h3 id="dayTitle">Today</h3>
+        <div id="dayList" class="ev-list"></div>
+        <div class="ev-side-head">
+          <h3>Upcoming</h3>
+          <button id="pastToggle" type="button" class="ghost small">Show past events</button>
+        </div>
+        <div id="upcomingList" class="ev-list"></div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script src="calendar.js?v=1"></script>
+  <script>
+    (async function () {
+      const C = window.PortalisCalendar;
+      const $ = id => document.getElementById(id);
+      const ctx = await requireAuth();
+      if (!ctx) return;
+      renderBar(ctx, "events");
+      const staff = !!ctx.isAdmin;
+
+      let events = [];
+      let view = { y: C.nowParts().y, m: C.nowParts().m, sel: C.todayIso() };
+      let showPast = false;
+      let editing = null;          // the event being edited, or null when adding
+      let parsed = [];             // result of "Check events"
+      let photos = {};             // key -> File chosen for a new notice photo
+      let removeOldPhoto = false;
+
+      const msg = $("msg");
+      function say(text, isError) { msg.className = "msg" + (isError ? " err" : ""); msg.textContent = text || ""; }
+
+      // ---------------------------------------------------------------- calendar + lists
+      function openEvent(ev) {
+        C.openEventModal(ev, { canEdit: staff, onEdit: startEdit, onDelete: deleteEvent });
+      }
+      function renderCalendar() {
+        $("calTitle").textContent = C.MONTHS[view.m - 1] + " " + view.y;
+        $("bigCal").replaceChildren(C.buildMonth({
+          year: view.y, month: view.m, events, selected: view.sel, today: C.todayIso(), big: true,
+          onSelect: iso => { view.sel = iso; const p = C.parseIso(iso); view.y = p.y; view.m = p.m; renderAll(); }
+        }));
+      }
+      function listInto(box, list, empty) {
+        box.replaceChildren();
+        if (!list.length) { box.appendChild(el("p", "hint ev-empty", empty)); return; }
+        list.forEach(ev => box.appendChild(C.eventCard(ev, { onOpen: openEvent })));
+        C.hydrateImages(box);
+      }
+      function renderLists() {
+        const today = C.todayIso();
+        $("dayTitle").textContent = C.fmtDate(view.sel, { weekday: "long", month: "long", day: "numeric" }) + (view.sel === today ? " (today)" : "");
+        const dayEvents = C.eventsOn(events, view.sel);
+        listInto($("dayList"), dayEvents, "No events on this day.");
+        if (staff) {
+          const add = el("button", "ghost small", "+ Add an event on this day");
+          add.type = "button";
+          add.onclick = () => openPanel("add", "Event: \nDate: " + C.fmtDate(view.sel, { month: "short", day: "numeric", year: "numeric" }) + "\nTime: \nPlace: \nDetails: ");
+          $("dayList").appendChild(add);
+        }
+        const upcoming = events.filter(ev => C.lastDay(ev) >= today).slice(0, 12);
+        const past = events.filter(ev => C.lastDay(ev) < today).slice().reverse();
+        $("pastToggle").textContent = showPast ? "Show upcoming" : "Show past events";
+        $("pastToggle").hidden = !past.length && !showPast;
+        listInto($("upcomingList"), showPast ? past : upcoming, showPast ? "No past events in the last few months." : "No upcoming events yet.");
+      }
+      function renderAll() { renderCalendar(); renderLists(); }
+      async function reload(force) {
+        events = await C.loadEvents(force);
+        if (C.setupMissing()) say(staff ? "The calendar isn't set up yet. Run migration_school_events.sql in the Supabase SQL editor, then reload this page." : "The calendar isn't available yet.", true);
+        renderAll();
+      }
+      $("calPrev").onclick = () => { C.shiftMonth(view, -1); renderCalendar(); };
+      $("calNext").onclick = () => { C.shiftMonth(view, 1); renderCalendar(); };
+      $("calToday").onclick = () => { const n = C.nowParts(); view = { y: n.y, m: n.m, sel: n.iso }; renderAll(); };
+      $("pastToggle").onclick = () => { showPast = !showPast; renderLists(); };
+
+      if (!staff) return reload().then(() => {});
+
+      // ---------------------------------------------------------------- staff: add / edit
+      $("evExample").textContent = C.TEMPLATE;
+      $("addToggle").hidden = false;
+      const BLANK = "Event: \nDate: \nTime: \nPlace: \nDetails: ";
+      function keyOf(item) { return item.title + "|" + item.event_date; }
+
+      function openPanel(mode, text) {
+        editing = mode === "edit" ? editing : null;
+        $("staffPanel").hidden = false;
+        $("addToggle").setAttribute("aria-expanded", "true");
+        $("staffTitle").textContent = editing ? "Edit event" : "Add events";
+        if (typeof text === "string") $("evText").value = text;
+        $("evText").focus();
+        $("staffPanel").scrollIntoView && $("staffPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+        if (editing) check();
+      }
+      function closePanel() {
+        $("staffPanel").hidden = true;
+        $("addToggle").setAttribute("aria-expanded", "false");
+        editing = null; parsed = []; photos = {}; removeOldPhoto = false;
+        $("evPreview").replaceChildren(); $("evSaveRow").hidden = true;
+        if (location.hash) history.replaceState(null, "", location.pathname);
+      }
+      function startEdit(ev) {
+        editing = ev; photos = {}; removeOldPhoto = false;
+        openPanel("edit", C.eventToText(ev));
+      }
+      $("addToggle").onclick = () => { $("staffPanel").hidden ? openPanel("add", $("evText").value || "") : closePanel(); };
+      $("staffClose").onclick = closePanel;
+      $("evUseExample").onclick = () => { $("evText").value = C.TEMPLATE; check(); };
+      $("evTemplate").onclick = () => { const cur = $("evText").value.trim(); $("evText").value = cur ? cur + "\n\n" + BLANK : BLANK; $("evText").focus(); };
+      $("evClear").onclick = () => { $("evText").value = ""; parsed = []; photos = {}; $("evPreview").replaceChildren(); $("evSaveRow").hidden = true; };
+      $("evCheck").onclick = check;
+
+      function check() {
+        const result = C.parseEventsText($("evText").value);
+        parsed = result.items;
+        const box = $("evPreview");
+        box.replaceChildren();
+        if (!parsed.length) { say("Nothing to check yet. Write at least one event.", true); $("evSaveRow").hidden = true; return; }
+        say("", false);
+        let bad = 0;
+        parsed.forEach((item, index) => {
+          const wrap = el("div", "ev-preview-item" + (item.errors.length ? " bad" : ""));
+          wrap.appendChild(el("span", "ev-preview-num", "Event " + (index + 1) + (item.line ? " (line " + item.line + ")" : "")));
+          if (item.errors.length) {
+            bad++;
+            const list = el("ul", "ev-errors");
+            item.errors.forEach(e => list.appendChild(el("li", "", e)));
+            wrap.appendChild(list);
+            if (item.title) wrap.appendChild(el("strong", "", item.title));
+          } else {
+            const ev = Object.assign({ id: index + 1, image_path: null }, item);
+            wrap.appendChild(C.eventCard(ev, { relative: true }));
+            wrap.appendChild(photoRow(item, index));
+          }
+          box.appendChild(wrap);
+        });
+        const good = parsed.length - bad;
+        const row = $("evSaveRow");
+        row.hidden = false;
+        if (editing && parsed.length > 1) { $("evSave").disabled = true; $("evSaveHint").textContent = "Edit one event at a time. Remove the extra events."; return; }
+        $("evSave").disabled = bad > 0;
+        $("evSave").textContent = editing ? "Save changes" : "Save " + good + (good === 1 ? " event" : " events");
+        $("evSaveHint").textContent = bad ? "Fix the " + bad + (bad === 1 ? " event" : " events") + " marked in red, then check again." : "Looks good. Add a notice photo to any event if you have one.";
+      }
+
+      function photoRow(item, index) {
+        const row = el("div", "ev-photo-row");
+        const label = el("label", "file-btn", "📷 Add notice photo");
+        const input = document.createElement("input");
+        input.type = "file"; input.accept = "image/*"; input.className = "file-input";
+        label.appendChild(input);
+        const thumb = document.createElement("img");
+        thumb.className = "ev-photo-thumb"; thumb.alt = "Notice photo preview"; thumb.hidden = true;
+        const name = el("span", "hint ev-photo-name", "");
+        const remove = el("button", "ghost small", "Remove photo");
+        remove.type = "button"; remove.hidden = true;
+        function paint() {
+          const file = photos[keyOf(item)];
+          const old = editing && editing.image_path && !removeOldPhoto && !file;
+          if (file) { thumb.src = URL.createObjectURL(file); thumb.hidden = false; name.textContent = file.name; remove.hidden = false; label.firstChild.textContent = "📷 Change photo"; }
+          else if (old) { thumb.setAttribute("data-img-path", editing.image_path); C.hydrateImages(row); name.textContent = "Current notice photo"; remove.hidden = false; label.firstChild.textContent = "📷 Replace photo"; }
+          else { thumb.hidden = true; thumb.removeAttribute("src"); name.textContent = ""; remove.hidden = true; label.firstChild.textContent = "📷 Add notice photo"; }
+        }
+        input.onchange = () => {
+          const file = input.files && input.files[0];
+          input.value = "";
+          if (!file) return;
+          if (!/^image\//.test(file.type)) { say("Please choose a picture (JPG, PNG, ...).", true); return; }
+          if (file.size > 20 * 1024 * 1024) { say("That picture is too large (max 20 MB).", true); return; }
+          say("", false);
+          photos[keyOf(item)] = file;
+          paint();
+        };
+        remove.onclick = () => { delete photos[keyOf(item)]; if (editing) removeOldPhoto = true; paint(); };
+        row.append(label, thumb, name, remove);
+        paint();
+        return row;
+      }
+
+      // ---------------------------------------------------------------- images
+      function loadImage(file) {
+        return new Promise((resolve, reject) => {
+          const url = URL.createObjectURL(file);
+          const img = new Image();
+          img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+          img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("That picture could not be read.")); };
+          img.src = url;
+        });
+      }
+      async function prepareImage(file) {
+        const img = await loadImage(file);
+        let max = 1800, quality = 0.86, blob = null;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+          const g = canvas.getContext("2d");
+          g.fillStyle = "#fff"; g.fillRect(0, 0, canvas.width, canvas.height);
+          g.drawImage(img, 0, 0, canvas.width, canvas.height);
+          blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", quality));
+          if (blob && blob.size <= 4.5 * 1024 * 1024) return blob;
+          max = Math.round(max * 0.75); quality = Math.max(0.6, quality - 0.1);
+        }
+        throw new Error("That picture is still too large after shrinking.");
+      }
+      function randomId() { return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2); }
+      async function uploadPhoto(file) {
+        const blob = await prepareImage(file);
+        const path = "notices/" + randomId() + ".jpg";
+        const res = await sb.storage.from(C.BUCKET).upload(path, blob, { contentType: "image/jpeg", upsert: false });
+        if (res.error) throw new Error("The picture could not be uploaded: " + res.error.message);
+        return path;
+      }
+
+      // ---------------------------------------------------------------- save / delete
+      function rowFrom(item, imagePath) {
+        return { title: item.title, event_date: item.event_date, end_date: item.end_date, start_time: item.start_time, end_time: item.end_time, location: item.location, description: item.description, image_path: imagePath };
+      }
+      $("evSave").onclick = async () => {
+        if (!parsed.length || parsed.some(p => p.errors.length)) return;
+        $("evSave").disabled = true;
+        say("Saving…", false);
+        try {
+          if (editing) {
+            const item = parsed[0];
+            const file = photos[keyOf(item)];
+            let imagePath = editing.image_path || null;
+            if (file) imagePath = await uploadPhoto(file); else if (removeOldPhoto) imagePath = null;
+            const res = await sb.from("school_events").update(rowFrom(item, imagePath)).eq("id", editing.id);
+            if (res.error) throw new Error(res.error.message);
+            if (editing.image_path && editing.image_path !== imagePath) sb.storage.from(C.BUCKET).remove([editing.image_path]);
+            say("Event updated.", false);
+          } else {
+            const rows = [];
+            for (const item of parsed) {
+              const file = photos[keyOf(item)];
+              rows.push(rowFrom(item, file ? await uploadPhoto(file) : null));
+            }
+            const res = await sb.from("school_events").insert(rows);
+            if (res.error) throw new Error(res.error.message);
+            say("Saved " + rows.length + (rows.length === 1 ? " event." : " events."), false);
+            const first = parsed[0];
+            if (first && first.event_date) { const p = C.parseIso(first.event_date); view = { y: p.y, m: p.m, sel: first.event_date }; }
+          }
+          $("evText").value = "";
+          closePanel();
+          await reload(true);
+        } catch (error) {
+          say(error.message || "Could not save the events.", true);
+          $("evSave").disabled = false;
+        }
+      };
+      async function deleteEvent(ev) {
+        if (!confirm("Delete \"" + ev.title + "\"? This cannot be undone.")) return;
+        const res = await sb.from("school_events").delete().eq("id", ev.id);
+        if (res.error) { say("Could not delete: " + res.error.message, true); return; }
+        if (ev.image_path) sb.storage.from(C.BUCKET).remove([ev.image_path]);
+        C.closeModal();
+        say("Event deleted.", false);
+        await reload(true);
+      }
+
+      await reload(true);
+      const hash = location.hash || "";
+      if (hash === "#add") openPanel("add", "");
+      else if (/^#edit-/.test(hash)) { const target = events.find(e => String(e.id) === hash.slice(6)); if (target) startEdit(target); else say("That event could not be found.", true); }
+    })();
+  </script>
+</body>
+</html>

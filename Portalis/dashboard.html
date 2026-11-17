@@ -98,6 +98,7 @@
         <p class="hint" id="postHint"></p>
       </div>
 
+      <section id="eventsStrip" class="ev-strip" hidden aria-label="Upcoming school events"></section>
       <div id="birthdayGreeting" class="birthday-pin" hidden></div>
       <div id="filters" class="filters"></div>
       <div id="board" class="board"></div>
@@ -109,6 +110,7 @@
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
     <script src="config.js"></script>
     <script src="common.js"></script>
+    <script src="calendar.js?v=1"></script>
     <script>
       let ctx,
         view = "board",
@@ -137,6 +139,9 @@
         ctx = await requireAuth();
         if (!ctx) return;
         renderBar(ctx, "notes");
+        if (window.PortalisCalendar) {
+          PortalisCalendar.renderUpcoming(document.getElementById("eventsStrip"), { canEdit: !!ctx.isAdmin, limit: 6 });
+        }
         document.getElementById("postHint").textContent = ctx.isAdmin
           ? "Admin and officer notes are posted right away."
           : "Your note is sent to an admin or officer first. It shows on the public board once approved.";
@@ -500,6 +505,7 @@
         document.getElementById("tabMine").classList.toggle("on", v === "mine");
         document.getElementById("composer").style.display =
           v === "mine" ? "block" : "none";
+        document.getElementById("eventsStrip").classList.toggle("view-off", v !== "board");
         if (v !== "board") {
           document.getElementById("birthdayGreeting").hidden = true;
         }

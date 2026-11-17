@@ -308,6 +308,47 @@ function makeAdminMenu(linkElements, isActive) {
   return wrap;
 }
 
+let calendarScriptPromise = null;
+function loadCalendarScript() {
+  if (window.PortalisCalendar) return Promise.resolve();
+  if (!calendarScriptPromise) {
+    calendarScriptPromise = new Promise(resolve => {
+      const script = document.createElement("script");
+      script.src = "calendar.js?v=1";
+      script.onload = resolve;
+      script.onerror = resolve; // the clock still works without the calendar popup
+      document.head.appendChild(script);
+    });
+  }
+  return calendarScriptPromise;
+}
+
+// Live date + time in the top bar; clicking it opens the school calendar (see calendar.js).
+function makeBarClock(ctx) {
+  const button = el("button", "bar-clock");
+  button.type = "button";
+  const date = el("span", "bar-clock-date");
+  const time = el("span", "bar-clock-time");
+  const text = el("span", "bar-clock-text");
+  text.append(date, time);
+  const badge = el("span", "bar-clock-badge");
+  badge.hidden = true;
+  button.append(el("span", "bar-clock-icon", "\ud83d\udcc5"), text, badge);
+  const dayFormat = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", weekday: "short", month: "short", day: "numeric" });
+  const longFormat = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const timeFormat = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit", hour12: true });
+  function tick() {
+    const now = new Date();
+    date.textContent = dayFormat.format(now);
+    time.textContent = timeFormat.format(now);
+    button.setAttribute("aria-label", longFormat.format(now) + ", " + timeFormat.format(now) + ". Open the calendar");
+  }
+  tick();
+  setInterval(tick, 5000);
+  loadCalendarScript().then(() => { if (window.PortalisCalendar) window.PortalisCalendar.attachBar(button, ctx); });
+  return button;
+}
+
 function renderBar(ctx, active) {
   const bar = document.getElementById("bar");
   installBarMenuStyles();
@@ -343,6 +384,7 @@ function renderBar(ctx, active) {
   const nav = el("nav", "nav");
   nav.id = "barNav";
   bar.appendChild(makeMenuToggle(bar, nav));
+  bar.appendChild(makeBarClock(ctx));
   const makeLink = l => {
     const a = el("a", "nav-link" + (active === l[2] ? " on" : ""), l[1]);
     if (active === l[2]) a.setAttribute("aria-current", "page");
@@ -362,7 +404,7 @@ function renderBar(ctx, active) {
     return divider;
   };
   const studyLinks = [["dashboard.html", "Notes", "notes"], ["reviewer.html", "Reviewers", "reviewers"], ["java-compiler.html", "Java compiler", "java-compiler"]];
-  const classLinks = [["funds.html", "Class funds", "funds"], ["attendance.html", "Attendance", "attendance"], ["memories.html", "Memories", "memories"], ["confessions.html", "Confessions", "confessions"]];
+  const classLinks = [["events.html", "Calendar", "events"], ["funds.html", "Class funds", "funds"], ["attendance.html", "Attendance", "attendance"], ["memories.html", "Memories", "memories"], ["confessions.html", "Confessions", "confessions"]];
   const adminLinks = [];
   if (ctx.role === "admin") adminLinks.push(["admin.html", "Admin", "admin"]);
   if (ctx.role === "officer") adminLinks.push(["officer.html", "Officer", "officer"]);

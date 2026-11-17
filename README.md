@@ -45,6 +45,10 @@ Built using HTML, CSS, and JavaScript, Portalis uses **Supabase** as its backend
 - Who's online: a floating button above the suggestion button shows a live list
   of classmates currently in Portalis, with optional join notifications.
 - Responsive static frontend backed by Supabase Auth, Postgres, and Storage.
+- School calendar: a live date and time widget in the top bar opens a month calendar. Admins and
+  officers add events by pasting a simple format (Event / Date / Time / Place / Details), check it,
+  attach an optional notice photo, and save. Upcoming events appear as cards on Notes. Files:
+  `calendar.js`, `events.html`, `migration_school_events.sql`.
 - Java compiler workspace: VS Code-style syntax colors, line numbers, red error
   lines with plain-English explanations and one-click quick fixes, an
   interactive terminal (type answers right in the output; each answer is color
@@ -91,6 +95,7 @@ view-profile and the online list (it also sets the school-year roster order; edi
 Then run `Portalis\migration_profile_nickname_online.sql` (nicknames, Get to know me
 notes, working online list). Then run `Portalis\migration_memories_and_updates.sql` (Memories tab, confession
 full names for admins, nicknames in attendance). Then run `Portalis\migration_memories_multi_photos.sql` (several photos per memory).
+Then run `Portalis\migration_school_events.sql` (school calendar: the date and time widget in the top bar, the Calendar page, event cards on Notes, and event notice pictures).
 Run `Portalis\migration_java_projects.sql` to enable private, per-account
 Java projects in the Java compiler tab.
 Optionally run `Portalis\migration_seed_get_to_know.sql`

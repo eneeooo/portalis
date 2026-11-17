@@ -16,6 +16,7 @@ FEATURES
   - Public birthday sticky notes with an on-demand birthday melody, animated
     confetti, private received wishes, and birthday-student greetings visible to everyone.
   - Reviewer quizzes, saved attempts, score summaries, class rankings, and admin attempt graph.
+  - School calendar: live date/time widget in the top bar, month calendar, event cards on Notes, and a Calendar page where admins and officers paste events in a simple format (Event / Date / Time / Place / Details) with an optional notice photo. Run migration_school_events.sql once in Supabase. Files: calendar.js, events.html.
   - Java compiler workspace with Judge0 Community Edition Java execution, an interactive terminal (answers are typed in the output and replayed), VS Code-style colors, red error lines with quick fixes, automatic class-name handling, .java export, and private, per-account saved projects. Files: java-compiler.html, java-compiler.js (page), java-tools.js (logic).
   - Officer moderation page for reviewing pending notes, managing all notes, and deleting suggestions.
   - Admin-only student and officer password resets to @Default.
