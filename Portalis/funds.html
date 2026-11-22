@@ -73,6 +73,9 @@
           <p class="hint" id="rosterPeriod"></p>
         </div>
         <div class="fund-actions">
+          <button id="copyPaid" class="ghost" type="button">Copy paid</button>
+          <button id="copyUnpaid" class="ghost" type="button">Copy unpaid</button>
+          <button id="copyAll" class="ghost" type="button">Copy all</button>
           <button id="exportXlsx" class="ghost" title="The workbook follows the class roster layout with student name, number, weekly status, and advance payment.">Export XLSX</button>
           <button id="printFund" class="ghost">Print report</button>
         </div>
@@ -122,7 +125,8 @@
   <script src="config.js"></script>
   <script src="common.js"></script>
   <script>
-    let ctx, funds = [], periods = [], selectedFund = null, selectedFundId = null, selectedPeriod = null, roster = [];
+    let ctx, funds = [], periods = [], selectedFund = null, selectedFundId = null, selectedPeriod = null, roster = [], rosterCopyRows = [];
+    const NAME_SUFFIX_PATTERN = /(?:,\s*|\s+)(?:jr|sr|ii|iii|iv|v|vi|vii|viii|ix|x)\.?$/i;
     const $ = id => document.getElementById(id);
     function message(text, bad) { $("msg").className = "msg" + (bad ? " err" : " ok"); $("msg").textContent = text; }
     async function init() {
@@ -275,19 +279,23 @@
       const number = Number(value);
       return Number.isFinite(number) ? number : fallback;
     }
+    function nameWithoutSuffix(fullName) {
+      return String(fullName || "").trim().replace(/\s+/g, " ").replace(NAME_SUFFIX_PATTERN, "").trim();
+    }
     function surnameFromName(fullName) {
-      const name = String(fullName || "").trim().replace(/\s+/g, " ");
+      const name = nameWithoutSuffix(fullName);
       if (!name) return "";
       if (name.includes(",")) return name.split(",", 1)[0].trim();
       const parts = name.split(" ");
       return parts[parts.length - 1] || name;
     }
     function compareBySurname(a, b) {
-      const surnameComparison = surnameFromName(a.full_name)
-        .localeCompare(surnameFromName(b.full_name), undefined, { sensitivity: "base" });
+      const nameA = nameWithoutSuffix(a.full_name);
+      const nameB = nameWithoutSuffix(b.full_name);
+      const surnameComparison = surnameFromName(nameA)
+        .localeCompare(surnameFromName(nameB), undefined, { sensitivity: "base" });
       if (surnameComparison) return surnameComparison;
-      const nameComparison = String(a.full_name || "")
-        .localeCompare(String(b.full_name || ""), undefined, { sensitivity: "base" });
+      const nameComparison = nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
       if (nameComparison) return nameComparison;
       return String(a.student_number || "")
         .localeCompare(String(b.student_number || ""), undefined, { numeric: true, sensitivity: "base" });
@@ -448,10 +456,13 @@
       await loadExpenses(grossTotalFunds);
       const body = $("roster"); body.innerHTML = "";
       const counts = { all: 0, paid: 0, partial: 0, unpaid: 0 };
-      [...roster].sort(compareBySurname).forEach(student => {
+      rosterCopyRows = [...roster].sort(compareBySurname).map(student => {
         const debt = debtByUser[student.user_id];
         const isPartial = Number(student.amount_paid) > 0 && !student.is_paid;
         const state = student.is_paid ? "paid" : isPartial ? "partial" : "unpaid";
+        return { student, debt, state };
+      });
+      rosterCopyRows.forEach(({ student, debt, state }) => {
         counts.all++; counts[state]++;
         const tr = document.createElement("tr");
         tr.dataset.status = state;
@@ -480,6 +491,30 @@
       $("rosterPeriod").textContent = selectedPeriod ? "Showing: " + selectedPeriod.label : "";
       document.querySelectorAll("#rosterChips .fund-chip").forEach(chip => { chip.querySelector("b").textContent = String(counts[chip.dataset.filter] || 0); });
       applyRosterFilter();
+    }
+    async function copyRosterStatus(status) {
+      const students = status === "all"
+        ? rosterCopyRows
+        : rosterCopyRows.filter(row => status === "paid" ? row.state === "paid" : row.state !== "paid");
+      if (!students.length) {
+        message(status === "all" ? "There are no students to copy for this period." : "There are no " + status + " students to copy for this period.", true);
+        return;
+      }
+      const text = students.map(({ student, debt, state }) => {
+        const name = student.full_name || "Student";
+        if (state === "paid") {
+          const advance = safeNumber(debt ? debt.advance_credit : 0);
+          return name + " - Paid" + (advance > 0.004 ? " - Advance: " + peso(advance) : "");
+        }
+        return name + " - Unpaid: " + peso(debt ? debt.total_debt : 0);
+      }).join("\n");
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        message("Could not copy the student list. Check clipboard permissions and try again.", true);
+        return;
+      }
+      message("Copied " + students.length + (status === "all" ? " student(s)." : " " + status + " student(s)."), false);
     }
     async function editPayment(student, debt) {
       const current = safeNumber(debt ? debt.total_paid : 0);
@@ -737,6 +772,9 @@
       const rows = await loadExportData();
       if (rows) printReport(rows);
     };
+    $("copyPaid").onclick = () => copyRosterStatus("paid");
+    $("copyUnpaid").onclick = () => copyRosterStatus("unpaid");
+    $("copyAll").onclick = () => copyRosterStatus("all");
     $("createFund").onclick = async () => {
       const title = $("fundTitle").value.trim();
       const label = $("firstPeriod").value.trim();

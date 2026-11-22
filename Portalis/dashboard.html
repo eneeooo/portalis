@@ -14,88 +14,53 @@
     <div class="wrap">
       <div id="bar"></div>
 
-      <div class="tabs">
+      <div class="tabs notes-tabs">
         <button id="tabBoard" class="tab on">Public board</button>
         <button id="tabMine" class="tab">My notes</button>
       </div>
       <p id="msg" class="msg"></p>
 
-      <!-- New note (My notes tab only) -->
-      <div
-        id="composer"
-        class="note composer"
-        style="display: none; background: #fff"
-      >
-        <h2>New note</h2>
+      <!-- New note (My notes tab only). The paper takes the colour of the importance you pick. -->
+      <div id="composer" class="note composer p-medium" style="display: none">
+        <div class="composer-head">
+          <h2>✍️ New note</h2>
+          <p class="hint" id="postHint"></p>
+        </div>
 
         <label for="title">Title</label>
-        <input
-          id="title"
-          placeholder="e.g. Bring valid ID tomorrow"
-          maxlength="80"
-        />
-
-        <label id="importanceLabel">Importance</label>
-        <div id="importancePicker" class="prio-pick">
-          <label class="p-low"
-            ><input type="radio" name="prio" value="low" /><span
-              >Low</span
-            ></label
-          >
-          <label class="p-neutral"
-            ><input type="radio" name="prio" value="neutral" /><span
-              >Neutral</span
-            ></label
-          >
-          <label class="p-medium"
-            ><input type="radio" name="prio" value="medium" checked /><span
-              >Medium</span
-            ></label
-          >
-          <label class="p-high"
-            ><input type="radio" name="prio" value="high" /><span
-              >High</span
-            ></label
-          >
-          <label class="p-urgent"
-            ><input type="radio" name="prio" value="urgent" /><span
-              >Urgent</span
-            ></label
-          >
+        <div class="field-wrap">
+          <input id="title" placeholder="e.g. Bring valid ID tomorrow" maxlength="80" autocomplete="off" />
+          <span class="field-count" id="titleCount">0/80</span>
         </div>
 
-        <label>Format</label>
-        <div class="fmt-pick">
-          <label
-            ><input type="radio" name="fmt" value="text" checked /><span
-              >Plain</span
-            ></label
-          >
-          <label
-            ><input type="radio" name="fmt" value="bullets" /><span
-              >&bull; Bullets</span
-            ></label
-          >
-          <label
-            ><input type="radio" name="fmt" value="numbered" /><span
-              >1. Numbered</span
-            ></label
-          >
+        <span class="composer-label" id="importanceLabel">How important is it?</span>
+        <div id="importancePicker" class="prio-pick" role="radiogroup" aria-labelledby="importanceLabel">
+          <label class="p-low"><input type="radio" name="prio" value="low" /><span>🌱 Low</span></label>
+          <label class="p-neutral"><input type="radio" name="prio" value="neutral" /><span>💬 Neutral</span></label>
+          <label class="p-medium"><input type="radio" name="prio" value="medium" checked /><span>📌 Medium</span></label>
+          <label class="p-high"><input type="radio" name="prio" value="high" /><span>⚡ High</span></label>
+          <label class="p-urgent"><input type="radio" name="prio" value="urgent" /><span>🔥 Urgent</span></label>
         </div>
 
-        <label for="content">Details (optional)</label>
+        <div class="composer-detail-head">
+          <label for="content">Details <small>(optional)</small></label>
+          <div class="fmt-pick" role="radiogroup" aria-label="Format">
+            <label><input type="radio" name="fmt" value="text" checked /><span>Plain</span></label>
+            <label><input type="radio" name="fmt" value="bullets" /><span>&bull; Bullets</span></label>
+            <label><input type="radio" name="fmt" value="numbered" /><span>1. Numbered</span></label>
+          </div>
+        </div>
         <textarea id="content" placeholder="Write something..."></textarea>
         <p id="fmtHint" class="hint"></p>
 
-        <label for="subInput">Subnotes (optional)</label>
+        <label for="subInput">Checklist <small>(optional)</small></label>
         <div class="subrow">
-          <input id="subInput" placeholder="Add a subnote, press Enter" />
-          <button id="subAdd" type="button">+</button>
+          <input id="subInput" placeholder="Add an item, press Enter" autocomplete="off" />
+          <button id="subAdd" type="button" aria-label="Add checklist item">+</button>
         </div>
         <ul id="pending" class="chips"></ul>
 
-        <button id="add" class="full">Submit note</button>
-        <p class="hint" id="postHint"></p>
+        <button id="add" class="full">📌 Post note</button>
       </div>
 
       <section id="eventsStrip" class="ev-strip" hidden aria-label="Upcoming school events"></section>
@@ -873,6 +838,15 @@
         }
       });
 
+      // The composer paper changes colour with the importance, and the title shows a live counter.
+      function syncComposer() {
+        const checked = document.querySelector('input[name="prio"]:checked');
+        document.getElementById("composer").className = "note composer p-" + (checked ? checked.value : "medium");
+        document.getElementById("titleCount").textContent = document.getElementById("title").value.length + "/80";
+      }
+      document.getElementById("importancePicker").addEventListener("change", syncComposer);
+      document.getElementById("title").addEventListener("input", syncComposer);
+
       document.getElementById("add").onclick = async () => {
         clearMsg();
         const title = document.getElementById("title").value.trim();
@@ -910,6 +884,7 @@
         document.querySelector('input[name="fmt"][value="text"]').checked =
           true;
         updateHint();
+        syncComposer();
         pending = [];
         renderPending();
         await loadNotes();
@@ -920,6 +895,7 @@
         );
       };
 
+      syncComposer();
       init();
     </script>
   </body>

@@ -61,6 +61,7 @@
           <button id="calNext" type="button" class="cal-nav" aria-label="Next month">›</button>
           <button id="calToday" type="button" class="cal-today-btn">Today</button>
         </div>
+        <label class="ev-toggle"><input type="checkbox" id="showBdays" checked> 🎂 Show classmates' birthdays</label>
         <div id="bigCal"></div>
       </section>
       <aside class="ev-side">
@@ -71,6 +72,10 @@
           <button id="pastToggle" type="button" class="ghost small">Show past events</button>
         </div>
         <div id="upcomingList" class="ev-list"></div>
+        <div id="bdaySection" hidden>
+          <div class="ev-side-head"><h3>🎂 Birthdays coming up</h3></div>
+          <div id="bdayList" class="ev-bday-row"></div>
+        </div>
       </aside>
     </div>
   </div>
@@ -86,9 +91,12 @@
       const ctx = await requireAuth();
       if (!ctx) return;
       renderBar(ctx, "events");
-      const staff = !!ctx.isAdmin;
+      const staff = !!ctx.isAdmin;   // admins and officers only
+      if (!staff) { $("addToggle").remove(); $("staffPanel").remove(); }
 
-      let events = [];
+      let allEvents = [];          // school events + classmates' birthdays
+      let showBdays = localStorage.getItem("portalis.cal.bdays") !== "0";
+      const shown = () => showBdays ? allEvents : allEvents.filter(e => !C.isBirthday(e));
       let view = { y: C.nowParts().y, m: C.nowParts().m, sel: C.todayIso() };
       let showPast = false;
       let editing = null;          // the event being edited, or null when adding
@@ -106,7 +114,7 @@
       function renderCalendar() {
         $("calTitle").textContent = C.MONTHS[view.m - 1] + " " + view.y;
         $("bigCal").replaceChildren(C.buildMonth({
-          year: view.y, month: view.m, events, selected: view.sel, today: C.todayIso(), big: true,
+          year: view.y, month: view.m, events: shown(), selected: view.sel, today: C.todayIso(), big: true,
           onSelect: iso => { view.sel = iso; const p = C.parseIso(iso); view.y = p.y; view.m = p.m; renderAll(); }
         }));
       }
@@ -119,7 +127,7 @@
       function renderLists() {
         const today = C.todayIso();
         $("dayTitle").textContent = C.fmtDate(view.sel, { weekday: "long", month: "long", day: "numeric" }) + (view.sel === today ? " (today)" : "");
-        const dayEvents = C.eventsOn(events, view.sel);
+        const dayEvents = C.eventsOn(shown(), view.sel);
         listInto($("dayList"), dayEvents, "No events on this day.");
         if (staff) {
           const add = el("button", "ghost small", "+ Add an event on this day");
@@ -127,15 +135,20 @@
           add.onclick = () => openPanel("add", "Event: \nDate: " + C.fmtDate(view.sel, { month: "short", day: "numeric", year: "numeric" }) + "\nTime: \nPlace: \nDetails: ");
           $("dayList").appendChild(add);
         }
-        const upcoming = events.filter(ev => C.lastDay(ev) >= today).slice(0, 12);
-        const past = events.filter(ev => C.lastDay(ev) < today).slice().reverse();
+        const school = allEvents.filter(ev => !C.isBirthday(ev));
+        const upcoming = school.filter(ev => C.lastDay(ev) >= today).slice(0, 12);
+        const past = school.filter(ev => C.lastDay(ev) < today).slice().reverse();
         $("pastToggle").textContent = showPast ? "Show upcoming" : "Show past events";
         $("pastToggle").hidden = !past.length && !showPast;
         listInto($("upcomingList"), showPast ? past : upcoming, showPast ? "No past events in the last few months." : "No upcoming events yet.");
+        const soon = allEvents.filter(ev => C.isBirthday(ev) && C.lastDay(ev) >= today && ev.event_date <= C.addDays(today, 30));
+        $("bdaySection").hidden = !soon.length;
+        $("bdayList").replaceChildren();
+        soon.forEach(ev => $("bdayList").appendChild(C.birthdayChip(ev, openEvent)));
       }
       function renderAll() { renderCalendar(); renderLists(); }
       async function reload(force) {
-        events = await C.loadEvents(force);
+        allEvents = await C.loadEvents(force);
         if (C.setupMissing()) say(staff ? "The calendar isn't set up yet. Run migration_school_events.sql in the Supabase SQL editor, then reload this page." : "The calendar isn't available yet.", true);
         renderAll();
       }
@@ -143,6 +156,8 @@
       $("calNext").onclick = () => { C.shiftMonth(view, 1); renderCalendar(); };
       $("calToday").onclick = () => { const n = C.nowParts(); view = { y: n.y, m: n.m, sel: n.iso }; renderAll(); };
       $("pastToggle").onclick = () => { showPast = !showPast; renderLists(); };
+      $("showBdays").checked = showBdays;
+      $("showBdays").onchange = () => { showBdays = $("showBdays").checked; try { localStorage.setItem("portalis.cal.bdays", showBdays ? "1" : "0"); } catch (e) { /* private mode */ } renderAll(); };
 
       if (!staff) return reload().then(() => {});
 
@@ -334,7 +349,7 @@
       await reload(true);
       const hash = location.hash || "";
       if (hash === "#add") openPanel("add", "");
-      else if (/^#edit-/.test(hash)) { const target = events.find(e => String(e.id) === hash.slice(6)); if (target) startEdit(target); else say("That event could not be found.", true); }
+      else if (/^#edit-/.test(hash)) { const target = allEvents.find(e => String(e.id) === hash.slice(6)); if (target) startEdit(target); else say("That event could not be found.", true); }
     })();
   </script>
 </body>

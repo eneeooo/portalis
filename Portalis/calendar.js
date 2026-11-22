@@ -16,6 +16,7 @@
   var DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var PALETTE = ["#ff8f8f", "#ffba55", "#f2d94e", "#6fd18f", "#6db5ff", "#c79bff"];
   var LIMITS = { title: 120, place: 160, details: 2000 };
+  var BDAY_COLOR = "#ff9ecf";
 
   // ------------------------------------------------------------------ dates
   function pad(n) { return n < 10 ? "0" + n : "" + n; }
@@ -45,11 +46,41 @@
     return (h % 12 || 12) + ":" + (a[1] || "00") + " " + (h >= 12 ? "PM" : "AM");
   }
 
+  // ------------------------------------------------------------------ birthdays (shown from profiles; never stored as events)
+  function isBirthday(ev) { return !!ev && ev.kind === "birthday"; }
+  function firstName(full, nick) {
+    if (nick && String(nick).trim()) return String(nick).trim();
+    var s = String(full || "").trim();
+    if (s.indexOf(",") > -1) s = s.split(",")[1].trim();   // "Mia, John Eric L." -> "John Eric L."
+    return s.split(/\s+/)[0] || "Classmate";
+  }
+  /** rows from get_class_birthdays() -> one all-day event per classmate for each year in `years` */
+  function birthdayEvents(rows, years) {
+    var out = [];
+    (rows || []).forEach(function (r) {
+      var m = +r.birth_month, d = +r.birth_day;
+      if (!m || !d) return;
+      var who = firstName(r.display_name, r.nickname);
+      years.forEach(function (y) {
+        var day = d;
+        if (m === 2 && d === 29 && daysInMonth(y, 2) < 29) day = 28;   // leap-day birthdays on non-leap years
+        if (!validDate(y, m, day)) return;
+        out.push({
+          id: "b:" + r.user_id + ":" + y, kind: "birthday", user_id: r.user_id,
+          title: "\ud83c\udf82 " + who + "'s birthday", event_date: isoOf(y, m, day), end_date: null, start_time: null, end_time: null,
+          location: null, description: "Happy birthday, " + (r.display_name || who) + "! Send them your wishes.", image_path: null
+        });
+      });
+    });
+    return out;
+  }
+
   // ------------------------------------------------------------------ event helpers
   function lastDay(ev) { return ev.end_date && ev.end_date > ev.event_date ? ev.end_date : ev.event_date; }
   function onDay(ev, iso) { return ev.event_date <= iso && iso <= lastDay(ev); }
   function isMultiDay(ev) { return lastDay(ev) !== ev.event_date; }
   function timeText(ev) {
+    if (isBirthday(ev)) return "Birthday";
     var s = fmtTime(ev.start_time), e = fmtTime(ev.end_time);
     if (!s) return "All day";
     return e ? s + " \u2013 " + e : s;
@@ -59,11 +90,11 @@
     return fmtDate(ev.event_date, { month: "short", day: "numeric" }) + " \u2013 " + fmtDate(lastDay(ev), { month: "short", day: "numeric", year: "numeric" });
   }
   function sortEvents(a, b) {
-    var ka = a.event_date + (a.start_time || "00:00:00"), kb = b.event_date + (b.start_time || "00:00:00");
+    var ka = a.event_date + (isBirthday(a) ? "99:99:99" : (a.start_time || "00:00:00")), kb = b.event_date + (isBirthday(b) ? "99:99:99" : (b.start_time || "00:00:00"));
     return ka < kb ? -1 : ka > kb ? 1 : String(a.title).localeCompare(String(b.title));
   }
   function eventsOn(events, iso) { return events.filter(function (ev) { return onDay(ev, iso); }).sort(sortEvents); }
-  function colorOf(ev) { return PALETTE[Math.abs(+ev.id || 0) % PALETTE.length]; }
+  function colorOf(ev) { return isBirthday(ev) ? BDAY_COLOR : PALETTE[Math.abs(+ev.id || 0) % PALETTE.length]; }
   function relativeLabel(ev, today) {
     today = today || todayIso();
     if (onDay(ev, today)) return isMultiDay(ev) ? "Happening now" : "Today";
@@ -244,7 +275,7 @@
   }
 
   // ------------------------------------------------------------------ data
-  var state = { events: null, loadedAt: 0, loading: null, error: null, urls: {} };
+  var state = { events: null, loadedAt: 0, loading: null, error: null, urls: {}, birthdays: [] };
   function client() { return typeof sb !== "undefined" ? sb : root.__sb; }
   function setupMissing() { return !!(state.error && /school_events|does not exist|schema cache|relation/i.test(String(state.error.message || ""))); }
   async function loadEvents(force) {
@@ -254,8 +285,15 @@
       try {
         var from = addDays(todayIso(), -120);
         var res = await client().from("school_events").select("*").or("event_date.gte." + from + ",end_date.gte." + from).order("event_date", { ascending: true });
-        if (res.error) { state.error = res.error; state.events = state.events || []; }
-        else { state.error = null; state.events = (res.data || []).slice().sort(sortEvents); }
+        var school = [];
+        if (res.error) { state.error = res.error; }
+        else { state.error = null; school = res.data || []; }
+        try {   // classmates' birthdays (month and day only) - quietly skipped if the function isn't installed yet
+          var br = await client().rpc("get_class_birthdays");
+          state.birthdays = br && !br.error && Array.isArray(br.data) ? br.data : [];
+        } catch (e2) { state.birthdays = []; }
+        var y = nowParts().y;
+        state.events = school.concat(birthdayEvents(state.birthdays, [y - 1, y, y + 1])).sort(sortEvents);
       } catch (e) { state.error = e; state.events = state.events || []; }
       state.loadedAt = Date.now();
       state.loading = null;
@@ -303,13 +341,14 @@
   function eventCard(ev, opts) {
     opts = opts || {};
     var today = todayIso();
-    var card = mk("article", "ev-card" + (onDay(ev, today) ? " is-now" : "") + (lastDay(ev) < today ? " is-past" : ""));
+    var bday = isBirthday(ev);
+    var card = mk("article", "ev-card" + (onDay(ev, today) ? " is-now" : "") + (lastDay(ev) < today ? " is-past" : "") + (bday ? " is-birthday" : ""));
     card.style.setProperty("--ev", colorOf(ev));
     card.append(dateBlock(ev, today));
     var body = mk("div", "ev-card-body");
     var title = mk("strong", "ev-card-title", ev.title);
     body.appendChild(title);
-    body.appendChild(mk("span", "ev-line ev-time", "\ud83d\udd52 " + timeText(ev) + (isMultiDay(ev) ? " \u00b7 " + dateText(ev) : "")));
+    body.appendChild(mk("span", "ev-line ev-time", bday ? "\ud83c\udf82 Birthday" : "\ud83d\udd52 " + timeText(ev) + (isMultiDay(ev) ? " \u00b7 " + dateText(ev) : "")));
     if (ev.location) body.appendChild(mk("span", "ev-line ev-place", "\ud83d\udccd " + ev.location));
     if (opts.relative !== false) body.appendChild(mk("span", "ev-rel", relativeLabel(ev, today)));
     card.appendChild(body);
@@ -350,10 +389,11 @@
     close.onclick = closeModal;
     head.appendChild(close);
     card.appendChild(head);
+    var bday = isBirthday(ev);
     var info = mk("div", "ev-modal-info");
     info.appendChild(mk("div", "ev-line", "\ud83d\udcc5 " + dateText(ev, true)));
-    info.appendChild(mk("div", "ev-line", "\ud83d\udd52 " + timeText(ev)));
-    if (ev.location) info.appendChild(mk("div", "ev-line", "\ud83d\udccd " + ev.location));
+    if (!bday) info.appendChild(mk("div", "ev-line", "\ud83d\udd52 " + timeText(ev)));
+    if (!bday && ev.location) info.appendChild(mk("div", "ev-line", "\ud83d\udccd " + ev.location));
     card.appendChild(info);
     if (ev.description) { var det = mk("p", "ev-modal-details"); linkify(det, ev.description); card.appendChild(det); }
     if (ev.image_path) {
@@ -363,7 +403,7 @@
       hydrateImages(card).then(function () { if (img.src) fig.href = img.src; });
     }
     var actions = mk("div", "ev-modal-actions");
-    if (opts.canEdit) {
+    if (opts.canEdit && !bday) {   // birthdays come from profiles, so nobody edits them here
       if (opts.onEdit) { var edit = mk("button", "ghost", "Edit"); edit.type = "button"; edit.onclick = function () { closeModal(); opts.onEdit(ev); }; actions.appendChild(edit); }
       else { var editLink = mk("a", "btn ghost", "Edit on the calendar page"); editLink.href = "events.html#edit-" + ev.id; actions.appendChild(editLink); }
       if (opts.onDelete) { var del = mk("button", "danger", "Delete"); del.type = "button"; del.onclick = function () { opts.onDelete(ev); }; actions.appendChild(del); }
@@ -509,14 +549,24 @@
   }
 
   // ------------------------------------------------------------------ Notes-page strip
+  function birthdayChip(ev, onOpen) {
+    var today = todayIso();
+    var chip = mk("button", "ev-bday-chip" + (onDay(ev, today) ? " is-today" : ""));
+    chip.type = "button";
+    chip.append(mk("span", "", ev.title), mk("small", "", onDay(ev, today) ? "Today!" : fmtDate(ev.event_date, { month: "short", day: "numeric" })));
+    chip.title = relativeLabel(ev, today);
+    chip.onclick = function () { onOpen(ev); };
+    return chip;
+  }
   async function renderUpcoming(container, opts) {
     opts = opts || {};
     var staff = !!opts.canEdit;
     container.replaceChildren();
     var events = await loadEvents();
     var today = todayIso();
-    var list = events.filter(function (ev) { return lastDay(ev) >= today; }).slice(0, opts.limit || 6);
-    if (!list.length && !(staff && setupMissing())) { container.hidden = true; return; }
+    var list = events.filter(function (ev) { return !isBirthday(ev) && lastDay(ev) >= today; }).slice(0, opts.limit || 6);
+    var soon = events.filter(function (ev) { return isBirthday(ev) && lastDay(ev) >= today && ev.event_date <= addDays(today, 14); }).slice(0, 8);
+    if (!list.length && !soon.length && !(staff && setupMissing())) { container.hidden = true; return; }
     container.hidden = false;
     var head = mk("div", "ev-strip-head");
     head.appendChild(mk("h3", "", "\ud83d\udcc5 Upcoming events"));
@@ -525,10 +575,18 @@
     if (staff) { var add = mk("a", "ev-add", "+ Add event"); add.href = "events.html#add"; links.appendChild(add); }
     head.appendChild(links);
     container.appendChild(head);
-    if (!list.length) { container.appendChild(mk("p", "hint", "The calendar isn't set up yet. Run migration_school_events.sql in Supabase.")); return; }
-    var row = mk("div", "ev-strip-row");
-    list.forEach(function (ev) { row.appendChild(eventCard(ev, { onOpen: function (e) { openEventModal(e, { canEdit: staff }); } })); });
-    container.appendChild(row);
+    if (!list.length && !soon.length) { container.appendChild(mk("p", "hint", "The calendar isn't set up yet. Run migration_school_events.sql in Supabase.")); return; }
+    if (list.length) {
+      var row = mk("div", "ev-strip-row");
+      list.forEach(function (ev) { row.appendChild(eventCard(ev, { onOpen: function (e) { openEventModal(e, { canEdit: staff }); } })); });
+      container.appendChild(row);
+    }
+    if (soon.length) {
+      var bd = mk("div", "ev-bday-row");
+      bd.appendChild(mk("span", "ev-bday-label", "\ud83c\udf82 Birthdays"));
+      soon.forEach(function (ev) { bd.appendChild(birthdayChip(ev, function (e) { openEventModal(e, { canEdit: false }); })); });
+      container.appendChild(bd);
+    }
     hydrateImages(container);
   }
 
@@ -538,6 +596,7 @@
     fmtDate: fmtDate, fmtTime: fmtTime, lastDay: lastDay, onDay: onDay, isMultiDay: isMultiDay, timeText: timeText, dateText: dateText, sortEvents: sortEvents, eventsOn: eventsOn, colorOf: colorOf, relativeLabel: relativeLabel,
     parseDateSpec: parseDateSpec, parseTimeSpec: parseTimeSpec, parseEventsText: parseEventsText, eventToText: eventToText,
     loadEvents: loadEvents, invalidate: invalidate, setupMissing: setupMissing, state: state, hydrateImages: hydrateImages,
+    isBirthday: isBirthday, firstName: firstName, birthdayEvents: birthdayEvents, birthdayChip: birthdayChip,
     eventCard: eventCard, openEventModal: openEventModal, closeModal: closeModal, buildMonth: buildMonth, shiftMonth: shiftMonth, attachBar: attachBar, renderUpcoming: renderUpcoming
   };
   root.PortalisCalendar = api;

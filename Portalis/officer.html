@@ -25,6 +25,12 @@
       <div id="board" class="board"></div>
     </section>
 
+    <section class="section" aria-labelledby="subjTitle">
+      <h2 id="subjTitle">Reviewer subjects</h2>
+      <p class="hint">Group subjects by year and semester, set their order, and choose which ones every student sees on the Reviewers page.</p>
+      <div id="subjectManager" style="margin-top:12px"></div>
+    </section>
+
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -44,6 +50,7 @@
       if (ctx.role !== "officer") { location.href = "dashboard.html"; return; }
       renderBar(ctx, "officer");
       await loadNotes();
+      await renderSubjectManager(document.getElementById("subjectManager"), (text, isError) => { if (isError) err(text); else ok(text); });
     }
 
     async function loadNotes() {

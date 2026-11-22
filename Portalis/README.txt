@@ -16,7 +16,7 @@ FEATURES
   - Public birthday sticky notes with an on-demand birthday melody, animated
     confetti, private received wishes, and birthday-student greetings visible to everyone.
   - Reviewer quizzes, saved attempts, score summaries, class rankings, and admin attempt graph.
-  - School calendar: live date/time widget in the top bar, month calendar, event cards on Notes, and a Calendar page where admins and officers paste events in a simple format (Event / Date / Time / Place / Details) with an optional notice photo. Run migration_school_events.sql once in Supabase. Files: calendar.js, events.html.
+  - School calendar: live date/time widget in the top bar, month calendar, event cards on Notes, and a Calendar page where admins and officers paste events in a simple format (Event / Date / Time / Place / Details) with an optional notice photo. Run migration_school_events.sql once in Supabase. Run migration_calendar_birthdays.sql once more to show classmates' birthdays (month and day only) on the calendar. Files: calendar.js, events.html.
   - Java compiler workspace with Judge0 Community Edition Java execution, an interactive terminal (answers are typed in the output and replayed), VS Code-style colors, red error lines with quick fixes, automatic class-name handling, .java export, and private, per-account saved projects. Files: java-compiler.html, java-compiler.js (page), java-tools.js (logic).
   - Officer moderation page for reviewing pending notes, managing all notes, and deleting suggestions.
   - Admin-only student and officer password resets to @Default.
@@ -206,22 +206,31 @@ ADMIN RULES
   - Quiz answer keys remain server-side; grading is performed by Supabase.
 
 REVIEWER TEXT FORMAT
-  Enter reviewer content in Manage reviewers. The text is formatted on the
-  topic's Reviewer tab:
-  - # Heading, ## Section, and ### Subsection create progressively smaller
-    headings with clear spacing.
-  - - bullet or * bullet creates a bulleted list. Use 1. item or 2. item for
-    a numbered list.
-  - Consecutive Term - definition or Term: definition lines become responsive
-    definition cards. These can also be used to generate quiz questions.
-  - Example: explanation or Example 2: explanation creates a highlighted
-    example callout with an EXAMPLE label. Example - explanation is also
-    labeled and highlighted as an example card. A heading written as
-    # Example or ## Examples also gets an example indicator.
-  - Use **important text** for bold emphasis and ==highlighted text== for a
-    colored highlight.
-  - Start a line with > to make a callout.
-  - Inline math uses $x^2$ or \(x^2\). Display math uses $$\frac{a}{b}$$ or
+  Enter reviewer content in Manage reviewers. The editor has a toolbar, a live
+  preview, and a "Formatting guide" that shows every option with real output.
+  Students see the same notes-style page on the topic's Reviewer tab.
+
+  BLOCKS
+  - # Heading, ## Section, ### Sub-section: progressively smaller headings.
+  - ---  on its own line: divider.
+  - - bullet or * bullet: bulleted list. Indent 2 spaces for a sub-bullet and
+    4 for a third level. 1. item / 2. item: numbered list.
+  - - [ ] item and - [x] item: checklist.
+  - Term - definition or Term: definition: term cards (also used to generate
+    quiz questions). Start a line with ~ to keep it a normal paragraph.
+  - Example: text or Example 2: text: yellow example note.
+  - > text: callout. > Note: / > Tip: / > Warning: / > Remember: / > Formula:
+    make coloured, labelled callouts. Consecutive > lines join one callout.
+  - | a | b | rows make a table. A second row of |---|---| makes the first row
+    a header (|:--:| centers, |--:| right-aligns).
+  - ``` on its own line starts and ends a code block (write a language after
+    the first ``` to label it, for example ```java).
+
+  INLINE
+  - **bold**, *italic*, ++underline++, ~~strike~~, `code`.
+  - ==yellow== highlight. Other colours: ==g:green== ==b:blue== ==p:pink==
+    ==o:orange== ==r:red==.
+  - Inline math $x^2$ or \(x^2\). Display math $$\frac{a}{b}$$ or
     \[ \frac{a}{b} \]. Math is rendered with KaTeX.
 
   Example:
@@ -232,9 +241,10 @@ REVIEWER TEXT FORMAT
     Numerator - The top number in a fraction.
     Denominator - The bottom number in a fraction.
 
+    > Tip: ==Simplify== before you add or subtract.
     Example: In \(\frac{3}{4}\), 3 is the numerator and 4 is the denominator.
     - Fractions can represent equal parts.
-    - The denominator cannot be zero.
+      - The denominator cannot be zero.
 
 BULK QUESTION FORMAT (blank line between questions)
   Q: What is the capital of the Philippines?

@@ -34,6 +34,9 @@
       <button type="button" role="tab" id="tab-suggestions" class="admin-tab tone-orange" data-pane="suggestions" aria-selected="false" aria-controls="pane-suggestions">
         <span class="admin-tab-icon" aria-hidden="true">💡</span><span class="admin-tab-label">Suggestions</span><strong id="sugCount" class="admin-tab-count"></strong>
       </button>
+      <button type="button" role="tab" id="tab-subjects" class="admin-tab tone-purple" data-pane="subjects" aria-selected="false" aria-controls="pane-subjects">
+        <span class="admin-tab-icon" aria-hidden="true">📚</span><span class="admin-tab-label">Subjects</span><strong id="subjCount" class="admin-tab-count"></strong>
+      </button>
     </div>
 
     <section id="pane-queue" class="admin-pane" role="tabpanel" aria-labelledby="tab-queue">
@@ -99,6 +102,11 @@
     <section id="pane-suggestions" class="admin-pane" role="tabpanel" aria-labelledby="tab-suggestions" hidden>
       <div id="suggestions" class="admin-suggestions"></div>
     </section>
+
+    <section id="pane-subjects" class="admin-pane" role="tabpanel" aria-labelledby="tab-subjects" hidden>
+      <p class="hint">Group the Reviewers subjects by year and semester, set their order, and choose which ones students can see.</p>
+      <div id="subjectManager"></div>
+    </section>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -110,7 +118,7 @@
     let ctx, notes = [], filter = "all";
     const msg = document.getElementById("msg");
     function err(t) { msg.className = "msg err"; msg.textContent = t; }
-    const PANES = ["queue", "notes", "users", "confessions", "suggestions"];
+    const PANES = ["queue", "notes", "users", "confessions", "suggestions", "subjects"];
     function showPane(name) {
       if (!PANES.includes(name)) name = "queue";
       PANES.forEach(p => {
@@ -155,6 +163,13 @@
       await loadConfessionLog();
       await loadSuggestions();
       await loadNotes();
+      await loadSubjects();
+    }
+
+    async function loadSubjects() {
+      await renderSubjectManager(document.getElementById("subjectManager"), (text, isError) => { if (isError) err(text); else ok(text); });
+      const { count } = await sb.from("subjects").select("id", { count: "exact", head: true });
+      document.getElementById("subjCount").textContent = count || "";
     }
 
     let confessionLog = [];

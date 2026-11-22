@@ -96,6 +96,9 @@ Then run `Portalis\migration_profile_nickname_online.sql` (nicknames, Get to kno
 notes, working online list). Then run `Portalis\migration_memories_and_updates.sql` (Memories tab, confession
 full names for admins, nicknames in attendance). Then run `Portalis\migration_memories_multi_photos.sql` (several photos per memory).
 Then run `Portalis\migration_school_events.sql` (school calendar: the date and time widget in the top bar, the Calendar page, event cards on Notes, and event notice pictures).
+Then run `Portalis\migration_calendar_birthdays.sql` (shows classmates' birthdays on the calendar; month and day only).
+Run `sql\migration_subject_groups.sql` to let admins and officers group reviewer subjects by year and
+semester, reorder them, and choose which subjects students see (Admin -> Subjects, or Officer -> Reviewer subjects).
 Run `Portalis\migration_java_projects.sql` to enable private, per-account
 Java projects in the Java compiler tab.
 Optionally run `Portalis\migration_seed_get_to_know.sql`

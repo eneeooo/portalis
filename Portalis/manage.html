@@ -21,8 +21,7 @@
         <div><label for="newTitle">Topic title</label><input id="newTitle" placeholder="e.g. Variables and data types" maxlength="120"></div>
       </div>
       <label for="newReviewer">Reviewer text (optional, you can edit it later)</label>
-      <textarea id="newReviewer" style="min-height:120px" placeholder="# Heading&#10;- bullet point&#10;Algorithm - a step-by-step procedure for solving a problem"></textarea>
-      <p class="hint">Use "# Heading", "- bullet", "1. numbered item", or plain paragraphs. Consecutive "Term - definition" or "Term: definition" lines appear in responsive highlight cards and can be turned into quiz questions. Highlight text with **bold** or ==mark==. Start a line with &gt; for a callout. Use $x^2$ inline or $$\frac{a}{b}$$ for displayed math.</p>
+      <div id="newEditor"></div>
       <button id="createTopic">Create topic</button>
     </div>
 
@@ -38,10 +37,11 @@
         <label for="edTitle">Title</label>
         <input id="edTitle" maxlength="120">
         <label for="edReviewer">Reviewer text</label>
-        <textarea id="edReviewer" style="min-height:220px"></textarea>
+        <div id="edEditor"></div>
         <button id="saveTopic">Save changes</button>
         <a id="previewLink" class="btn ghost">View as student</a>
         <button id="delTopic" class="ghost">Delete topic</button>
+        <span id="dirty" class="rv-dirty" aria-live="polite"></span>
       </div>
 
       <div class="card">
@@ -131,6 +131,250 @@
     function ok(t) { msg.className = "msg ok"; msg.textContent = t; }
     function clearMsg() { msg.className = "msg"; msg.textContent = ""; }
 
+    /* ---------- reviewer editor: toolbar, live preview, formatting guide ---------- */
+    const editors = {};
+    const STARTER = [
+      "# Topic title",
+      "A short summary in one or two lines. ==Highlight== the **most important** idea.",
+      "",
+      "## Key terms",
+      "Term one - its meaning in one sentence",
+      "Term two: its meaning in one sentence",
+      "",
+      "## Main points",
+      "- First point",
+      "  - Sub-point",
+      "- Second point",
+      "",
+      "> Tip: a shortcut or trick for remembering this",
+      "> Warning: a common mistake",
+      "Example: a worked example goes here",
+      "",
+      "| Item | Description |",
+      "|---|---|",
+      "| A | first |",
+      "| B | second |",
+      ""
+    ].join("\n");
+    const GUIDE = [
+      ["Headings", "# Big heading\n## Section\n### Sub-section"],
+      ["Text styles", "**bold** *italic* ++underline++ ~~strike~~ `code`"],
+      ["Highlighters", "==yellow== ==g:green== ==b:blue== ==p:pink== ==o:orange== ==r:red=="],
+      ["Bullets", "- bullet\n  - sub-bullet (indent 2 spaces)\n- another"],
+      ["Numbered", "1. first\n2. second"],
+      ["Checklist", "- [ ] to review\n- [x] done"],
+      ["Term card", "Algorithm - a step-by-step procedure\nVariable: a named storage location"],
+      ["Example", "Example: 2 + 2 = 4"],
+      ["Callouts", "> plain note\n> Note: extra information\n> Tip: a shortcut\n> Warning: a common mistake\n> Remember: must memorize\n> Formula: $a^2+b^2=c^2$"],
+      ["Table", "| Term | Meaning |\n|---|---|\n| CPU | the brain |"],
+      ["Code block", "```java\nint x = 5;\n```"],
+      ["Divider", "---"],
+      ["Plain line", "~ Note: stays a normal line, not a card"],
+      ["Math", "$x^2$ inline, or $$\\frac{a}{b}$$ on its own line"]
+    ];
+
+    function buildEditor(mountId, taId, minHeight, opts) {
+      opts = opts || {};
+      const mount = $(mountId);
+      mount.className = "rv-editor";
+      mount.dataset.view = "write";
+
+      const ta = document.createElement("textarea");
+      ta.id = taId;
+      ta.style.minHeight = minHeight + "px";
+      ta.placeholder = "# Heading\n- bullet point\nAlgorithm - a step-by-step procedure for solving a problem";
+
+      /* text helpers (execCommand keeps Ctrl+Z working) */
+      const replace = (s, e, text) => {
+        ta.focus(); ta.setSelectionRange(s, e);
+        let done = false;
+        try { done = typeof document.execCommand === "function" && document.execCommand("insertText", false, text); } catch (_) { done = false; }
+        if (!done) {
+          ta.setRangeText(text, s, e, "end");
+          ta.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      };
+      const wrap = (before, after, filler) => () => {
+        const s = ta.selectionStart, e = ta.selectionEnd, chosen = ta.value.slice(s, e) || filler;
+        replace(s, e, before + chosen + after);
+        ta.setSelectionRange(s + before.length, s + before.length + chosen.length);
+      };
+      const STRIP = /^(\s*)(?:#{1,3}\s+|[-*\u2022]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+|>\s?)/;
+      const prefix = (mark, numbered) => () => {
+        const v = ta.value, s = ta.selectionStart;
+        let e = ta.selectionEnd;
+        if (e > s && v.charAt(e - 1) === "\n") e--;
+        const ls = v.lastIndexOf("\n", s - 1) + 1;
+        let le = v.indexOf("\n", e); if (le < 0) le = v.length;
+        const rows = v.slice(ls, le).split("\n");
+        const markerOf = ln => { const m = ln.match(STRIP); return m ? m[0].slice(m[1].length) : ""; };
+        const filled = rows.filter(r => r.trim());
+        const toggleOff = filled.length > 0 && filled.every(r => numbered ? /^\d/.test(markerOf(r)) : markerOf(r) === mark);
+        let n = 0;
+        const out = rows.map(ln => {
+          if (!ln.trim()) return ln;
+          const m = ln.match(STRIP);
+          const indent = m ? m[1] : ln.match(/^\s*/)[0];
+          const bare = ln.slice(m ? m[0].length : indent.length);
+          if (toggleOff) return indent + bare;
+          n++;
+          return indent + (numbered ? n + ". " : mark) + bare;
+        });
+        const joined = out.join("\n");
+        replace(ls, le, joined);
+        ta.setSelectionRange(ls, ls + joined.length);
+      };
+      const block = (text, from, len) => () => {
+        const v = ta.value, s = ta.selectionStart, e = ta.selectionEnd;
+        const lead = s > 0 && v.charAt(s - 1) !== "\n" ? "\n" : "";
+        const tail = e < v.length && v.charAt(e) !== "\n" ? "\n" : "";
+        replace(s, e, lead + text + tail);
+        const a = s + lead.length + (from || 0);
+        ta.setSelectionRange(a, a + (len || 0));
+      };
+
+      /* toolbar */
+      const bar = el("div", "rv-toolbar");
+      const group = (label) => { const g = el("div", "rv-group"); g.setAttribute("role", "group"); g.setAttribute("aria-label", label); bar.appendChild(g); return g; };
+      const tool = (g, label, title, fn, cls) => {
+        const b = el("button", "rv-tool" + (cls ? " " + cls : ""), label);
+        b.type = "button"; b.title = title; b.setAttribute("aria-label", title);
+        b.onmousedown = ev => ev.preventDefault();
+        b.onclick = fn;
+        g.appendChild(b);
+        return b;
+      };
+      let g = group("Headings");
+      tool(g, "H1", "Big heading", prefix("# "), "rv-h");
+      tool(g, "H2", "Section heading", prefix("## "), "rv-h");
+      tool(g, "H3", "Sub-section heading", prefix("### "), "rv-h");
+      g = group("Text style");
+      tool(g, "B", "Bold (Ctrl+B)", wrap("**", "**", "bold text"), "rv-b");
+      tool(g, "I", "Italic (Ctrl+I)", wrap("*", "*", "italic text"), "rv-i");
+      tool(g, "U", "Underline (Ctrl+U)", wrap("++", "++", "underlined text"), "rv-u");
+      tool(g, "S", "Strikethrough", wrap("~~", "~~", "struck text"), "rv-s");
+      tool(g, "</>", "Inline code", wrap("`", "`", "code"), "rv-c");
+      g = group("Highlighters");
+      [["y", "Yellow", ""], ["g", "Green", "g:"], ["b", "Blue", "b:"], ["p", "Pink", "p:"], ["o", "Orange", "o:"], ["r", "Red", "r:"]].forEach(c => {
+        tool(g, "\u00a0", c[1] + " highlighter", wrap("==" + c[2], "==", "highlight"), "rv-sw hl-" + c[0]);
+      });
+      g = group("Lists");
+      tool(g, "\u2022", "Bullet list (Tab indents a sub-bullet)", prefix("- "));
+      tool(g, "1.", "Numbered list", prefix("", true));
+      tool(g, "\u2611", "Checklist", prefix("- [ ] "));
+      g = group("Blocks");
+      tool(g, "Term", "Term card (Term - definition)", block("Term - definition", 0, 4));
+      tool(g, "Example", "Example sticky note", block("Example: ", 9, 0));
+      const callouts = el("select", "rv-select");
+      callouts.setAttribute("aria-label", "Insert a callout");
+      [["", "Callout..."], ["Note", "Note"], ["Tip", "Tip"], ["Warning", "Warning"], ["Remember", "Remember"], ["Formula", "Formula"]].forEach(o => {
+        const opt = el("option", "", o[1]); opt.value = o[0]; callouts.appendChild(opt);
+      });
+      callouts.onchange = () => {
+        const kind = callouts.value; callouts.value = "";
+        if (!kind) return;
+        const head = "> " + kind + ": ";
+        block(head + "text", head.length, 4)();
+      };
+      g.appendChild(callouts);
+      tool(g, "Table", "Table", block("| Column 1 | Column 2 |\n|---|---|\n| cell | cell |", 2, 8));
+      tool(g, "Code", "Code block", block("```java\ncode here\n```", 8, 9));
+      tool(g, "\u2015", "Divider line", block("---"));
+      tool(g, "\u03a3", "Math (KaTeX)", wrap("$", "$", "x^2"));
+      g = group("Template");
+      tool(g, "Starter", "Insert a starter layout showing every block", block(STARTER), "rv-starter");
+
+      /* panes */
+      const tabs = el("div", "rv-viewtabs");
+      const bWrite = el("button", "rv-viewtab on", "Write");
+      const bPrev = el("button", "rv-viewtab", "Preview");
+      [bWrite, bPrev].forEach(b => { b.type = "button"; tabs.appendChild(b); });
+      const setView = v => {
+        mount.dataset.view = v;
+        bWrite.classList.toggle("on", v === "write");
+        bPrev.classList.toggle("on", v === "preview");
+      };
+      bWrite.onclick = () => setView("write");
+      bPrev.onclick = () => { refresh(); setView("preview"); };
+
+      const split = el("div", "rv-split");
+      const writePane = el("div", "rv-pane rv-write");
+      writePane.append(el("div", "rv-pane-title", "Write"), ta);
+      const prevPane = el("div", "rv-pane rv-prev");
+      const preview = el("div", "rv-preview reviewer-card");
+      prevPane.append(el("div", "rv-pane-title", "Live preview (what students see)"), preview);
+      split.append(writePane, prevPane);
+
+      const stats = el("p", "hint rv-stats");
+
+      /* formatting guide (rendered with the real renderer) */
+      const help = el("details", "rv-help");
+      help.appendChild(el("summary", "", "Formatting guide - everything you can type"));
+      help.addEventListener("toggle", () => {
+        if (!help.open || help.dataset.built) return;
+        help.dataset.built = "1";
+        const wrapEl = el("div", "scroll");
+        const table = el("table", "rv-guide");
+        const head = document.createElement("tr");
+        ["", "Type this", "You get"].forEach(h => head.appendChild(el("th", "", h)));
+        table.appendChild(head);
+        GUIDE.forEach(row => {
+          const tr = document.createElement("tr");
+          const code = el("pre", "rv-guide-code"); code.textContent = row[1];
+          const out = el("td", "rv-guide-out"); out.appendChild(renderRich(row[1]));
+          const type = el("td"); type.appendChild(code);
+          tr.append(el("th", "", row[0]), type, out);
+          table.appendChild(tr);
+        });
+        wrapEl.appendChild(table);
+        help.appendChild(wrapEl);
+        help.appendChild(el("p", "hint", "Tip: lines like \"Word: meaning\" or \"Word - meaning\" turn into term cards and can also generate quiz questions. Start a line with ~ to stop that."));
+      });
+
+      mount.append(tabs, bar, split, stats, help);
+
+      /* behaviour */
+      const refresh = () => {
+        preview.innerHTML = "";
+        const text = ta.value;
+        if (text.trim()) preview.appendChild(renderRich(text));
+        else preview.appendChild(el("p", "hint", "Your formatted reviewer shows up here as you type."));
+        const words = (text.trim().match(/\S+/g) || []).length;
+        const terms = extractPairs(text).length;
+        stats.textContent = words + " word" + (words === 1 ? "" : "s") + " \u00b7 " + terms + " term card" + (terms === 1 ? "" : "s") + " (quiz-ready)";
+      };
+      let timer;
+      ta.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(refresh, 150);
+        if (opts.onInput) opts.onInput();
+      });
+      ta.addEventListener("keydown", ev => {
+        const mod = ev.ctrlKey || ev.metaKey;
+        if (mod && !ev.shiftKey && !ev.altKey) {
+          const k = ev.key.toLowerCase();
+          const hot = { b: wrap("**", "**", "bold text"), i: wrap("*", "*", "italic text"), u: wrap("++", "++", "underlined text") }[k];
+          if (hot) { ev.preventDefault(); hot(); return; }
+          if (k === "s" && opts.onSave) { ev.preventDefault(); opts.onSave(); return; }
+        }
+        if (ev.key === "Tab" && !mod && !ev.altKey) {
+          const v = ta.value, s = ta.selectionStart, ls = v.lastIndexOf("\n", s - 1) + 1;
+          let le = v.indexOf("\n", s); if (le < 0) le = v.length;
+          const ln = v.slice(ls, le);
+          if (!/^\s*(?:[-*\u2022]|\d+[.)])\s/.test(ln)) return;   // elsewhere Tab keeps moving focus
+          ev.preventDefault();
+          if (ev.shiftKey) {
+            const cut = (ln.match(/^ {1,2}/) || [""])[0].length;
+            if (cut) { replace(ls, ls + cut, ""); const p = Math.max(ls, s - cut); ta.setSelectionRange(p, p); }
+          } else { replace(ls, ls, "  "); ta.setSelectionRange(s + 2, s + 2); }
+        }
+      });
+
+      mount.insertBefore(el("p", "hint rv-lead", "Type on the left, see the finished notes on the right. Use the toolbar or the formatting guide below."), mount.firstChild);
+      refresh();
+      return { ta: ta, refresh: refresh };
+    }
+
     async function init() {
       ctx = await requireAuth();
       if (!ctx) return;
@@ -139,6 +383,9 @@
       const { data: ps, error: profileError } = await sb.from("profiles").select("id,full_name,student_number");
       if (profileError) return err(profileError.message);
       (ps || []).forEach(p => { students[p.id] = p; });
+      editors.new = buildEditor("newEditor", "newReviewer", 220);
+      editors.ed = buildEditor("edEditor", "edReviewer", 360, { onInput: updateDirty, onSave: () => $("saveTopic").click() });
+      $("edTitle").addEventListener("input", updateDirty);
       buildOptionInputs();
       await loadBase();
       const pre = Number(new URLSearchParams(location.search).get("topic"));
@@ -170,7 +417,16 @@
       });
       if (current) pick.value = current.id;
     }
-    $("topicPick").onchange = e => { const v = Number(e.target.value); if (v) selectTopic(v); else { current = null; $("editor").style.display = "none"; } };
+    function isDirty() {
+      return !!current && ($("edReviewer").value !== (current.reviewer || "") || $("edTitle").value.trim() !== current.title);
+    }
+    function updateDirty() { $("dirty").textContent = isDirty() ? "Unsaved changes" : ""; }
+    window.addEventListener("beforeunload", e => { if (isDirty()) { e.preventDefault(); e.returnValue = ""; } });
+    $("topicPick").onchange = e => {
+      const v = Number(e.target.value);
+      if (isDirty() && !confirm("You have unsaved changes. Discard them?")) { e.target.value = current.id; return; }
+      if (v) selectTopic(v); else { current = null; $("editor").style.display = "none"; updateDirty(); }
+    };
 
     /* ---------- create / edit / delete topic ---------- */
     $("createTopic").onclick = async () => {
@@ -181,7 +437,7 @@
         subject_id: Number($("newSubject").value), title: title, reviewer: $("newReviewer").value
       }).select().single();
       if (error) return err(error.message);
-      $("newTitle").value = ""; $("newReviewer").value = "";
+      $("newTitle").value = ""; $("newReviewer").value = ""; editors.new.refresh();
       await loadBase();
       await selectTopic(data.id);
       ok("Topic created. Now add quiz questions below.");
@@ -193,7 +449,8 @@
       $("topicPick").value = id;
       $("editor").style.display = "block";
       $("edTitle").value = current.title;
-      $("edReviewer").value = current.reviewer;
+      $("edReviewer").value = current.reviewer || "";
+      editors.ed.refresh(); updateDirty();
       $("previewLink").href = "topic.html?id=" + id;
       $("bPreview").innerHTML = ""; $("gPreview").innerHTML = ""; parsed = []; generated = [];
       await Promise.all([loadQuestions(), loadResults()]);
@@ -207,6 +464,7 @@
       if (error) return err(error.message);
       current.title = title; current.reviewer = $("edReviewer").value;
       await loadBase();
+      updateDirty();
       ok("Saved.");
     };
 
@@ -214,7 +472,7 @@
       if (!confirm("Delete this topic, its questions, and all student tries? This cannot be undone.")) return;
       const { error } = await sb.from("topics").delete().eq("id", current.id);
       if (error) return err(error.message);
-      current = null; $("editor").style.display = "none";
+      current = null; $("editor").style.display = "none"; updateDirty();
       await loadBase();
       ok("Topic deleted.");
     };

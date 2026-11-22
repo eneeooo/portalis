@@ -7,12 +7,14 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap reviewers-page">
     <div id="bar"></div>
     <h2>Reviewers</h2>
     <p class="hint">Pick a topic to read its reviewer, then take the quiz. Unfinished quizzes are saved so you can continue later.</p>
     <p id="msg" class="msg"></p>
-    <div id="subjects" class="cardgrid"></div>
+    <div id="groupChips" class="rv-chips" role="group" aria-label="Filter by year and semester" style="display:none"></div>
+    <p id="adminHint" class="hint" style="display:none"></p>
+    <div id="subjects"></div>
     <p id="empty" class="empty" style="display:none">No topics yet. An admin or officer can add them under "Manage reviewers".</p>
   </div>
 
@@ -26,55 +28,111 @@
       renderBar(ctx, "reviewers");
       const msg = document.getElementById("msg");
 
-      const [s, t, a] = await Promise.all([
-        sb.from("subjects").select("*").order("code"),
+      const [t, a] = await Promise.all([
         sb.from("topics").select("id,subject_id,title").order("created_at"),
         sb.from("attempts").select("topic_id,status,score,total").eq("user_id", ctx.user.id)
       ]);
-      const failed = s.error || t.error || a.error;
+      // Subjects and groups. Falls back to the old layout if migration_subject_groups.sql has not been run yet.
+      let sr = await sb.from("subjects").select("*").order("position").order("code");
+      let gr = await sb.from("subject_groups").select("*").order("position").order("id");
+      if (sr.error || gr.error) {
+        sr = await sb.from("subjects").select("*").order("code");
+        gr = { data: [], error: null };
+      }
+      const failed = sr.error || t.error || a.error;
       if (failed) { msg.className = "msg err"; msg.textContent = failed.message; return; }
 
-      const subjects = s.data, topics = t.data, attempts = a.data;
+      const topics = t.data, attempts = a.data, groups = gr.data || [];
+      // students never get hidden subjects from the database; this also keeps them out if the policy is not updated yet
+      const subjects = sr.data.filter(x => ctx.isAdmin || x.visible !== false);
       document.getElementById("empty").style.display = topics.length ? "none" : "block";
 
+      if (ctx.isAdmin) {
+        const hint = document.getElementById("adminHint");
+        const hiddenCount = sr.data.filter(x => x.visible === false).length;
+        hint.style.display = "";
+        hint.textContent = "You can choose which subjects students see in " + (ctx.role === "officer" ? "Officer, under Reviewer subjects" : "Admin, under Subjects") + "." +
+          (hiddenCount ? " " + hiddenCount + " hidden subject" + (hiddenCount === 1 ? " is" : "s are") + " marked below; only you can see " + (hiddenCount === 1 ? "it" : "them") + "." : "");
+      }
+
+      // sections: each group in order, then subjects without a group
+      const sections = groups.map(g => ({ id: g.id, name: g.name, subs: subjects.filter(x => x.group_id === g.id) }));
+      const loose = subjects.filter(x => !x.group_id || !groups.some(g => g.id === x.group_id));
+      if (loose.length) sections.push({ id: 0, name: groups.length ? "Other subjects" : "", subs: loose });
+
       let subjectIndex = 0;
-      subjects.forEach(sub => {
-        const mine = topics.filter(x => x.subject_id === sub.id);
-        if (!mine.length && !ctx.isAdmin) return;
-        const card = el("section", "card reviewer-subject-note subject-note-" + (subjectIndex++ % 4));
-        const header = el("div", "reviewer-subject-header");
-        header.append(
-          el("span", "code reviewer-subject-code", sub.code),
-          el("h3", "reviewer-subject-title", sub.title)
-        );
-        card.appendChild(header);
+      const container = document.getElementById("subjects");
+      const sectionEls = [];
+      sections.forEach(sec => {
+        const cards = [];
+        sec.subs.forEach(sub => {
+          const mine = topics.filter(x => x.subject_id === sub.id);
+          if (!mine.length && !ctx.isAdmin) return;
+          const card = el("details", "card reviewer-subject-note subject-note-" + (subjectIndex++ % 4) + (sub.visible === false ? " is-hidden-subject" : ""));
+          const header = el("summary", "reviewer-subject-header");
+          const subjectInfo = el("span", "reviewer-subject-info");
+          subjectInfo.append(
+            el("h3", "reviewer-subject-title", sub.title),
+            el("span", "rv-topic-count", mine.length + (mine.length === 1 ? " topic" : " topics"))
+          );
+          header.append(el("span", "code reviewer-subject-code", sub.code), subjectInfo);
+          if (sub.visible === false) header.appendChild(el("span", "pill rv-hidden-pill", "Hidden from students"));
+          card.appendChild(header);
 
-        if (!mine.length) card.appendChild(el("p", "hint", "No topics yet."));
-        const ul = el("ul", "topics");
-        mine.forEach(tp => {
-          const li = el("li");
-          const link = el("a", "topic-card");
-          link.href = "topic.html?id=" + tp.id;
+          const content = el("div", "reviewer-subject-content");
+          if (!mine.length) content.appendChild(el("p", "hint", "No topics yet."));
+          const ul = el("ul", "topics");
+          mine.forEach(tp => {
+            const li = el("li");
+            const link = el("a", "topic-card");
+            link.href = "topic.html?id=" + tp.id;
 
-          const tries = attempts.filter(x => x.topic_id === tp.id);
-          const done = tries.filter(x => x.status === "submitted");
-          const draft = tries.some(x => x.status === "in_progress");
-          const details = el("span", "topic-card-details");
-          details.appendChild(el("span", "topic-card-title", tp.title));
-          let pill;
-          if (done.length) {
-            const best = done.reduce((m, x) => (x.score > m.score ? x : m), done[0]);
-            pill = el("span", "pill done", "Best " + best.score + "/" + best.total + " \u00b7 " + done.length + (done.length === 1 ? " try" : " tries"));
-          } else if (draft) pill = el("span", "pill draft", "Draft saved");
-          else pill = el("span", "pill", "Not started");
-          details.appendChild(pill);
-          link.append(details, el("span", "topic-card-arrow", "\u2192"));
-          li.appendChild(link);
-          ul.appendChild(li);
+            const tries = attempts.filter(x => x.topic_id === tp.id);
+            const done = tries.filter(x => x.status === "submitted");
+            const draft = tries.some(x => x.status === "in_progress");
+            const details = el("span", "topic-card-details");
+            details.appendChild(el("span", "topic-card-title", tp.title));
+            let pill;
+            if (done.length) {
+              const best = done.reduce((m, x) => (x.score > m.score ? x : m), done[0]);
+              pill = el("span", "pill done", "Best " + best.score + "/" + best.total + " \u00b7 " + done.length + (done.length === 1 ? " try" : " tries"));
+            } else if (draft) pill = el("span", "pill draft", "Draft saved");
+            else pill = el("span", "pill", "Not started");
+            details.appendChild(pill);
+            link.append(details, el("span", "topic-card-arrow", "\u2192"));
+            li.appendChild(link);
+            ul.appendChild(li);
+          });
+          content.appendChild(ul);
+          card.appendChild(content);
+          cards.push(card);
         });
-        card.appendChild(ul);
-        document.getElementById("subjects").appendChild(card);
+        if (!cards.length) return;
+        const wrap = el("section", "rv-group rv-reviewer-group");
+        if (sec.name) wrap.appendChild(el("h3", "rv-group-title", sec.name));
+        const grid = el("div", "cardgrid");
+        cards.forEach(c => grid.appendChild(c));
+        wrap.appendChild(grid);
+        container.appendChild(wrap);
+        sectionEls.push({ name: sec.name, node: wrap });
       });
+
+      // quick filter by year / semester when there is more than one group on screen
+      const named = sectionEls.filter(x => x.name);
+      if (named.length > 1) {
+        const chips = document.getElementById("groupChips");
+        chips.style.display = "";
+        const pick = name => {
+          sectionEls.forEach(x => { x.node.style.display = !name || x.name === name ? "" : "none"; });
+          Array.from(chips.children).forEach(c => c.classList.toggle("on", (c.dataset.name || "") === (name || "")));
+        };
+        [["", "All"]].concat(named.map(x => [x.name, x.name])).forEach(([name, label]) => {
+          const b = el("button", "fbtn" + (name ? "" : " active on"), label);
+          b.type = "button"; b.dataset.name = name;
+          b.onclick = () => pick(name);
+          chips.appendChild(b);
+        });
+      }
     }
     init();
   </script>

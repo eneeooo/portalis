@@ -1,5 +1,6 @@
 /* Portalis shared helpers (load after config.js) */
 const LABEL = { urgent: "Urgent", high: "High", medium: "Medium", neutral: "Neutral", low: "Low" };
+const PRIORITY_ICON = { urgent: "\ud83d\udd25", high: "\u26a1", medium: "\ud83d\udccc", neutral: "\ud83d\udcac", low: "\ud83c\udf31" };
 const ORDER = ["urgent", "high", "medium", "neutral", "low"];
 const CLASS_TITLES = {
   "26-22-059": "Treasurer",
@@ -282,13 +283,13 @@ function makeMenuToggle(bar, nav) {
   return toggle;
 }
 
-function makeAdminMenu(linkElements, isActive) {
+function makeAdminMenu(linkElements, isActive, label) {
   const wrap = el("div", "nav-more");
   const button = el("button", "nav-link nav-more-btn" + (isActive ? " on" : ""));
   button.type = "button";
   button.setAttribute("aria-haspopup", "true");
   button.setAttribute("aria-controls", "barAdminMenu");
-  button.append("Admin ", el("span", "nav-caret", "\u25be"));
+  button.append(label + " ", el("span", "nav-caret", "\u25be"));
   const panel = el("div", "nav-more-panel");
   panel.id = "barAdminMenu";
   linkElements.forEach(link => panel.appendChild(link));
@@ -411,7 +412,7 @@ function renderBar(ctx, active) {
   if (ctx.isAdmin) adminLinks.push(["manage.html", "Manage reviewers", "manage"]);
   const accountItems = [makeLink(["profile.html", "Profile", "profile"])];
   if (adminLinks.length === 1) accountItems.push(makeLink(adminLinks[0]));
-  else if (adminLinks.length > 1) accountItems.push(makeAdminMenu(adminLinks.map(makeLink), adminLinks.some(l => l[2] === active)));
+  else if (adminLinks.length > 1) accountItems.push(makeAdminMenu(adminLinks.map(makeLink), adminLinks.some(l => l[2] === active), ctx.role === "officer" ? "Officer" : "Admin"));
   nav.appendChild(makeGroup("Study", studyLinks.map(makeLink)));
   nav.appendChild(makeDivider());
   nav.appendChild(makeGroup("Class", classLinks.map(makeLink)));
@@ -899,49 +900,175 @@ function renderContent(n) {
   return renderMath(el("div", "text", n.content));
 }
 
-/* ---------- reviewer text: "# Heading", "- bullet", paragraphs ---------- */
+/* ---------- reviewer text renderer ----------
+   BLOCKS
+     # Heading / ## Section / ### Sub-section
+     ---                          divider line
+     - bullet   * bullet          (indent 2 spaces for a sub-bullet, 4 for a third level)
+     1. item    1) item           numbered list
+     - [ ] todo   - [x] done      checklist
+     Term - definition            definition card (also used to make quiz questions)
+     Term: definition
+     Example: text                example sticky note
+     > text                       callout; > Note: / Tip: / Warning: / Remember: / Formula: = coloured callouts
+     | a | b |                    table (second row |---|---| makes the first row a header)
+     ``` ... ```                  code block (put a language after the first ```)
+     ~ text                       plain paragraph (stops "Word: text" turning into a card)
+   INLINE
+     **bold**  *italic*  ++underline++  ~~strike~~  `code`
+     ==yellow==  ==g:green==  ==b:blue==  ==p:pink==  ==o:orange==  ==r:red==
+     $x^2$  $$\frac{a}{b}$$       math (KaTeX)                                            */
+const RICH_CALLOUTS = {
+  note: ["note", "Note"], tip: ["tip", "Tip"], warning: ["warn", "Watch out"], warn: ["warn", "Watch out"],
+  caution: ["warn", "Watch out"], important: ["remember", "Remember"], remember: ["remember", "Remember"],
+  key: ["remember", "Key idea"], formula: ["formula", "Formula"]
+};
+
 function renderRich(text) {
   const box = el("div", "rich");
-  let list = null, definitions = null;
-  const closeList = () => { list = null; };
+  const lines = (text || "").replace(/\r/g, "").replace(/\t/g, "  ").split("\n");
+  let listStack = [], definitions = null, lastCallout = null;
+  const closeList = () => { listStack = []; };
   const closeDefinitions = () => { definitions = null; };
-  (text || "").replace(/\r/g, "").split("\n").forEach(raw => {
+  const addListItem = (level, tag, node, start) => {
+    level = Math.min(level, listStack.length);
+    while (listStack.length > level + 1) listStack.pop();
+    if (listStack.length === level + 1 && listStack[level].tag !== tag) listStack.splice(level);
+    if (listStack.length === level) {
+      const parent = level === 0 ? box : listStack[level - 1].list.lastElementChild;
+      const list = el(tag, "rich-list rich-depth-" + level);
+      if (tag === "ol" && start > 1) list.start = start;
+      parent.appendChild(list);
+      listStack.push({ list: list, tag: tag });
+    }
+    listStack[level].list.appendChild(node);
+  };
+  const splitRow = row => row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim());
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
     const line = raw.trim();
-    if (!line) { closeList(); return; }
     let m;
+    if (!line) { closeList(); lastCallout = null; continue; }
+
+    /* code block */
+    if ((m = line.match(/^```\s*([\w+#.-]*)\s*$/))) {
+      closeList(); closeDefinitions(); lastCallout = null;
+      const code = [];
+      while (++i < lines.length && !/^\s*```\s*$/.test(lines[i])) code.push(lines[i]);
+      const pre = el("pre", "rich-code");
+      if (m[1]) pre.setAttribute("data-lang", m[1]);
+      pre.appendChild(el("code", "", code.join("\n")));
+      box.appendChild(pre);
+      continue;
+    }
+
+    /* table */
+    if (line.charAt(0) === "|") {
+      closeList(); closeDefinitions(); lastCallout = null;
+      const rows = [line];
+      while (i + 1 < lines.length && lines[i + 1].trim().charAt(0) === "|") rows.push(lines[++i].trim());
+      const isSep = r => /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/.test(r);
+      let header = null, aligns = [], body = rows;
+      if (rows.length > 1 && isSep(rows[1])) {
+        header = splitRow(rows[0]);
+        aligns = splitRow(rows[1]).map(c => /^:-+:$/.test(c) ? "center" : /-:$/.test(c) ? "right" : "left");
+        body = rows.slice(2);
+      }
+      const wrap = el("div", "rich-table-wrap");
+      const table = el("table", "rich-table");
+      const addRow = (cells, tag, parent) => {
+        const tr = document.createElement("tr");
+        cells.forEach((c, ci) => {
+          const cell = el(tag);
+          if (aligns[ci] && aligns[ci] !== "left") cell.style.textAlign = aligns[ci];
+          appendRichText(cell, c);
+          tr.appendChild(cell);
+        });
+        parent.appendChild(tr);
+      };
+      if (header) { const th = el("thead"); addRow(header, "th", th); table.appendChild(th); }
+      const tb = el("tbody");
+      body.filter(r => !isSep(r)).forEach(r => addRow(splitRow(r), "td", tb));
+      table.appendChild(tb);
+      wrap.appendChild(table);
+      box.appendChild(wrap);
+      continue;
+    }
+
+    /* divider */
+    if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(line)) {
+      closeList(); closeDefinitions(); lastCallout = null;
+      box.appendChild(el("hr", "rich-divider"));
+      continue;
+    }
+
+    /* headings */
     if ((m = line.match(/^(#{1,3})\s+(.+)$/))) {
-      closeList(); closeDefinitions();
+      closeList(); closeDefinitions(); lastCallout = null;
       const level = Math.min(m[1].length + 1, 4);
       const heading = el("h" + level);
       if (/^examples?(?:\s+\d+)?$/i.test(m[2].trim())) {
         heading.classList.add("rich-example-heading");
         heading.appendChild(el("span", "rich-example-badge", "Example"));
-        if (/^examples? \d+$/i.test(m[2].trim())) {
-          heading.appendChild(el("span", "rich-example-number", m[2].match(/\d+/)[0]));
-        }
-      } else {
-        appendRichText(heading, m[2]);
-      }
+        if (/^examples? \d+$/i.test(m[2].trim())) heading.appendChild(el("span", "rich-example-number", m[2].match(/\d+/)[0]));
+      } else appendRichText(heading, m[2]);
       box.appendChild(heading);
-      return;
+      continue;
+    }
+
+    /* callouts (checked before definitions so "> Tip: ..." is not read as a term card) */
+    if ((m = line.match(/^>\s?(.*)$/))) {
+      closeList(); closeDefinitions();
+      const body = m[1].trim();
+      const typed = body.match(/^(note|tip|warning|warn|caution|important|remember|key|formula)\s*:\s*(.*)$/i);
+      if (!typed && lastCallout) {
+        const more = el("p"); appendRichText(more, body); lastCallout.appendChild(more);
+        continue;
+      }
+      const info = typed ? RICH_CALLOUTS[typed[1].toLowerCase()] : null;
+      const callout = el("blockquote", "rich-callout" + (info ? " callout-" + info[0] : ""));
+      if (info) callout.appendChild(el("span", "rich-callout-label", info[1]));
+      const p = el("p"); appendRichText(p, typed ? typed[2] : body); callout.appendChild(p);
+      box.appendChild(callout);
+      lastCallout = callout;
+      continue;
+    }
+    lastCallout = null;
+
+    /* checklist and bullets (indent = sub-bullet) */
+    const level = (indent => indent >= 4 ? 2 : indent >= 2 ? 1 : 0)(raw.match(/^ */)[0].length);
+    if ((m = line.match(/^[-*\u2022]\s+\[( |x|X)\]\s+(.+)$/))) {
+      closeDefinitions();
+      const done = m[1] !== " ";
+      const item = el("li", "rich-check" + (done ? " done" : ""));
+      item.appendChild(el("span", "rich-box", done ? "\u2713" : ""));
+      const span = el("span", "rich-check-text"); appendRichText(span, m[2]); item.appendChild(span);
+      addListItem(level, "ul", item);
+      continue;
     }
     if ((m = line.match(/^[-*\u2022]\s+(.+)$/))) {
       closeDefinitions();
-      if (!list || list.tagName !== "UL") { list = el("ul", "rich-list"); box.appendChild(list); }
-      const item = el("li");
-      appendRichText(item, m[1]);
-      list.appendChild(item);
-      return;
+      const item = el("li"); appendRichText(item, m[1]);
+      addListItem(level, "ul", item);
+      continue;
     }
-    if ((m = line.match(/^\d+[.)]\s+(.+)$/))) {
+    if ((m = line.match(/^(\d+)[.)]\s+(.+)$/))) {
       closeDefinitions();
-      if (!list || list.tagName !== "OL") { list = el("ol", "rich-list"); box.appendChild(list); }
-      const item = el("li");
-      appendRichText(item, m[1]);
-      list.appendChild(item);
-      return;
+      const item = el("li"); appendRichText(item, m[2]);
+      addListItem(level, "ol", item, Number(m[1]));
+      continue;
     }
     closeList();
+
+    /* forced plain paragraph */
+    if ((m = line.match(/^~\s+(.+)$/))) {
+      closeDefinitions();
+      const p = el("p"); appendRichText(p, m[1]); box.appendChild(p);
+      continue;
+    }
+
+    /* example sticky note */
     if ((m = line.match(/^examples?(?:\s+(\d+))?\s*:\s*(.+)$/i))) {
       closeDefinitions();
       const example = el("aside", "rich-example");
@@ -950,62 +1077,291 @@ function renderRich(text) {
       appendRichText(content, m[2]);
       example.appendChild(content);
       box.appendChild(example);
-      return;
+      continue;
     }
-    if ((m = line.match(/^(.{2,60}?)\s*(?::|\s[-\u2013\u2014]\s)\s*(.{5,})$/))) {
-      if (!definitions) {
-        definitions = el("div", "rich-grid");
-        box.appendChild(definitions);
-      }
+
+    /* Term - definition  /  Term: definition */
+    if ((m = splitTermDef(line))) {
+      if (!definitions) { definitions = el("div", "rich-grid"); box.appendChild(definitions); }
       const item = el("article", "rich-definition");
-      if (/^examples?(?:\s+\d+)?$/i.test(m[1].trim())) {
+      if (/^examples?(?:\s+\d+)?$/i.test(m.term)) {
         item.classList.add("rich-definition-example");
-        item.appendChild(el("span", "rich-example-badge", m[1].trim()));
+        item.appendChild(el("span", "rich-example-badge", m.term));
       }
       const term = el("h3", "rich-term");
-      if (item.classList.contains("rich-definition-example")) term.textContent = "";
-      else appendRichText(term, m[1].trim());
+      if (!item.classList.contains("rich-definition-example")) appendRichText(term, m.term);
       const definition = el("p", "rich-description");
-      appendRichText(definition, m[2].trim());
+      appendRichText(definition, m.def);
       item.append(term, definition);
       definitions.appendChild(item);
-      return;
+      continue;
     }
     closeDefinitions();
-    if ((m = line.match(/^>\s*(.+)$/))) {
-      const callout = el("blockquote", "rich-callout");
-      appendRichText(callout, m[1]);
-      box.appendChild(callout);
-      return;
-    }
     const paragraph = el("p");
     appendRichText(paragraph, line);
     box.appendChild(paragraph);
-  });
+  }
   return renderMath(box);
 }
 
+/* inline formatting. Math spans are matched first and left untouched, so *, == and ++ inside $...$ are safe */
+const RICH_INLINE = /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])|`([^`\n]+)`|\*\*(.+?)\*\*|==(?:([gbpory]):)?(.+?)==|\+\+(.+?)\+\+|~~(.+?)~~|\*([^*\s](?:[^*\n]*?[^*\s])?)\*/g;
+const RICH_COLORS = { g: "hl-green", b: "hl-blue", p: "hl-pink", o: "hl-orange", r: "hl-red" };
+
 function appendRichText(parent, text) {
-  const pattern = /\*\*(.+?)\*\*|==(.+?)==/g;
-  let last = 0, match;
-  while ((match = pattern.exec(text))) {
-    parent.appendChild(document.createTextNode(text.slice(last, match.index)));
-    const highlighted = el(match[1] ? "strong" : "mark", match[1] ? "rich-emphasis" : "rich-highlight", match[1] || match[2]);
-    parent.appendChild(highlighted);
-    last = pattern.lastIndex;
+  const re = new RegExp(RICH_INLINE.source, "g");
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+    let node;
+    if (m[1] !== undefined) node = document.createTextNode(m[1]);
+    else if (m[2] !== undefined) node = el("code", "rich-inline-code", m[2]);
+    else if (m[3] !== undefined) { node = el("strong", "rich-emphasis"); appendRichText(node, m[3]); }
+    else if (m[5] !== undefined) { node = el("mark", "rich-highlight" + (m[4] ? " " + RICH_COLORS[m[4]] : "")); appendRichText(node, m[5]); }
+    else if (m[6] !== undefined) { node = el("span", "rich-underline"); appendRichText(node, m[6]); }
+    else if (m[7] !== undefined) { node = el("del", "rich-strike"); appendRichText(node, m[7]); }
+    else { node = el("em", "rich-italic"); appendRichText(node, m[8]); }
+    parent.appendChild(node);
+    last = re.lastIndex;
   }
-  parent.appendChild(document.createTextNode(text.slice(last)));
+  if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+}
+
+/* ---------- subject manager (Admin and Officer) ----------
+   Groups subjects by year / semester, sets their order, and chooses which subjects
+   students see on the Reviewers page. Needs sql/migration_subject_groups.sql. */
+const GROUP_SUGGESTIONS = [
+  "First Year - First Semester", "First Year - Second Semester",
+  "Second Year - First Semester", "Second Year - Second Semester",
+  "Third Year - First Semester", "Third Year - Second Semester",
+  "Fourth Year - First Semester", "Fourth Year - Second Semester"
+];
+
+async function renderSubjectManager(root, notify) {
+  notify = notify || function () {};
+  const keepScroll = window.scrollY;
+  const [g, s, t] = await Promise.all([
+    sb.from("subject_groups").select("*").order("position").order("id"),
+    sb.from("subjects").select("*").order("position").order("code"),
+    sb.from("topics").select("id,subject_id")
+  ]);
+  root.innerHTML = "";
+  const failed = g.error || s.error || t.error;
+  if (failed) {
+    root.appendChild(el("p", "msg err", /subject_groups|group_id|visible|position|schema cache|does not exist|could not find/i.test(failed.message)
+      ? "Subject groups are not set up yet. Run migration_subject_groups.sql in the Supabase SQL Editor."
+      : failed.message));
+    return;
+  }
+  const groups = g.data, subjects = s.data;
+  const topicCount = {};
+  (t.data || []).forEach(x => { topicCount[x.subject_id] = (topicCount[x.subject_id] || 0) + 1; });
+  const reload = () => renderSubjectManager(root, notify);
+  const run = async (query, okText, reloadAfter) => {
+    const { error } = await query;
+    if (error) {
+      notify(/duplicate|unique/i.test(error.message) ? "That name or code is already used." : error.message, true);
+      return false;
+    }
+    if (okText) notify(okText);
+    if (reloadAfter) await reload();
+    return true;
+  };
+  const inGroup = id => subjects.filter(x => (x.group_id || null) === id);
+  const renumber = (list, table) => Promise.all(list.map((x, i) => x.position === i ? null : sb.from(table).update({ position: i }).eq("id", x.id)).filter(Boolean));
+  const move = async (list, index, dir, table) => {
+    const j = index + dir;
+    if (j < 0 || j >= list.length) return;
+    const copy = list.slice();
+    [copy[index], copy[j]] = [copy[j], copy[index]];
+    const results = await renumber(copy, table);
+    const bad = results.find(r => r.error);
+    if (bad) return notify(bad.error.message, true);
+    await reload();
+  };
+  const arrows = (list, index, table) => {
+    const box = el("span", "sm-arrows");
+    const up = el("button", "ghost small sm-arrow", "\u2191"), down = el("button", "ghost small sm-arrow", "\u2193");
+    [up, down].forEach(b => { b.type = "button"; });
+    up.title = "Move up"; down.title = "Move down";
+    up.disabled = index === 0; down.disabled = index === list.length - 1;
+    up.onclick = () => move(list, index, -1, table);
+    down.onclick = () => move(list, index, 1, table);
+    box.append(up, down);
+    return box;
+  };
+  const groupSelect = (value, extra) => {
+    const sel = el("select", "sm-group-select");
+    sel.setAttribute("aria-label", "Group");
+    const none = el("option", "", "No group"); none.value = ""; sel.appendChild(none);
+    groups.forEach(x => { const o = el("option", "", x.name); o.value = x.id; sel.appendChild(o); });
+    sel.value = value ? String(value) : "";
+    return sel;
+  };
+
+  const head = el("p", "hint", "Tick \"Shown\" to let students see a subject on the Reviewers page. Unticked subjects stay hidden from students but admins and officers still see them. Subjects appear under their group, in the order set here.");
+  root.appendChild(head);
+  const shownTotal = subjects.filter(x => x.visible).length;
+  root.appendChild(el("p", "sm-summary", shownTotal + " of " + subjects.length + " subject" + (subjects.length === 1 ? "" : "s") + " shown to students"));
+
+  /* one card per group, then the ungrouped ones */
+  const sections = groups.map((gr, gi) => ({ group: gr, gi: gi, subs: inGroup(gr.id) }));
+  const loose = inGroup(null);
+  if (loose.length) sections.push({ group: null, subs: loose });
+
+  sections.forEach(sec => {
+    const card = el("section", "card sm-group");
+    const bar = el("div", "sm-group-bar");
+    if (sec.group) {
+      bar.appendChild(arrows(groups, sec.gi, "subject_groups"));
+      const name = el("input", "sm-group-name");
+      name.value = sec.group.name; name.maxLength = 80; name.setAttribute("aria-label", "Group name");
+      name.onchange = async () => {
+        const v = name.value.trim();
+        if (!v) { name.value = sec.group.name; return notify("A group needs a name.", true); }
+        if (await run(sb.from("subject_groups").update({ name: v }).eq("id", sec.group.id), "Group renamed.")) sec.group.name = v; else name.value = sec.group.name;
+      };
+      bar.appendChild(name);
+    } else {
+      bar.appendChild(el("h3", "sm-group-name sm-nogroup", "No group yet"));
+    }
+    const shown = sec.subs.filter(x => x.visible).length;
+    bar.appendChild(el("span", "badge", shown + "/" + sec.subs.length + " shown"));
+    const filter = q => sec.group ? q.eq("group_id", sec.group.id) : q.is("group_id", null);
+    const showAll = el("button", "ghost small", "Show all"), hideAll = el("button", "ghost small", "Hide all");
+    [showAll, hideAll].forEach(b => { b.type = "button"; });
+    showAll.onclick = () => run(filter(sb.from("subjects").update({ visible: true })), "All subjects in this group are shown.", true);
+    hideAll.onclick = () => run(filter(sb.from("subjects").update({ visible: false })), "All subjects in this group are hidden from students.", true);
+    bar.append(showAll, hideAll);
+    if (sec.group) {
+      const del = el("button", "ghost small", "Delete group");
+      del.type = "button";
+      del.onclick = () => {
+        if (!confirm("Delete the group \"" + sec.group.name + "\"? Its subjects are NOT deleted; they move to \"No group yet\".")) return;
+        run(sb.from("subject_groups").delete().eq("id", sec.group.id), "Group deleted.", true);
+      };
+      bar.appendChild(del);
+    }
+    card.appendChild(bar);
+
+    if (!sec.subs.length) card.appendChild(el("p", "hint", "No subjects in this group yet. Move one here with its Group menu, or add a new subject below."));
+    sec.subs.forEach((sub, i) => {
+      const row = el("div", "sm-row" + (sub.visible ? "" : " is-off"));
+      row.appendChild(arrows(sec.subs, i, "subjects"));
+
+      const toggle = el("label", "sm-toggle");
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = !!sub.visible;
+      const state = el("span", "sm-state", sub.visible ? "Shown" : "Hidden");
+      cb.onchange = async () => {
+        const want = cb.checked;
+        if (await run(sb.from("subjects").update({ visible: want }).eq("id", sub.id), sub.code + (want ? " is now shown to students." : " is now hidden from students."))) {
+          sub.visible = want; state.textContent = want ? "Shown" : "Hidden"; row.classList.toggle("is-off", !want);
+        } else cb.checked = !want;
+      };
+      toggle.append(cb, state);
+      row.appendChild(toggle);
+
+      const code = el("input", "sm-code"); code.value = sub.code; code.maxLength = 20; code.setAttribute("aria-label", "Subject code");
+      const title = el("input", "sm-title"); title.value = sub.title; title.maxLength = 120; title.setAttribute("aria-label", "Subject title");
+      const saveField = async (input, field) => {
+        const v = input.value.trim();
+        if (!v) { input.value = sub[field]; return notify("This cannot be empty.", true); }
+        if (v === sub[field]) return;
+        if (await run(sb.from("subjects").update({ [field]: v }).eq("id", sub.id), "Subject updated.")) sub[field] = v; else input.value = sub[field];
+      };
+      code.onchange = () => saveField(code, "code");
+      title.onchange = () => saveField(title, "title");
+      row.append(code, title);
+
+      const gsel = groupSelect(sub.group_id);
+      gsel.onchange = () => run(sb.from("subjects").update({ group_id: gsel.value ? Number(gsel.value) : null, position: 9999 }).eq("id", sub.id), sub.code + " moved.", true);
+      row.appendChild(gsel);
+
+      const n = topicCount[sub.id] || 0;
+      row.appendChild(el("span", "sm-count", n + (n === 1 ? " topic" : " topics")));
+      const del = el("button", "ghost small", "Delete");
+      del.type = "button";
+      del.onclick = () => {
+        if (!confirm("Delete " + sub.code + "? This also deletes its " + n + " topic(s), their questions and every student's quiz tries. To only remove it from students' view, untick Shown instead.")) return;
+        run(sb.from("subjects").delete().eq("id", sub.id), sub.code + " deleted.", true);
+      };
+      row.appendChild(del);
+      card.appendChild(row);
+    });
+    root.appendChild(card);
+  });
+
+  /* add forms */
+  const forms = el("div", "sm-forms");
+  const addSubject = el("section", "card sm-add");
+  addSubject.appendChild(el("h3", "", "Add a subject"));
+  const a1 = el("div", "sm-add-grid");
+  const newCode = el("input"); newCode.placeholder = "Code, e.g. ITE113"; newCode.maxLength = 20; newCode.setAttribute("aria-label", "New subject code");
+  const newTitle = el("input"); newTitle.placeholder = "Title, e.g. Data Structures"; newTitle.maxLength = 120; newTitle.setAttribute("aria-label", "New subject title");
+  const newGroup = groupSelect(groups.length ? groups[0].id : "");
+  a1.append(newCode, newTitle, newGroup);
+  const newShown = document.createElement("input"); newShown.type = "checkbox"; newShown.checked = true; newShown.id = "smNewShown";
+  const newShownLabel = el("label", "sm-toggle", ""); newShownLabel.append(newShown, el("span", "sm-state", "Show to students right away"));
+  const addBtn = el("button", "", "Add subject"); addBtn.type = "button";
+  addBtn.onclick = async () => {
+    const c = newCode.value.trim(), ti = newTitle.value.trim();
+    if (!c || !ti) return notify("Enter a code and a title.", true);
+    const gid = newGroup.value ? Number(newGroup.value) : null;
+    const pos = inGroup(gid).length;
+    await run(sb.from("subjects").insert({ code: c, title: ti, group_id: gid, visible: newShown.checked, position: pos }), c + " added.", true);
+  };
+  addSubject.append(a1, newShownLabel, addBtn);
+
+  const addGroup = el("section", "card sm-add");
+  addGroup.appendChild(el("h3", "", "Add a group"));
+  const list = document.createElement("datalist"); list.id = "smGroupNames";
+  GROUP_SUGGESTIONS.filter(x => !groups.some(y => y.name === x)).forEach(x => { const o = document.createElement("option"); o.value = x; list.appendChild(o); });
+  const gname = el("input"); gname.placeholder = "e.g. Second Year - First Semester"; gname.maxLength = 80; gname.setAttribute("list", "smGroupNames"); gname.setAttribute("aria-label", "New group name");
+  const gbtn = el("button", "", "Add group"); gbtn.type = "button";
+  gbtn.onclick = async () => {
+    const v = gname.value.trim();
+    if (!v) return notify("Enter a group name.", true);
+    await run(sb.from("subject_groups").insert({ name: v, position: groups.length }), "Group added.", true);
+  };
+  addGroup.append(gname, list, gbtn);
+  forms.append(addSubject, addGroup);
+  root.appendChild(forms);
+  window.scrollTo(0, keepScroll);
 }
 
 /* ---------- sticky note card ----------
    o: { canEdit, showStatus, onPriority(n,p), onSubs(n,arr), actions:[buttons], footer(card) } */
+function noteTimeAgo(value) {
+  const then = new Date(value);
+  if (isNaN(then)) return "";
+  const minutes = Math.round((Date.now() - then.getTime()) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return minutes + " min ago";
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return hours + (hours === 1 ? " hour ago" : " hours ago");
+  const days = Math.round(hours / 24);
+  if (days === 1) return "yesterday";
+  if (days < 7) return days + " days ago";
+  return then.toLocaleDateString("en-US", { month: "short", day: "numeric", year: then.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+}
+function noteAvatar(name, key) {
+  const words = String(name || "").replace(/,/g, " ").trim().split(/\s+/).filter(Boolean);
+  const avatar = el("span", "note-avatar", words.length ? (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase() : "?");
+  let hash = 0;
+  String(key || name || "").split("").forEach(ch => { hash = (hash * 31 + ch.charCodeAt(0)) % 360; });
+  avatar.style.background = "hsl(" + hash + " 70% 85%)";
+  avatar.setAttribute("aria-hidden", "true");
+  return avatar;
+}
+
 function noteCard(n, o) {
   o = o || {};
   const c = el("div", "note p-" + n.priority);
 
   const top = el("div", "topline");
   const tags = el("div", "tags");
-  tags.appendChild(el("span", "tag", LABEL[n.priority]));
+  tags.appendChild(el("span", "tag", (PRIORITY_ICON[n.priority] || "") + " " + LABEL[n.priority]));
   if (o.showStatus && n.status !== "approved") {
     tags.appendChild(el("span", "tag status " + n.status, n.status === "pending" ? "Awaiting review" : "Rejected"));
   }
@@ -1026,12 +1382,35 @@ function noteCard(n, o) {
   if (o.showStatus && n.status === "rejected" && n.reject_reason) {
     c.appendChild(el("div", "reason", "Admin note: " + n.reject_reason));
   }
-  if (n.content) c.appendChild(renderContent(n));
+  if (n.content) {
+    const body = el("div", "note-body");
+    body.appendChild(renderContent(n));
+    c.appendChild(body);
+    const text = String(n.content);
+    if (text.length > 260 || (text.match(/\n/g) || []).length > 5) {   // long notes fold up with a Read more button
+      body.classList.add("clamped");
+      const more = el("button", "readmore", "Read more");
+      more.type = "button";
+      more.setAttribute("aria-expanded", "false");
+      more.onclick = () => {
+        const open = !body.classList.toggle("clamped");
+        more.textContent = open ? "Show less" : "Read more";
+        more.setAttribute("aria-expanded", open ? "true" : "false");
+      };
+      c.appendChild(more);
+    }
+  }
 
   const subs = Array.isArray(n.subnotes) ? n.subnotes : [];
   if (subs.length) {
     const done = subs.filter(s => s.done).length;
-    c.appendChild(el("div", "progress", done + "/" + subs.length + " done"));
+    const progress = el("div", "progress");
+    const track = el("span", "progress-track");
+    const fill = document.createElement("i");
+    fill.style.width = Math.round(done / subs.length * 100) + "%";
+    track.appendChild(fill);
+    progress.append(el("span", "progress-text", done + "/" + subs.length + " done"), track);
+    c.appendChild(progress);
     const ul = el("ul", "subs");
     subs.forEach((s, i) => {
       const li = el("li", s.done ? "done" : "");
@@ -1064,11 +1443,11 @@ function noteCard(n, o) {
   }
 
   const author = el("small", "note-author");
-  author.append(
-    document.createTextNode("by "),
-    staffAuthorName(n.author_name, n.staff_title, n.user_id),
-    document.createTextNode(" \u00b7 " + new Date(n.created_at).toLocaleDateString())
-  );
+  const who = el("span", "note-who");
+  const when = el("time", "note-when", noteTimeAgo(n.created_at));
+  when.title = new Date(n.created_at).toLocaleString();
+  who.append(staffAuthorName(n.author_name, n.staff_title, n.user_id), when);
+  author.append(noteAvatar(n.author_name, n.user_id), who);
   c.appendChild(author);
   if (o.actions && o.actions.length) {
     const row = el("div", "actions");
@@ -1284,14 +1663,25 @@ function parseBulk(text) {
   return { items: items, errors: errors };
 }
 
+/* Splits "Term - definition" or "Term: definition". The colon in ==g:green== is not a separator. */
+function splitTermDef(line) {
+  const probe = line.replace(/==([gbpory]):/g, "==$1\u0001");
+  const m = probe.match(/^(.{2,60}?)\s*(?::|\s[-\u2013\u2014]\s)\s*(.{5,})$/);
+  if (!m) return null;
+  return { term: line.slice(0, m[1].length).trim(), def: line.slice(line.length - m[2].length).trim() };
+}
+function stripRichMarks(t) { return t.replace(/\*\*|==(?:[gbpory]:)?|\+\+|~~|`/g, ""); }
+
 /* Reads "Term - definition" or "Term: definition" lines from the reviewer text */
 function extractPairs(text) {
   const pairs = [];
+  let inCode = false;
   (text || "").replace(/\r/g, "").split("\n").forEach(raw => {
-    if (/^\s*#/.test(raw)) return;
-    const line = raw.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, "").trim();
-    const m = line.match(/^(.{2,60}?)\s*(?::|\s[-\u2013\u2014]\s)\s*(.{5,})$/);
-    if (m) pairs.push({ term: m[1].trim(), def: m[2].trim() });
+    if (/^\s*```/.test(raw)) { inCode = !inCode; return; }
+    if (inCode || /^\s*(?:#|>|\||~\s)/.test(raw)) return;
+    const line = raw.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*(?:\[[ xX]\]\s*)?/, "").trim();
+    const m = splitTermDef(line);
+    if (m && !/^examples?(?:\s+\d+)?$/i.test(m.term)) pairs.push({ term: stripRichMarks(m.term), def: stripRichMarks(m.def) });
   });
   return pairs;
 }
