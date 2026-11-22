@@ -85,7 +85,6 @@
         <div id="rosterChips" class="fund-chips" role="group" aria-label="Filter by status for this period">
           <button type="button" class="fund-chip on" data-filter="all">All <b>0</b></button>
           <button type="button" class="fund-chip" data-filter="paid">Paid <b>0</b></button>
-          <button type="button" class="fund-chip" data-filter="partial">Partial <b>0</b></button>
           <button type="button" class="fund-chip" data-filter="unpaid">Unpaid <b>0</b></button>
         </div>
       </div>
@@ -455,11 +454,10 @@
       $("summary").append(el("p", "hint", debtors + " student(s) still have an unpaid balance across " + selectedFund.title + "."));
       await loadExpenses(grossTotalFunds);
       const body = $("roster"); body.innerHTML = "";
-      const counts = { all: 0, paid: 0, partial: 0, unpaid: 0 };
+      const counts = { all: 0, paid: 0, unpaid: 0 };
       rosterCopyRows = [...roster].sort(compareBySurname).map(student => {
         const debt = debtByUser[student.user_id];
-        const isPartial = Number(student.amount_paid) > 0 && !student.is_paid;
-        const state = student.is_paid ? "paid" : isPartial ? "partial" : "unpaid";
+        const state = student.is_paid ? "paid" : "unpaid";
         return { student, debt, state };
       });
       rosterCopyRows.forEach(({ student, debt, state }) => {
@@ -478,8 +476,8 @@
           el("td", "num", peso(debt ? debt.total_debt : 0))
         );
         const status = el("td", "fund-status-cell");
-        const statusText = state === "paid" ? "Paid" : state === "partial" ? "Partial payment" : "Unpaid";
-        const statusBadge = el("span", "fund-status " + state, state === "paid" ? "✓ Paid" : state === "partial" ? "Partial" : "✗ Unpaid");
+        const statusText = state === "paid" ? "Paid" : "Unpaid";
+        const statusBadge = el("span", "fund-status " + state, state === "paid" ? "✓ Paid" : "✗ Unpaid");
         statusBadge.setAttribute("aria-label", statusText);
         statusBadge.title = statusText;
         status.appendChild(statusBadge);
@@ -590,9 +588,7 @@
           });
         }
         studentsById.get(row.user_id).statuses.set(row.period_label,
-          row.is_paid ? "Paid" : Number(row.amount_paid) > 0
-            ? "Partial ₱" + Number(row.amount_paid).toFixed(2)
-            : "Unpaid");
+          row.is_paid ? "Paid" : "Unpaid");
       });
       const periods = Array.from(periodsById.values()).sort((a, b) => a.starts_on.localeCompare(b.starts_on));
       const header = [
@@ -681,9 +677,7 @@
           });
         }
         studentsById.get(row.user_id).statuses.set(row.period_label,
-          row.is_paid ? "Paid" : Number(row.amount_paid) > 0
-            ? "Partial ₱" + Number(row.amount_paid).toFixed(2)
-            : "Unpaid");
+          row.is_paid ? "Paid" : "Unpaid");
       });
       const periods = Array.from(periodsByLabel.values()).sort((a, b) => a.starts_on.localeCompare(b.starts_on));
       const students = Array.from(studentsById.values())
@@ -713,7 +707,7 @@
           el("td", "", "₱" + student.total_paid.toFixed(2)),
           el("td", "", "₱" + student.outstanding.toFixed(2)),
           el("td", "", "₱" + student.advance_credit.toFixed(2)),
-          el("td", "", student.total_due > 0 && student.outstanding === 0 ? "Paid" : student.total_paid > 0 ? "Partial" : "Unpaid")
+          el("td", "", student.total_due > 0 && student.outstanding === 0 ? "Paid" : "Unpaid")
         );
         tbody.appendChild(tr);
       });
