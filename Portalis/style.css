@@ -6903,3 +6903,77 @@ button.sm-arrow:disabled {
     gap: 12px;
   }
 }
+/* fix: stray yellow sliver under term headings */
+.rich-definition .rich-term::after {
+  content: none;
+}
+.rich-definition:not(.rich-definition-example) .rich-term {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 8px;
+}
+/* ==========================================================================
+   Rough bond paper for the reviewer + faded colours
+   ========================================================================== */
+.reviewer-card,
+.reviewer-card.card {
+  background-color: #fff;
+  background-image: none;
+}
+
+/* faded highlighters */
+.reviewer-card .rich {
+  --rv-hl-y: rgba(255, 233, 80, 0.55);
+  --rv-hl-g: rgba(150, 225, 140, 0.5);
+  --rv-hl-b: rgba(150, 205, 250, 0.5);
+  --rv-hl-p: rgba(245, 160, 210, 0.5);
+  --rv-hl-o: rgba(255, 175, 90, 0.5);
+  --rv-hl-r: rgba(255, 130, 130, 0.45);
+}
+.reviewer-card .rich h2 {
+  background: rgba(246, 184, 220, 0.5);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.55);
+}
+.reviewer-card .rich > h3 {
+  background: linear-gradient(transparent 58%, rgba(150, 205, 250, 0.5) 58%);
+}
+.reviewer-card .rich-emphasis {
+  background: linear-gradient(transparent 62%, rgba(245, 160, 210, 0.5) 62%);
+}
+.reviewer-card .rich-definition .rich-term {
+  background: linear-gradient(transparent 55%, rgba(255, 233, 80, 0.55) 55%);
+}
+
+/* term cards */
+.reviewer-card .rich-definition {
+  --definition-bg: rgba(246, 184, 220, 0.42);
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.5);
+}
+.reviewer-card .rich-grid > .rich-definition:nth-child(5n + 2) { --definition-bg: rgba(150, 205, 250, 0.42); }
+.reviewer-card .rich-grid > .rich-definition:nth-child(5n + 3) { --definition-bg: rgba(150, 225, 140, 0.42); }
+.reviewer-card .rich-grid > .rich-definition:nth-child(5n + 4) { --definition-bg: rgba(255, 175, 90, 0.38); }
+.reviewer-card .rich-grid > .rich-definition:nth-child(5n + 5) { --definition-bg: rgba(180, 160, 245, 0.4); }
+
+/* examples and callouts */
+.reviewer-card .rich-example,
+.reviewer-card .rich-definition-example {
+  background: rgba(255, 233, 80, 0.38);
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.2);
+}
+.reviewer-card .rich-callout { --cbg: rgba(206, 117, 164, 0.13); }
+.reviewer-card .callout-note { --cbg: rgba(74, 151, 224, 0.14); }
+.reviewer-card .callout-tip { --cbg: rgba(63, 174, 104, 0.14); }
+.reviewer-card .callout-warn { --cbg: rgba(217, 74, 74, 0.13); }
+.reviewer-card .callout-remember { --cbg: rgba(139, 104, 224, 0.13); }
+.reviewer-card .callout-formula { --cbg: rgba(47, 168, 154, 0.14); }
+.reviewer-card .rich-callout-label { opacity: 0.85; }
+
+/* tables, checkboxes, code */
+.reviewer-card .rich-table { background: transparent; }
+.reviewer-card .rich-table th { background: rgba(255, 220, 110, 0.5); }
+.reviewer-card .rich-table tbody tr:nth-child(even) td { background: rgba(255, 240, 200, 0.35); }
+.reviewer-card .rich-box { background: rgba(255, 255, 255, 0.45); }
+.reviewer-card .rich-check.done .rich-box { background: rgba(150, 225, 140, 0.6); }
+.reviewer-card .rich-inline-code { background: rgba(255, 255, 255, 0.45); border-color: rgba(0, 0, 0, 0.25); }
+.reviewer-card .rich-code { background: rgba(31, 34, 51, 0.9); box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.5); }

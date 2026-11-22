@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Portalis - Notes</title>
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="birthday-card.css?v=1" />
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
@@ -63,8 +64,8 @@
         <button id="add" class="full">📌 Post note</button>
       </div>
 
-      <section id="eventsStrip" class="ev-strip" hidden aria-label="Upcoming school events"></section>
       <div id="birthdayGreeting" class="birthday-pin" hidden></div>
+      <section id="eventsStrip" class="ev-strip" hidden aria-label="Upcoming school events"></section>
       <div id="filters" class="filters"></div>
       <div id="board" class="board"></div>
       <p id="empty" class="empty" style="display: none"></p>
@@ -75,6 +76,7 @@
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
     <script src="config.js"></script>
     <script src="common.js"></script>
+    <script src="birthday-card.js?v=1"></script>
     <script src="calendar.js?v=1"></script>
     <script>
       let ctx,
@@ -166,49 +168,26 @@
           pin.hidden = true;
           return;
         }
+        const photos = {};
+        try {
+          const ids = Array.from(new Set(data.map((row) => row.recipient_id)));
+          const { data: photoRows } = await sb
+            .from("birthday_photos")
+            .select("recipient_id,image_path")
+            .in("recipient_id", ids);
+          (photoRows || []).forEach((row) => {
+            photos[row.recipient_id] = row.image_path;
+          });
+        } catch (_) {}
+        PortalisBirthday.stopAll();
         pin.replaceChildren();
-        const colors = [
-          "birthday-note-yellow",
-          "birthday-note-pink",
-          "birthday-note-blue",
-          "birthday-note-green",
-        ];
-        pin.className = "birthday-pin " + currentBirthdayColor(colors);
-        const pinDecoration = el("span", "birthday-pushpin");
-        pinDecoration.setAttribute("aria-hidden", "true");
-        const balloonDecoration = el("span", "birthday-balloon", "🎈");
-        balloonDecoration.setAttribute("aria-hidden", "true");
-        pin.append(
-          pinDecoration,
-          balloonDecoration,
-          el("strong", "birthday-title", "🎂 Birthday today!"),
-        );
-        const audioStatus = el("span", "birthday-audio-status");
-        audioStatus.setAttribute("aria-live", "polite");
-        const playSong = el(
-          "button",
-          "birthday-song-button",
-          "♪ Play birthday song",
-        );
-        playSong.type = "button";
-        playSong.onclick = async () => {
-          playSong.disabled = true;
-          try {
-            const duration = await playBirthdaySong();
-            pin.className = "birthday-pin " + nextBirthdayColor(colors);
-            throwBirthdayConfetti();
-            audioStatus.textContent = "Playing a birthday melody";
-            window.setTimeout(() => {
-              audioStatus.textContent = "";
-              playSong.disabled = false;
-            }, duration);
-          } catch (songError) {
-            audioStatus.textContent =
-              songError.message || "Audio is unavailable in this browser.";
-            playSong.disabled = false;
-          }
-        };
-        pin.append(playSong, audioStatus);
+        pin.className = "bday-pin";
+        ["🎈", "🎉", "🎊", "🎂", "✨", "🎈"].forEach((symbol) => {
+          const floater = el("span", "bday-float", symbol);
+          floater.setAttribute("aria-hidden", "true");
+          pin.appendChild(floater);
+        });
+        pin.appendChild(el("strong", "bday-title", "🎂 Birthday today! 🎉"));
         const people = new Map();
         data.forEach((row) => {
           if (!people.has(row.recipient_id)) {
@@ -222,10 +201,20 @@
         });
         people.forEach((person, recipientId) => {
           const isBirthdayUser = recipientId === ctx.user.id;
-          const card = el("section", "birthday-person");
+          const card = el("section", "birthday-person bday-person");
           card.append(
-            el("h3", "", "Happy birthday, " + person.name + "!"),
+            el("h3", "bday-name", "Happy birthday, " + person.name + "!"),
             el("p", "birthday-subtitle", "We hope you have a wonderful day!"),
+          );
+          card.appendChild(
+            PortalisBirthday.createStage({
+              recipientId: recipientId,
+              name: person.name,
+              message: person.message,
+              photoPath: photos[recipientId] || null,
+              isAdmin: !!ctx.isAdmin,
+              onNotify: (text, bad) => (bad ? err(text) : ok(text)),
+            }),
           );
           const publicMessage = el("div", "birthday-public-message");
           if (person.message) {
@@ -346,118 +335,6 @@
           pin.appendChild(card);
         });
         pin.hidden = false;
-      }
-
-      function nextBirthdayColor(colors) {
-        if (birthdayColorIndex < 0) currentBirthdayColor(colors);
-        birthdayColorIndex = (birthdayColorIndex + 1) % colors.length;
-        try {
-          localStorage.setItem(
-            "portalis_birthday_color",
-            String(birthdayColorIndex),
-          );
-        } catch (_) {}
-        return colors[birthdayColorIndex];
-      }
-
-      function currentBirthdayColor(colors) {
-        if (birthdayColorIndex >= 0) return colors[birthdayColorIndex];
-        try {
-          const savedIndex = Number(
-            localStorage.getItem("portalis_birthday_color"),
-          );
-          if (
-            Number.isInteger(savedIndex) &&
-            savedIndex >= 0 &&
-            savedIndex < colors.length
-          ) {
-            birthdayColorIndex = savedIndex;
-          }
-        } catch (_) {}
-        if (birthdayColorIndex < 0) birthdayColorIndex = 0;
-        return colors[birthdayColorIndex];
-      }
-
-      async function playBirthdaySong() {
-        const AudioContextClass =
-          window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextClass)
-          throw new Error("Audio is unavailable in this browser.");
-        const audio = new AudioContextClass();
-        await audio.resume();
-        const melody = [
-          [392, 0.28],
-          [392, 0.16],
-          [440, 0.44],
-          [392, 0.44],
-          [523.25, 0.44],
-          [493.88, 0.8],
-          [392, 0.28],
-          [392, 0.16],
-          [440, 0.44],
-          [392, 0.44],
-          [587.33, 0.44],
-          [523.25, 0.8],
-          [392, 0.28],
-          [392, 0.16],
-          [783.99, 0.44],
-          [659.25, 0.44],
-          [523.25, 0.44],
-          [493.88, 0.44],
-          [440, 0.8],
-          [698.46, 0.28],
-          [698.46, 0.16],
-          [659.25, 0.44],
-          [523.25, 0.44],
-          [587.33, 0.44],
-          [523.25, 0.9],
-        ];
-        let startAt = audio.currentTime + 0.05;
-        melody.forEach(([frequency, duration]) => {
-          const oscillator = audio.createOscillator();
-          const volume = audio.createGain();
-          oscillator.type = "sine";
-          oscillator.frequency.value = frequency;
-          volume.gain.setValueAtTime(0.0001, startAt);
-          volume.gain.exponentialRampToValueAtTime(0.12, startAt + 0.025);
-          volume.gain.setValueAtTime(0.12, startAt + duration * 0.72);
-          volume.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
-          oscillator.connect(volume).connect(audio.destination);
-          oscillator.start(startAt);
-          oscillator.stop(startAt + duration);
-          startAt += duration + 0.035;
-        });
-        const duration = Math.ceil((startAt - audio.currentTime) * 1000);
-        window.setTimeout(() => audio.close(), duration);
-        return duration;
-      }
-
-      function throwBirthdayConfetti() {
-        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches)
-          return;
-        const layer = el("div", "birthday-confetti");
-        layer.setAttribute("aria-hidden", "true");
-        const colors = ["#f6b8dc", "#fff3a0", "#cde8ff", "#cdeec7", "#ff8f8f"];
-        for (let i = 0; i < 48; i++) {
-          const piece = el("i", "confetti-piece");
-          piece.style.left = Math.random() * 100 + "%";
-          piece.style.backgroundColor = colors[i % colors.length];
-          piece.style.setProperty(
-            "--confetti-drift",
-            Math.random() * 220 - 110 + "px",
-          );
-          piece.style.setProperty(
-            "--confetti-delay",
-            Math.random() * 0.8 + "s",
-          );
-          piece.style.setProperty(
-            "--confetti-spin",
-            Math.random() * 900 - 450 + "deg",
-          );
-          layer.appendChild(piece);
-        }
-        document.body.appendChild(layer);
-        window.setTimeout(() => layer.remove(), 3200);
       }
 
       function setView(v) {

@@ -6,47 +6,184 @@
   <title>Portalis - Manage reviewers</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+    /* ==========================================================================
+       MANAGE REVIEWERS - sticky-note desk (scoped to .rvm-page, nothing else changes)
+       ========================================================================== */
+    .rvm-page { --yellow: #fff3a0; --pink: #f6b8dc; --blue: #cde8ff; --green: #cdeec7; --orange: #ffc17a; --lav: #e3d6ff; }
+
+    /* header */
+    .rvm-hero { max-width: 680px; margin: 4px auto 6px; text-align: center; }
+    .rvm-title { position: relative; display: inline-block; margin: 0 0 8px; padding: 0 10px; isolation: isolate; }
+    .rvm-title::after {
+      content: ""; position: absolute; z-index: -1; left: 0; right: 0; bottom: 3px; height: 0.55em;
+      background: var(--pink); transform: rotate(-1.2deg);
+    }
+    .rvm-sub { margin: 0 auto; font-size: 19px; line-height: 1.3; }
+
+    /* a card = one note on the desk */
+    .rvm-card {
+      position: relative; margin: 38px 0 28px; padding: 28px 20px 20px;
+      border: 3px solid #000; background: var(--paper, #fff); box-shadow: 6px 6px 0 #000;
+    }
+    .rvm-card::before {
+      content: ""; position: absolute; top: -13px; left: 50%; width: 78px; height: 22px;
+      border: 1px solid rgba(0, 0, 0, 0.15); background: rgba(255, 255, 255, 0.75);
+      transform: translateX(-50%) rotate(-2deg); pointer-events: none;
+    }
+    .rvm-card > h3, .rvm-head h3 { margin: 0 0 12px; }
+    .rvm-step {
+      position: absolute; top: -20px; left: 16px; display: grid; place-items: center; width: 40px; height: 40px;
+      border: 3px solid #000; border-radius: 50%; background: #000; color: #fff;
+      font-family: "Permanent Marker", "Comic Sans MS", cursive; font-size: 20px;
+    }
+    .rvm-card > .hint:first-of-type { margin-top: 0; }
+
+    /* step 1: topic board */
+    .rvm-search input {
+      max-width: 400px; padding-left: 42px;
+      background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5 21 21'/%3E%3C/svg%3E") no-repeat 13px center / 20px;
+    }
+    .rvm-board { margin-top: 6px; }
+    .rvm-subject {
+      margin: 14px 0 0; padding: 10px 12px 12px; background: #fff;
+      border: 2px solid #000; border-left: 12px solid var(--paper, #f6b8dc); box-shadow: 3px 3px 0 #000;
+    }
+    .rvm-subject-head { display: flex; align-items: center; gap: 10px; }
+    .rvm-subject-head .code { margin: 0; flex: none; }
+    .rvm-subject-name { font-weight: bold; font-size: 19px; line-height: 1.2; overflow-wrap: anywhere; }
+    .rvm-chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+    button.rvm-topic-btn {
+      margin: 0; padding: 5px 13px; border: 2px solid #000; background: #fff; color: #000;
+      box-shadow: 2px 2px 0 #000; font-size: 17px; text-align: left;
+    }
+    button.rvm-topic-btn:hover { background: var(--yellow); color: #000; box-shadow: 3px 3px 0 #000; }
+    button.rvm-topic-btn.on, button.rvm-topic-btn.on:hover { background: #000; color: #fff; box-shadow: none; transform: translate(2px, 2px); }
+    button.rvm-topic-btn:focus-visible { outline: 3px solid #000; outline-offset: 2px; }
+
+    details.rvm-new { margin-top: 20px; border: 2px dashed #000; background: #fff; }
+    details.rvm-new[open] { border-style: solid; box-shadow: 3px 3px 0 #000; }
+    details.rvm-new > summary {
+      padding: 10px 14px; cursor: pointer; font-family: "Permanent Marker", "Comic Sans MS", cursive; font-size: 1.2rem;
+    }
+    details.rvm-new > summary:hover { background: var(--yellow); }
+    details.rvm-new > summary:focus-visible { outline: 3px solid #000; outline-offset: -3px; }
+    .rvm-new-body { padding: 4px 14px 16px; }
+
+    /* step 2: sticky save bar */
+    .rvm-savebar {
+      position: sticky; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 5;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+      margin: 18px -6px -6px; padding: 10px 12px;
+      border: 3px solid #000; background: var(--yellow); box-shadow: 4px 4px 0 #000;
+    }
+    .rvm-savebar button, .rvm-savebar .btn { margin: 0; }
+    .rvm-savebar .rv-dirty { margin-left: 0; }
+    button.rvm-danger { margin-left: auto; border-color: #b00020; background: #fff; color: #b00020; }
+    button.rvm-danger:hover { background: #b00020; color: #fff; box-shadow: 3px 3px 0 #000; }
+
+    /* step 3: add questions */
+    .rvm-page .tabs { margin: 4px auto 20px; }
+    .rvm-format { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 10px 0 14px; }
+    .rvm-format > div { padding: 8px 10px; border: 2px solid #000; background: #fff; box-shadow: 2px 2px 0 #000; }
+    .rvm-format b { display: block; margin-bottom: 4px; }
+    .rvm-format pre { margin: 0; font: 14px/1.45 Consolas, "Cascadia Mono", "Courier New", monospace; white-space: pre-wrap; }
+    .rvm-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .rvm-actions button { margin: 10px 0 0; }
+
+    /* question cards */
+    .rvm-page .qrow {
+      margin: 14px 0; padding: 12px 14px; border: 2px solid #000; background: #fff; box-shadow: 3px 3px 0 #000;
+    }
+    .rvm-qhead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .rvm-qnum {
+      display: grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px;
+      background: #000; color: #fff; font-family: "Permanent Marker", "Comic Sans MS", cursive; font-size: 16px;
+    }
+    .rvm-qtype { padding: 0 8px; border: 2px solid #000; background: var(--paper, #fff3a0); font-size: 15px; }
+    .rvm-qtype.mcq { --paper: #cde8ff; }
+    .rvm-qtype.tf { --paper: #f6b8dc; }
+    .rvm-qtype.id { --paper: #cdeec7; }
+    .rvm-qprompt { overflow-wrap: anywhere; }
+    .rvm-page .qrow ul { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+    .rvm-page .qrow li { padding: 3px 10px; border-left: 4px solid #000; background: #faf7ef; overflow-wrap: anywhere; }
+    .rvm-page .qrow li.key { background: var(--green); font-weight: bold; }
+    .rvm-ans { margin-top: 8px; padding: 3px 10px; border-left: 4px solid #000; background: var(--green); font-weight: bold; overflow-wrap: anywhere; }
+    .rvm-page .qrow .rvm-del { flex: none; }
+    .rvm-page .qrow > input[type="checkbox"] { flex: none; margin-top: 6px; }
+
+    /* results */
+    .rvm-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 0 0 18px; }
+    .rvm-tile { padding: 10px 12px; border: 2px solid #000; background: var(--t, #fff); box-shadow: 3px 3px 0 #000; }
+    .rvm-tile b { display: block; font-family: "Permanent Marker", "Comic Sans MS", cursive; font-weight: normal; font-size: 30px; line-height: 1.1; }
+    .rvm-page #resultsChart { margin: 0 0 18px; padding: 10px 14px; border: 2px solid #000; background: #fff; }
+    .rvm-page #resultsChart h3 { font-size: 1.15rem; }
+    .rvm-page .scroll { border: 2px solid #000; background: #fff; }
+
+    @media (max-width: 560px) {
+      .rvm-card { padding: 26px 12px 16px; }
+      .rvm-savebar { margin-left: -4px; margin-right: -4px; }
+      button.rvm-danger { margin-left: 0; }
+      .rvm-subject { border-left-width: 8px; }
+    }
+    @media (prefers-reduced-motion: reduce) { .rvm-page * { transition: none !important; } }
+  </style>
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap rvm-page">
     <div id="bar"></div>
-    <h2>Manage reviewers</h2>
+    <header class="rvm-hero">
+      <h2 class="rvm-title">Manage reviewers</h2>
+      <p class="rvm-sub">Write the reviewer, add quiz questions, and see how students did.</p>
+    </header>
     <p id="msg" class="msg"></p>
 
-    <!-- 1. open a topic -->
-    <div class="card">
-      <h3>1. Open a new topic</h3>
-      <div class="cols2">
-        <div><label for="newSubject">Subject</label><select id="newSubject"></select></div>
-        <div><label for="newTitle">Topic title</label><input id="newTitle" placeholder="e.g. Variables and data types" maxlength="120"></div>
+    <!-- 1. choose a topic -->
+    <section class="rvm-card" style="--paper:#fff3a0">
+      <span class="rvm-step" aria-hidden="true">1</span>
+      <h3>Choose a topic</h3>
+      <div class="rvm-search">
+        <input id="topicSearch" type="search" placeholder="Search subjects or topics" aria-label="Search subjects or topics" autocomplete="off">
       </div>
-      <label for="newReviewer">Reviewer text (optional, you can edit it later)</label>
-      <div id="newEditor"></div>
-      <button id="createTopic">Create topic</button>
-    </div>
+      <div id="topicBoard" class="rvm-board"></div>
+      <select id="topicPick" hidden aria-hidden="true" tabindex="-1"></select>
 
-    <!-- 2. pick a topic -->
-    <div class="card">
-      <h3>2. Choose a topic to manage</h3>
-      <select id="topicPick"></select>
-    </div>
+      <details id="newPanel" class="rvm-new">
+        <summary>+ Open a new topic</summary>
+        <div class="rvm-new-body">
+          <div class="cols2">
+            <div><label for="newSubject">Subject</label><select id="newSubject"></select></div>
+            <div><label for="newTitle">Topic title</label><input id="newTitle" placeholder="e.g. Variables and data types" maxlength="120"></div>
+          </div>
+          <label for="newReviewer">Reviewer text (optional, you can edit it later)</label>
+          <div id="newEditor"></div>
+          <button id="createTopic">Create topic</button>
+        </div>
+      </details>
+    </section>
 
     <div id="editor" style="display:none">
-      <div class="card">
+      <!-- 2. write the reviewer -->
+      <section class="rvm-card" style="--paper:#cde8ff">
+        <span class="rvm-step" aria-hidden="true">2</span>
         <h3>Topic and reviewer text</h3>
         <label for="edTitle">Title</label>
         <input id="edTitle" maxlength="120">
         <label for="edReviewer">Reviewer text</label>
         <div id="edEditor"></div>
-        <button id="saveTopic">Save changes</button>
-        <a id="previewLink" class="btn ghost">View as student</a>
-        <button id="delTopic" class="ghost">Delete topic</button>
-        <span id="dirty" class="rv-dirty" aria-live="polite"></span>
-      </div>
+        <div class="rvm-savebar">
+          <button id="saveTopic">Save changes</button>
+          <a id="previewLink" class="btn ghost">View as student</a>
+          <span id="dirty" class="rv-dirty" aria-live="polite"></span>
+          <button id="delTopic" class="ghost rvm-danger">Delete topic</button>
+        </div>
+      </section>
 
-      <div class="card">
+      <!-- 3. add quiz questions -->
+      <section class="rvm-card" style="--paper:#cdeec7">
+        <span class="rvm-step" aria-hidden="true">3</span>
         <h3>Add quiz questions</h3>
-        <div class="tabs" style="margin-bottom:12px">
+        <div class="tabs">
           <button class="tab on" data-mode="manual">Type one</button>
           <button class="tab" data-mode="bulk">Bulk paste</button>
           <button class="tab" data-mode="gen">Auto-generate</button>
@@ -81,8 +218,21 @@
         <!-- bulk -->
         <div id="mode-bulk" style="display:none">
           <p class="hint">Separate questions with a blank line. Multiple choice has options A) B) C)... and an "Answer:" letter. Without options it becomes identification, unless the answer is True or False, which makes a True/False question.</p>
+          <div class="rvm-format">
+            <div><b>Multiple choice</b><pre>Q: Question?
+A) Option
+B) Option
+Answer: B</pre></div>
+            <div><b>Identification</b><pre>Q: Question?
+Answer: int</pre></div>
+            <div><b>True or False</b><pre>Q: Statement.
+Answer: True</pre></div>
+          </div>
           <textarea id="bText" style="min-height:220px" placeholder="Q: What is the capital of the Philippines?&#10;A) Cebu&#10;B) Manila&#10;C) Davao&#10;Answer: B&#10;&#10;Q: Keyword used to declare an integer in Java?&#10;Answer: int&#10;&#10;Q: Java is a programming language.&#10;Answer: True"></textarea>
-          <button id="bParse">Check questions</button>
+          <div class="rvm-actions">
+            <button id="bParse">Check questions</button>
+            <button id="bExample" class="ghost" type="button">Insert example</button>
+          </div>
           <div id="bPreview"></div>
         </div>
 
@@ -100,21 +250,22 @@
           <button id="gRun">Generate from reviewer text</button>
           <div id="gPreview"></div>
         </div>
-      </div>
+      </section>
 
-      <div class="card">
+      <section class="rvm-card" style="--paper:#fff">
         <h3>Questions <span id="qCount" class="badge"></span></h3>
         <div id="qList"></div>
-      </div>
+      </section>
 
-      <div class="card">
+      <section class="rvm-card" style="--paper:#f6b8dc">
         <h3>Student results</h3>
+        <div id="resultsStats" class="rvm-tiles"></div>
         <div id="resultsChart" aria-label="Quiz attempts summary graph"></div>
         <div class="scroll"><table>
           <thead><tr><th>Student number</th><th>Full name</th><th>Try</th><th>Status</th><th>Score</th><th>Last activity</th></tr></thead>
           <tbody id="results"></tbody>
         </table></div>
-      </div>
+      </section>
     </div>
   </div>
 
@@ -125,6 +276,8 @@
   <script src="common.js"></script>
   <script>
     let ctx, subjects = [], topics = [], current = null, students = {}, parsed = [], generated = [];
+    const PAPERS = ["#f6b8dc", "#cde8ff", "#cdeec7", "#e3d6ff", "#ffc17a"];
+    const BULK_EXAMPLE = "Q: What is the capital of the Philippines?\nA) Cebu\nB) Manila\nC) Davao\nAnswer: B\n\nQ: Keyword used to declare an integer in Java?\nAnswer: int\n\nQ: Java is a programming language.\nAnswer: True";
     const msg = document.getElementById("msg");
     const $ = id => document.getElementById(id);
     function err(t) { msg.className = "msg err"; msg.textContent = t; window.scrollTo(0, 0); }
@@ -416,17 +569,54 @@
         pick.appendChild(g);
       });
       if (current) pick.value = current.id;
+      if (!topics.length) $("newPanel").open = true;
+      renderBoard();
     }
+
+    /* topic board: every topic as a button, grouped by subject */
+    function renderBoard() {
+      const board = $("topicBoard");
+      board.innerHTML = "";
+      const q = $("topicSearch").value.trim().toLowerCase();
+      let shown = 0;
+      subjects.forEach((sub, i) => {
+        const mine = topics.filter(t => t.subject_id === sub.id);
+        if (!mine.length) return;
+        const subjectHit = !q || (sub.code + " " + sub.title).toLowerCase().includes(q);
+        const vis = mine.filter(t => subjectHit || t.title.toLowerCase().includes(q));
+        if (!vis.length) return;
+        const row = el("div", "rvm-subject");
+        row.style.setProperty("--paper", PAPERS[i % PAPERS.length]);
+        const head = el("div", "rvm-subject-head");
+        head.append(el("span", "code", sub.code), el("span", "rvm-subject-name", sub.title));
+        const chips = el("div", "rvm-chips");
+        vis.forEach(t => {
+          const b = el("button", "rvm-topic-btn" + (current && current.id === t.id ? " on" : ""), t.title);
+          b.type = "button";
+          b.onclick = () => requestSelect(t.id, true);
+          chips.appendChild(b);
+          shown++;
+        });
+        row.append(head, chips);
+        board.appendChild(row);
+      });
+      if (!shown) board.appendChild(el("p", "hint", topics.length ? "No topics match that search." : "No topics yet. Open a new topic below to get started."));
+    }
+    $("topicSearch").addEventListener("input", renderBoard);
     function isDirty() {
       return !!current && ($("edReviewer").value !== (current.reviewer || "") || $("edTitle").value.trim() !== current.title);
     }
     function updateDirty() { $("dirty").textContent = isDirty() ? "Unsaved changes" : ""; }
     window.addEventListener("beforeunload", e => { if (isDirty()) { e.preventDefault(); e.returnValue = ""; } });
-    $("topicPick").onchange = e => {
-      const v = Number(e.target.value);
-      if (isDirty() && !confirm("You have unsaved changes. Discard them?")) { e.target.value = current.id; return; }
-      if (v) selectTopic(v); else { current = null; $("editor").style.display = "none"; updateDirty(); }
-    };
+    async function requestSelect(v, scroll) {
+      if (current && v === current.id) { if (scroll) $("editor").scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+      if (isDirty() && !confirm("You have unsaved changes. Discard them?")) { if (current) $("topicPick").value = current.id; return; }
+      if (v) {
+        await selectTopic(v);
+        if (scroll) $("editor").scrollIntoView({ behavior: "smooth", block: "start" });
+      } else { current = null; $("editor").style.display = "none"; updateDirty(); renderBoard(); }
+    }
+    $("topicPick").onchange = e => requestSelect(Number(e.target.value));
 
     /* ---------- create / edit / delete topic ---------- */
     $("createTopic").onclick = async () => {
@@ -447,6 +637,7 @@
       current = topics.find(t => t.id === id);
       if (!current) return;
       $("topicPick").value = id;
+      renderBoard();
       $("editor").style.display = "block";
       $("edTitle").value = current.title;
       $("edReviewer").value = current.reviewer || "";
@@ -552,6 +743,11 @@
     };
 
     // bulk
+    $("bExample").onclick = () => {
+      const box = $("bText");
+      box.value = box.value.trim() ? box.value.replace(/\s*$/, "\n\n") + BULK_EXAMPLE : BULK_EXAMPLE;
+      box.focus();
+    };
     $("bParse").onclick = () => {
       clearMsg();
       const r = parseBulk($("bText").value);
@@ -605,12 +801,16 @@
     function previewRow(q, n) {
       const row = el("div", "qrow");
       const body = el("div", "qbody");
-      body.appendChild(el("div", "", n + ". " + q.prompt));
+      const isTf = q.qtype === "mcq" && q.options.length === 2 && q.options[0] === "True" && q.options[1] === "False";
+      const kind = q.qtype !== "mcq" ? ["id", "Identification"] : isTf ? ["tf", "True or False"] : ["mcq", "Multiple choice"];
+      const qhead = el("div", "rvm-qhead");
+      qhead.append(el("span", "rvm-qnum", String(n)), el("span", "rvm-qtype " + kind[0], kind[1]));
+      body.append(qhead, el("div", "rvm-qprompt", q.prompt));
       if (q.qtype === "mcq") {
         const ul = el("ul", "");
         q.options.forEach(o => ul.appendChild(el("li", o === q.answer ? "key" : "", (o === q.answer ? "\u2713 " : "") + o)));
         body.appendChild(ul);
-      } else body.appendChild(el("div", "hint", "Answer: " + q.answer));
+      } else body.appendChild(el("div", "rvm-ans", "Answer: " + q.answer));
       row.appendChild(body);
       return renderMath(row);
     }
@@ -630,7 +830,7 @@
       if (!qs.length) list.appendChild(el("p", "hint", "No questions yet."));
       qs.forEach((q, i) => {
         const row = previewRow({ qtype: q.qtype, prompt: q.prompt, options: q.options || [], answer: keys[q.id] || "" }, i + 1);
-        const del = el("button", "ghost small", "Delete");
+        const del = el("button", "ghost small rvm-del", "Delete");
         del.onclick = async () => {
           if (!confirm("Delete this question?")) return;
           const { error } = await sb.from("questions").delete().eq("id", q.id);
@@ -650,6 +850,15 @@
       const chart = $("resultsChart");
       chart.innerHTML = "";
       const submitted = data.filter(a => a.status === "submitted");
+      const tiles = $("resultsStats");
+      tiles.innerHTML = "";
+      const avg = submitted.length ? Math.round(submitted.reduce((s, a) => s + (a.total ? a.score / a.total * 100 : 0), 0) / submitted.length) : null;
+      [["Students", new Set(data.map(a => a.user_id)).size, "#cde8ff"], ["Submitted", submitted.length, "#cdeec7"], ["In progress", data.length - submitted.length, "#fff3a0"], ["Average score", avg === null ? "-" : avg + "%", "#f6b8dc"]].forEach(t => {
+        const tile = el("div", "rvm-tile");
+        tile.style.setProperty("--t", t[2]);
+        tile.append(el("b", "", String(t[1])), el("span", "", t[0]));
+        tiles.appendChild(tile);
+      });
       if (submitted.length) {
         const groups = {};
         submitted.forEach(a => {
