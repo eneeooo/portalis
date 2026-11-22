@@ -60,6 +60,7 @@
       }
       const rev = document.getElementById("reviewer");
       rev.classList.add("reviewer-card");
+      rev.dataset.tone = String(topicId % 4);
       rev.appendChild(t.reviewer.trim() ? renderRich(t.reviewer) : el("p", "hint", "No reviewer text yet."));
 
       await loadQuiz();

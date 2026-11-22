@@ -1136,6 +1136,9 @@ const GROUP_SUGGESTIONS = [
   "Third Year - First Semester", "Third Year - Second Semester",
   "Fourth Year - First Semester", "Fourth Year - Second Semester"
 ];
+const SM_TONES = ["#e3d6ff", "#cfe6ff", "#c9f2d3", "#fff3a0", "#ffdcb3", "#f9cfe3"];
+/* remembered between refreshes so searching, filtering and folding survive an edit */
+const SM_STATE = { q: "", vis: "all", collapsed: new Set(), compose: "" };
 
 async function renderSubjectManager(root, notify) {
   notify = notify || function () {};
@@ -1146,6 +1149,7 @@ async function renderSubjectManager(root, notify) {
     sb.from("topics").select("id,subject_id")
   ]);
   root.innerHTML = "";
+  root.classList.add("sm");
   const failed = g.error || s.error || t.error;
   if (failed) {
     root.appendChild(el("p", "msg err", /subject_groups|group_id|visible|position|schema cache|does not exist|could not find/i.test(failed.message)
@@ -1179,18 +1183,19 @@ async function renderSubjectManager(root, notify) {
     if (bad) return notify(bad.error.message, true);
     await reload();
   };
-  const arrows = (list, index, table) => {
+  const arrows = (list, index, table, label) => {
     const box = el("span", "sm-arrows");
-    const up = el("button", "ghost small sm-arrow", "\u2191"), down = el("button", "ghost small sm-arrow", "\u2193");
+    const up = el("button", "sm-arrow", "\u2191"), down = el("button", "sm-arrow", "\u2193");
     [up, down].forEach(b => { b.type = "button"; });
-    up.title = "Move up"; down.title = "Move down";
+    up.title = "Move " + label + " up"; down.title = "Move " + label + " down";
+    up.setAttribute("aria-label", up.title); down.setAttribute("aria-label", down.title);
     up.disabled = index === 0; down.disabled = index === list.length - 1;
     up.onclick = () => move(list, index, -1, table);
     down.onclick = () => move(list, index, 1, table);
     box.append(up, down);
     return box;
   };
-  const groupSelect = (value, extra) => {
+  const groupSelect = value => {
     const sel = el("select", "sm-group-select");
     sel.setAttribute("aria-label", "Group");
     const none = el("option", "", "No group"); none.value = ""; sel.appendChild(none);
@@ -1198,102 +1203,57 @@ async function renderSubjectManager(root, notify) {
     sel.value = value ? String(value) : "";
     return sel;
   };
+  const makeSwitch = (checked, textOn, textOff) => {
+    const label = el("label", "sm-switch");
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!checked;
+    const track = el("span", "sm-track"); track.appendChild(el("span", "sm-knob"));
+    const state = el("span", "sm-state", checked ? textOn : textOff);
+    label.append(cb, track, state);
+    return { label, cb, state };
+  };
+  const updaters = [];
+  const refresh = () => updaters.forEach(f => f());
 
-  const head = el("p", "hint", "Tick \"Shown\" to let students see a subject on the Reviewers page. Unticked subjects stay hidden from students but admins and officers still see them. Subjects appear under their group, in the order set here.");
-  root.appendChild(head);
-  const shownTotal = subjects.filter(x => x.visible).length;
-  root.appendChild(el("p", "sm-summary", shownTotal + " of " + subjects.length + " subject" + (subjects.length === 1 ? "" : "s") + " shown to students"));
+  /* ---- overview stickies ---- */
+  const stats = el("div", "sm-stats");
+  const stat = (tone, icon, label) => {
+    const box = el("div", "sm-stat"); box.style.setProperty("--tone", tone);
+    const n = el("strong", "sm-stat-n", "0");
+    box.append(el("span", "sm-stat-icon", icon), n, el("span", "sm-stat-label", label));
+    stats.appendChild(box);
+    return { box, n };
+  };
+  const stGroups = stat("#cfe6ff", "\uD83D\uDDC2\uFE0F", "Groups");
+  const stSubs = stat("#fff3a0", "\uD83D\uDCDA", "Subjects");
+  const stShown = stat("#c9f2d3", "\uD83D\uDC40", "Shown to students");
+  const meter = el("div", "sm-meter"), meterFill = el("span");
+  meter.appendChild(meterFill); stShown.box.appendChild(meter);
+  root.append(stats, el("p", "hint sm-legend", "Switch a subject on to show it on the Reviewers page. Hidden subjects stay visible to admins and officers."));
 
-  /* one card per group, then the ungrouped ones */
-  const sections = groups.map((gr, gi) => ({ group: gr, gi: gi, subs: inGroup(gr.id) }));
-  const loose = inGroup(null);
-  if (loose.length) sections.push({ group: null, subs: loose });
-
-  sections.forEach(sec => {
-    const card = el("section", "card sm-group");
-    const bar = el("div", "sm-group-bar");
-    if (sec.group) {
-      bar.appendChild(arrows(groups, sec.gi, "subject_groups"));
-      const name = el("input", "sm-group-name");
-      name.value = sec.group.name; name.maxLength = 80; name.setAttribute("aria-label", "Group name");
-      name.onchange = async () => {
-        const v = name.value.trim();
-        if (!v) { name.value = sec.group.name; return notify("A group needs a name.", true); }
-        if (await run(sb.from("subject_groups").update({ name: v }).eq("id", sec.group.id), "Group renamed.")) sec.group.name = v; else name.value = sec.group.name;
-      };
-      bar.appendChild(name);
-    } else {
-      bar.appendChild(el("h3", "sm-group-name sm-nogroup", "No group yet"));
-    }
-    const shown = sec.subs.filter(x => x.visible).length;
-    bar.appendChild(el("span", "badge", shown + "/" + sec.subs.length + " shown"));
-    const filter = q => sec.group ? q.eq("group_id", sec.group.id) : q.is("group_id", null);
-    const showAll = el("button", "ghost small", "Show all"), hideAll = el("button", "ghost small", "Hide all");
-    [showAll, hideAll].forEach(b => { b.type = "button"; });
-    showAll.onclick = () => run(filter(sb.from("subjects").update({ visible: true })), "All subjects in this group are shown.", true);
-    hideAll.onclick = () => run(filter(sb.from("subjects").update({ visible: false })), "All subjects in this group are hidden from students.", true);
-    bar.append(showAll, hideAll);
-    if (sec.group) {
-      const del = el("button", "ghost small", "Delete group");
-      del.type = "button";
-      del.onclick = () => {
-        if (!confirm("Delete the group \"" + sec.group.name + "\"? Its subjects are NOT deleted; they move to \"No group yet\".")) return;
-        run(sb.from("subject_groups").delete().eq("id", sec.group.id), "Group deleted.", true);
-      };
-      bar.appendChild(del);
-    }
-    card.appendChild(bar);
-
-    if (!sec.subs.length) card.appendChild(el("p", "hint", "No subjects in this group yet. Move one here with its Group menu, or add a new subject below."));
-    sec.subs.forEach((sub, i) => {
-      const row = el("div", "sm-row" + (sub.visible ? "" : " is-off"));
-      row.appendChild(arrows(sec.subs, i, "subjects"));
-
-      const toggle = el("label", "sm-toggle");
-      const cb = document.createElement("input");
-      cb.type = "checkbox"; cb.checked = !!sub.visible;
-      const state = el("span", "sm-state", sub.visible ? "Shown" : "Hidden");
-      cb.onchange = async () => {
-        const want = cb.checked;
-        if (await run(sb.from("subjects").update({ visible: want }).eq("id", sub.id), sub.code + (want ? " is now shown to students." : " is now hidden from students."))) {
-          sub.visible = want; state.textContent = want ? "Shown" : "Hidden"; row.classList.toggle("is-off", !want);
-        } else cb.checked = !want;
-      };
-      toggle.append(cb, state);
-      row.appendChild(toggle);
-
-      const code = el("input", "sm-code"); code.value = sub.code; code.maxLength = 20; code.setAttribute("aria-label", "Subject code");
-      const title = el("input", "sm-title"); title.value = sub.title; title.maxLength = 120; title.setAttribute("aria-label", "Subject title");
-      const saveField = async (input, field) => {
-        const v = input.value.trim();
-        if (!v) { input.value = sub[field]; return notify("This cannot be empty.", true); }
-        if (v === sub[field]) return;
-        if (await run(sb.from("subjects").update({ [field]: v }).eq("id", sub.id), "Subject updated.")) sub[field] = v; else input.value = sub[field];
-      };
-      code.onchange = () => saveField(code, "code");
-      title.onchange = () => saveField(title, "title");
-      row.append(code, title);
-
-      const gsel = groupSelect(sub.group_id);
-      gsel.onchange = () => run(sb.from("subjects").update({ group_id: gsel.value ? Number(gsel.value) : null, position: 9999 }).eq("id", sub.id), sub.code + " moved.", true);
-      row.appendChild(gsel);
-
-      const n = topicCount[sub.id] || 0;
-      row.appendChild(el("span", "sm-count", n + (n === 1 ? " topic" : " topics")));
-      const del = el("button", "ghost small", "Delete");
-      del.type = "button";
-      del.onclick = () => {
-        if (!confirm("Delete " + sub.code + "? This also deletes its " + n + " topic(s), their questions and every student's quiz tries. To only remove it from students' view, untick Shown instead.")) return;
-        run(sb.from("subjects").delete().eq("id", sub.id), sub.code + " deleted.", true);
-      };
-      row.appendChild(del);
-      card.appendChild(row);
-    });
-    root.appendChild(card);
+  /* ---- toolbar: search, filter, add ---- */
+  const toolbar = el("div", "sm-toolbar");
+  const search = document.createElement("input");
+  search.type = "search"; search.placeholder = "Search code or title"; search.value = SM_STATE.q;
+  search.setAttribute("aria-label", "Search subjects"); search.autocomplete = "off";
+  const chipBox = el("div", "sm-chips"); chipBox.setAttribute("role", "group"); chipBox.setAttribute("aria-label", "Filter subjects");
+  const chips = {};
+  [["all", "All"], ["shown", "Shown"], ["hidden", "Hidden"]].forEach(([key, text]) => {
+    const b = el("button", "sm-chip"); b.type = "button";
+    const n = el("b", "", "0"); b.append(text + " ", n);
+    b.onclick = () => { SM_STATE.vis = key; drawList(); refresh(); };
+    chips[key] = { b, n };
+    chipBox.appendChild(b);
   });
+  const end = el("div", "sm-toolbar-end");
+  const foldAll = el("button", "sm-ghost", "Collapse all"); foldAll.type = "button";
+  const addSubBtn = el("button", "sm-primary", "+ Subject"), addGrpBtn = el("button", "sm-primary", "+ Group");
+  [addSubBtn, addGrpBtn].forEach(b => { b.type = "button"; });
+  end.append(foldAll, addSubBtn, addGrpBtn);
+  toolbar.append(search, chipBox, end);
+  root.appendChild(toolbar);
 
-  /* add forms */
-  const forms = el("div", "sm-forms");
+  /* ---- add panel (one form at a time) ---- */
+  const compose = el("div", "sm-compose");
   const addSubject = el("section", "card sm-add");
   addSubject.appendChild(el("h3", "", "Add a subject"));
   const a1 = el("div", "sm-add-grid");
@@ -1301,32 +1261,225 @@ async function renderSubjectManager(root, notify) {
   const newTitle = el("input"); newTitle.placeholder = "Title, e.g. Data Structures"; newTitle.maxLength = 120; newTitle.setAttribute("aria-label", "New subject title");
   const newGroup = groupSelect(groups.length ? groups[0].id : "");
   a1.append(newCode, newTitle, newGroup);
-  const newShown = document.createElement("input"); newShown.type = "checkbox"; newShown.checked = true; newShown.id = "smNewShown";
-  const newShownLabel = el("label", "sm-toggle", ""); newShownLabel.append(newShown, el("span", "sm-state", "Show to students right away"));
-  const addBtn = el("button", "", "Add subject"); addBtn.type = "button";
+  const newShown = makeSwitch(true, "Show to students right away", "Keep hidden for now");
+  newShown.cb.onchange = () => { newShown.state.textContent = newShown.cb.checked ? "Show to students right away" : "Keep hidden for now"; };
+  const addBtn = el("button", "sm-primary", "Add subject"); addBtn.type = "button";
   addBtn.onclick = async () => {
     const c = newCode.value.trim(), ti = newTitle.value.trim();
     if (!c || !ti) return notify("Enter a code and a title.", true);
     const gid = newGroup.value ? Number(newGroup.value) : null;
     const pos = inGroup(gid).length;
-    await run(sb.from("subjects").insert({ code: c, title: ti, group_id: gid, visible: newShown.checked, position: pos }), c + " added.", true);
+    await run(sb.from("subjects").insert({ code: c, title: ti, group_id: gid, visible: newShown.cb.checked, position: pos }), c + " added.", true);
   };
-  addSubject.append(a1, newShownLabel, addBtn);
+  [newCode, newTitle].forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter") addBtn.click(); }));
+  const addFoot = el("div", "sm-add-foot"); addFoot.append(newShown.label, addBtn);
+  addSubject.append(a1, addFoot);
 
   const addGroup = el("section", "card sm-add");
   addGroup.appendChild(el("h3", "", "Add a group"));
-  const list = document.createElement("datalist"); list.id = "smGroupNames";
-  GROUP_SUGGESTIONS.filter(x => !groups.some(y => y.name === x)).forEach(x => { const o = document.createElement("option"); o.value = x; list.appendChild(o); });
+  const dl = document.createElement("datalist"); dl.id = "smGroupNames";
+  GROUP_SUGGESTIONS.filter(x => !groups.some(y => y.name === x)).forEach(x => { const o = document.createElement("option"); o.value = x; dl.appendChild(o); });
   const gname = el("input"); gname.placeholder = "e.g. Second Year - First Semester"; gname.maxLength = 80; gname.setAttribute("list", "smGroupNames"); gname.setAttribute("aria-label", "New group name");
-  const gbtn = el("button", "", "Add group"); gbtn.type = "button";
+  const gbtn = el("button", "sm-primary", "Add group"); gbtn.type = "button";
   gbtn.onclick = async () => {
     const v = gname.value.trim();
     if (!v) return notify("Enter a group name.", true);
     await run(sb.from("subject_groups").insert({ name: v, position: groups.length }), "Group added.", true);
   };
-  addGroup.append(gname, list, gbtn);
-  forms.append(addSubject, addGroup);
-  root.appendChild(forms);
+  gname.addEventListener("keydown", e => { if (e.key === "Enter") gbtn.click(); });
+  const gline = el("div", "sm-add-line"); gline.append(gname, dl, gbtn);
+  addGroup.appendChild(gline);
+  compose.append(addSubject, addGroup);
+  root.appendChild(compose);
+
+  const showCompose = which => {
+    SM_STATE.compose = which;
+    compose.hidden = !which;
+    addSubject.hidden = which !== "subject";
+    addGroup.hidden = which !== "group";
+    addSubBtn.classList.toggle("on", which === "subject");
+    addGrpBtn.classList.toggle("on", which === "group");
+    addSubBtn.setAttribute("aria-pressed", which === "subject");
+    addGrpBtn.setAttribute("aria-pressed", which === "group");
+  };
+  addSubBtn.onclick = () => { showCompose(SM_STATE.compose === "subject" ? "" : "subject"); if (SM_STATE.compose) newCode.focus(); };
+  addGrpBtn.onclick = () => { showCompose(SM_STATE.compose === "group" ? "" : "group"); if (SM_STATE.compose) gname.focus(); };
+  showCompose(SM_STATE.compose);
+
+  /* ---- group cards ---- */
+  const list = el("div", "sm-list");
+  root.appendChild(list);
+  const sections = groups.map((gr, gi) => ({ group: gr, gi: gi, subs: inGroup(gr.id) }));
+  const loose = inGroup(null);
+  if (loose.length) sections.push({ group: null, subs: loose });
+
+  const drawList = () => {
+    list.innerHTML = "";
+    const q = SM_STATE.q.trim().toLowerCase();
+    const filtering = !!q || SM_STATE.vis !== "all";
+    let drawn = 0;
+
+    sections.forEach(sec => {
+      const nameHit = !!(q && sec.group && sec.group.name.toLowerCase().includes(q));
+      const matches = sub =>
+        (SM_STATE.vis === "all" || (SM_STATE.vis === "shown") === !!sub.visible) &&
+        (!q || nameHit || (sub.code + " " + sub.title).toLowerCase().includes(q));
+      const rows = sec.subs.map((sub, i) => ({ sub, i })).filter(x => matches(x.sub));
+      if (filtering && !rows.length) return;
+      drawn++;
+
+      const key = sec.group ? sec.group.id : "none";
+      const tone = sec.group ? SM_TONES[sec.gi % SM_TONES.length] : "#e6e6e6";
+      const card = el("section", "card sm-group");
+      card.style.setProperty("--tone", tone);
+      const folded = !filtering && SM_STATE.collapsed.has(key);
+      if (folded) card.classList.add("is-collapsed");
+
+      const head = el("div", "sm-group-head");
+      const fold = el("button", "sm-fold"); fold.type = "button";
+      fold.appendChild(el("span", "", "\u25BE"));
+      fold.title = "Fold or unfold this group";
+      fold.setAttribute("aria-expanded", folded ? "false" : "true");
+      fold.onclick = () => {
+        const c = card.classList.toggle("is-collapsed");
+        if (c) SM_STATE.collapsed.add(key); else SM_STATE.collapsed.delete(key);
+        fold.setAttribute("aria-expanded", c ? "false" : "true");
+      };
+      head.appendChild(fold);
+
+      if (sec.group) {
+        const name = el("input", "sm-group-name");
+        name.value = sec.group.name; name.maxLength = 80; name.setAttribute("aria-label", "Group name");
+        name.onchange = async () => {
+          const v = name.value.trim();
+          if (!v) { name.value = sec.group.name; return notify("A group needs a name.", true); }
+          if (await run(sb.from("subject_groups").update({ name: v }).eq("id", sec.group.id), "Group renamed.")) sec.group.name = v; else name.value = sec.group.name;
+        };
+        head.appendChild(name);
+      } else {
+        head.appendChild(el("h3", "sm-group-name sm-nogroup", "No group yet"));
+      }
+
+      const pill = el("span", "sm-pill");
+      const paintPill = () => { pill.textContent = sec.subs.filter(x => x.visible).length + "/" + sec.subs.length + " shown"; };
+      paintPill(); updaters.push(paintPill);
+      head.appendChild(pill);
+      if (sec.group) head.appendChild(arrows(groups, sec.gi, "subject_groups", "group"));
+
+      const menu = document.createElement("details"); menu.className = "sm-menu";
+      const sum = el("summary", "", "\u22EF"); sum.title = "Group actions"; sum.setAttribute("aria-label", "Group actions");
+      const pop = el("div", "sm-menu-pop");
+      const scope = q => sec.group ? q.eq("group_id", sec.group.id) : q.is("group_id", null);
+      const mShow = el("button", "", "Show all to students"), mHide = el("button", "", "Hide all from students");
+      [mShow, mHide].forEach(b => { b.type = "button"; });
+      mShow.onclick = () => run(scope(sb.from("subjects").update({ visible: true })), "All subjects in this group are shown.", true);
+      mHide.onclick = () => run(scope(sb.from("subjects").update({ visible: false })), "All subjects in this group are hidden from students.", true);
+      pop.append(mShow, mHide);
+      if (sec.group) {
+        const mDel = el("button", "danger-text", "Delete group"); mDel.type = "button";
+        mDel.onclick = () => {
+          if (!confirm("Delete the group \"" + sec.group.name + "\"? Its subjects are NOT deleted; they move to \"No group yet\".")) return;
+          run(sb.from("subject_groups").delete().eq("id", sec.group.id), "Group deleted.", true);
+        };
+        pop.appendChild(mDel);
+      }
+      menu.append(sum, pop);
+      head.appendChild(menu);
+      card.appendChild(head);
+
+      const body = el("div", "sm-group-body");
+      if (!sec.subs.length) body.appendChild(el("p", "hint sm-none", "No subjects here yet. Use \"+ Subject\" above, or move one in with its Group menu."));
+      rows.forEach(({ sub, i }) => {
+        const row = el("div", "sm-row" + (sub.visible ? "" : " is-off"));
+        row.appendChild(arrows(sec.subs, i, "subjects", sub.code));
+
+        const code = el("input", "sm-code"); code.value = sub.code; code.maxLength = 20; code.setAttribute("aria-label", "Subject code");
+        const title = el("input", "sm-title"); title.value = sub.title; title.maxLength = 120; title.setAttribute("aria-label", "Subject title");
+        const saveField = async (input, field) => {
+          const v = input.value.trim();
+          if (!v) { input.value = sub[field]; return notify("This cannot be empty.", true); }
+          if (v === sub[field]) return;
+          if (await run(sb.from("subjects").update({ [field]: v }).eq("id", sub.id), "Subject updated.")) sub[field] = v; else input.value = sub[field];
+        };
+        code.onchange = () => saveField(code, "code");
+        title.onchange = () => saveField(title, "title");
+        row.append(code, title);
+
+        const n = topicCount[sub.id] || 0;
+        row.appendChild(el("span", "sm-count", n + (n === 1 ? " topic" : " topics")));
+
+        const sw = makeSwitch(sub.visible, "Shown", "Hidden");
+        sw.cb.setAttribute("aria-label", "Show " + sub.code + " to students");
+        sw.cb.onchange = async () => {
+          const want = sw.cb.checked;
+          if (await run(sb.from("subjects").update({ visible: want }).eq("id", sub.id), sub.code + (want ? " is now shown to students." : " is now hidden from students."))) {
+            sub.visible = want; sw.state.textContent = want ? "Shown" : "Hidden"; row.classList.toggle("is-off", !want);
+            refresh();
+            if (SM_STATE.vis !== "all") drawList();
+          } else sw.cb.checked = !want;
+        };
+        row.appendChild(sw.label);
+
+        const gsel = groupSelect(sub.group_id);
+        gsel.setAttribute("aria-label", "Move " + sub.code + " to group");
+        gsel.onchange = () => run(sb.from("subjects").update({ group_id: gsel.value ? Number(gsel.value) : null, position: 9999 }).eq("id", sub.id), sub.code + " moved.", true);
+        row.appendChild(gsel);
+
+        const del = el("button", "sm-del", "\uD83D\uDDD1"); del.type = "button";
+        del.title = "Delete " + sub.code; del.setAttribute("aria-label", "Delete " + sub.code);
+        del.onclick = () => {
+          if (!confirm("Delete " + sub.code + "? This also deletes its " + n + " topic(s), their questions and every student's quiz tries. To only remove it from students' view, switch it to Hidden instead.")) return;
+          run(sb.from("subjects").delete().eq("id", sub.id), sub.code + " deleted.", true);
+        };
+        row.appendChild(del);
+        body.appendChild(row);
+      });
+      card.appendChild(body);
+      list.appendChild(card);
+    });
+
+    if (!drawn) {
+      const empty = el("div", "sm-empty");
+      empty.appendChild(el("span", "sm-empty-icon", filtering ? "\uD83D\uDD0E" : "\uD83D\uDCDA"));
+      empty.appendChild(el("strong", "", filtering ? "No subjects match" : "No subjects yet"));
+      empty.appendChild(el("span", "hint", filtering ? "Try a different search or filter." : "Add a group such as \"First Year - First Semester\", then add its subjects."));
+      list.appendChild(empty);
+    }
+    foldAll.hidden = !drawn || filtering;
+    foldAll.textContent = sections.every(sec => SM_STATE.collapsed.has(sec.group ? sec.group.id : "none")) ? "Expand all" : "Collapse all";
+  };
+
+  foldAll.onclick = () => {
+    const keys = sections.map(sec => sec.group ? sec.group.id : "none");
+    const allFolded = keys.every(k => SM_STATE.collapsed.has(k));
+    keys.forEach(k => { if (allFolded) SM_STATE.collapsed.delete(k); else SM_STATE.collapsed.add(k); });
+    drawList();
+  };
+  search.oninput = () => { SM_STATE.q = search.value; drawList(); refresh(); };
+
+  /* counts that must follow every toggle */
+  updaters.push(() => {
+    const shown = subjects.filter(x => x.visible).length;
+    stGroups.n.textContent = groups.length;
+    stSubs.n.textContent = subjects.length;
+    stShown.n.textContent = shown + " / " + subjects.length;
+    meterFill.style.width = (subjects.length ? Math.round(shown / subjects.length * 100) : 0) + "%";
+    chips.all.n.textContent = subjects.length;
+    chips.shown.n.textContent = shown;
+    chips.hidden.n.textContent = subjects.length - shown;
+    Object.keys(chips).forEach(k => { chips[k].b.classList.toggle("on", SM_STATE.vis === k); chips[k].b.setAttribute("aria-pressed", SM_STATE.vis === k); });
+  });
+
+  /* close an open group menu when clicking elsewhere (bound once per page) */
+  if (!window.__smMenuClose) {
+    window.__smMenuClose = true;
+    document.addEventListener("click", e => {
+      document.querySelectorAll(".sm-menu[open]").forEach(m => { if (!m.contains(e.target)) m.removeAttribute("open"); });
+    });
+  }
+
+  drawList();
+  refresh();
   window.scrollTo(0, keepScroll);
 }
 
