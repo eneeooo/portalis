@@ -76,23 +76,56 @@
   <script src="beadbox.js"></script>
   <script>
     let products = [];
-    const cart = {};            // product id -> quantity
+    const cart = {};            // variant key -> quantity ("5" for normal products, "5|Small" for sizes)
     let tapped = null;          // product just tapped, so its card can bounce
 
     /* ---------- pricing ---------- */
-    function priceLine(p, qty) {
+    // every way a product can be bought: one entry normally, one per size for sized products
+    function variants(p) {
+      return p.sizes
+        ? p.sizes.map(s => ({ key: p.id + "|" + s.label, label: s.label, price: s.price }))
+        : [{ key: String(p.id), label: null, price: p.price }];
+    }
+    function priceLine(p, qty, price) {
       const free = p.buy5get1 ? Math.floor(qty / FREE_EVERY) : 0;
       const total = p.bundle5 !== null
-        ? Math.floor(qty / FREE_EVERY) * p.bundle5 + (qty % FREE_EVERY) * p.price
-        : qty * p.price;
+        ? Math.floor(qty / FREE_EVERY) * p.bundle5 + (qty % FREE_EVERY) * price
+        : qty * price;
       return { free, total };
     }
     function cartItems() {
-      return products.filter(p => cart[p.id] > 0).map(p => {
-        const qty = cart[p.id];
-        const { free, total } = priceLine(p, qty);
-        return { name: p.name, price: p.price, qty, free, total };
+      return products.flatMap(p => variants(p).filter(v => cart[v.key] > 0).map(v => {
+        const qty = cart[v.key];
+        const { free, total } = priceLine(p, qty, v.price);
+        return { key: v.key, name: v.label ? p.name + " (" + v.label + ")" : p.name, price: v.price, qty, free, total };
+      }));
+    }
+    function addToCart(p, key) {
+      tapped = p.id;
+      cart[key] = (cart[key] || 0) + 1;
+      renderShop();
+      renderCart();
+    }
+    function pickSize(p) {
+      const m = $("modal");
+      m.replaceChildren();
+      const box = el("div", "modal-box");
+      box.append(el("h3", "", p.name + " · pick a size"));
+      variants(p).forEach(v => {
+        const b = el("button", "btn yellow big", v.label + " · " + peso(v.price));
+        b.type = "button";
+        b.style.width = "100%";
+        b.style.marginTop = "10px";
+        b.onclick = () => { m.hidden = true; addToCart(p, v.key); };
+        box.append(b);
       });
+      const cancel = el("button", "btn white", "Cancel"); cancel.type = "button";
+      cancel.style.width = "100%";
+      cancel.style.marginTop = "10px";
+      cancel.onclick = () => { m.hidden = true; };
+      box.append(cancel);
+      m.append(box);
+      m.hidden = false;
     }
 
     /* ---------- full screen ---------- */
@@ -169,12 +202,18 @@
         }
         box.append(el("div", "name", p.name));
         const info = el("div");
-        info.append(el("div", "price", peso(p.price)));
+        if (p.sizes) {
+          info.append(el("div", "price", "from " + peso(p.price)));
+          p.sizes.forEach(s => info.append(el("span", "tag", s.label + " " + peso(s.price))));
+        } else {
+          info.append(el("div", "price", peso(p.price)));
+        }
         if (p.bundle5 !== null) info.append(el("span", "tag", "5 for " + peso(p.bundle5)));
         if (p.buy5get1) info.append(el("span", "tag gift", "🎁 Buy 5 Get 1!"));
         box.append(info);
-        if (cart[p.id] > 0) b.append(el("div", "count", String(cart[p.id])));
-        b.onclick = () => { tapped = p.id; cart[p.id] = (cart[p.id] || 0) + 1; renderShop(); renderCart(); };
+        const inCart = variants(p).reduce((s, v) => s + (cart[v.key] || 0), 0);
+        if (inCart > 0) b.append(el("div", "count", String(inCart)));
+        b.onclick = () => p.sizes ? pickSize(p) : addToCart(p, String(p.id));
         grid.append(b);
       });
       tapped = null;
@@ -185,16 +224,15 @@
       box.replaceChildren();
       const items = cartItems();
       if (!items.length) box.append(el("div", "cart-empty", "Your cart is empty. Pick something pretty! 🎀"));
-      products.filter(p => cart[p.id] > 0).forEach((p, i) => {
-        const it = items[i];
+      items.forEach(it => {
         const line = el("div", "line");
         line.append(el("div", "n", it.name + " · " + peso(it.price)));
         line.append(el("div", "t", peso(it.total)));
         const q = el("div", "qty");
         const minus = el("button", "", "−"); minus.type = "button";
         const plus = el("button", "", "+"); plus.type = "button";
-        minus.onclick = () => { cart[p.id] -= 1; renderShop(); renderCart(); };
-        plus.onclick = () => { cart[p.id] += 1; renderShop(); renderCart(); };
+        minus.onclick = () => { cart[it.key] -= 1; renderShop(); renderCart(); };
+        plus.onclick = () => { cart[it.key] += 1; renderShop(); renderCart(); };
         q.append(minus, el("span", "", String(it.qty)), plus);
         line.append(q);
         if (it.free > 0) line.append(el("div", "free-tag", "🎁 +" + it.free + " FREE " + it.name));
@@ -249,7 +287,7 @@
     }
 
     $("checkoutBtn").onclick = () => run(async () => {
-      const items = cartItems();
+      const items = cartItems().map(({ key, ...item }) => item);
       const total = items.reduce((s, it) => s + it.total, 0);
       const customer = $("customer").value.trim();
       $("checkoutBtn").disabled = true;

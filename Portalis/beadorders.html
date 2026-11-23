@@ -41,8 +41,10 @@
         <h2 id="formTitle">New product</h2>
         <label for="pName">Product name</label>
         <input id="pName" class="field" required maxlength="80" autocomplete="off" />
-        <label for="pPrice">Price (₱)</label>
-        <input id="pPrice" class="field" type="number" min="0" step="any" inputmode="decimal" required />
+        <label for="pPrice">Price (₱) · leave empty if the product has sizes</label>
+        <input id="pPrice" class="field" type="number" min="0" step="any" inputmode="decimal" />
+        <label for="pSizes">Sizes (optional) · one per line, name then price</label>
+        <textarea id="pSizes" class="field" rows="3" placeholder="Small 10&#10;Medium 15&#10;Large 25"></textarea>
         <label for="pBundle">Price for 5 (optional, e.g. 125)</label>
         <input id="pBundle" class="field" type="number" min="0" step="any" inputmode="decimal" />
         <label class="check"><input id="pFree" type="checkbox" /> Buy 5 get 1 free</label>
@@ -251,15 +253,34 @@
     }
     $("cancelEdit").onclick = resetForm;
 
+    // "Small 10" per line -> [{label, price}]; empty -> null
+    function parseSizes(text) {
+      const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+      if (!lines.length) return null;
+      const sizes = lines.map(line => {
+        const m = line.match(/^(.+?)\s+(\d+(?:\.\d+)?)$/);
+        if (!m) throw new Error('Size line must look like "Small 10": ' + line);
+        return { label: m[1], price: Number(m[2]) };
+      });
+      if (new Set(sizes.map(s => s.label)).size !== sizes.length) throw new Error("Two sizes have the same name.");
+      return sizes;
+    }
+
     $("productForm").onsubmit = e => {
       e.preventDefault();
       run(async () => {
         const bundleRaw = $("pBundle").value.trim();
+        const sizes = parseSizes($("pSizes").value);
+        const priceRaw = $("pPrice").value.trim();
+        const buy5get1 = $("pFree").checked;
+        if (!sizes && priceRaw === "") throw new Error("Enter a price or sizes.");
+        if (sizes && (bundleRaw !== "" || buy5get1)) throw new Error("Sized products can't have a 5-pack price or Buy 5 Get 1.");
         const data = {
           name: $("pName").value.trim(),
-          price: Number($("pPrice").value),
+          price: sizes ? Math.min(...sizes.map(s => s.price)) : Number(priceRaw),
+          sizes,
           bundle5: bundleRaw === "" ? null : Number(bundleRaw),
-          buy5get1: $("pFree").checked,
+          buy5get1,
           image: imageData
         };
         if (editingId) must(await sb.from("bead_products").update(data).eq("id", editingId));
@@ -284,6 +305,7 @@
         }
         const info = el("div", "info");
         info.append(el("div", "", p.name + " · " + peso(p.price)));
+        if (p.sizes) p.sizes.forEach(s => info.append(el("span", "tag", s.label + " " + peso(s.price))));
         if (p.bundle5 !== null) info.append(el("span", "tag", "5 for " + peso(p.bundle5)));
         if (p.buy5get1) info.append(el("span", "tag gift", "🎁 Buy 5 Get 1!"));
         const edit = el("button", "btn white", "Edit"); edit.type = "button";
@@ -291,7 +313,8 @@
           editingId = p.id;
           imageData = p.image;
           $("pName").value = p.name;
-          $("pPrice").value = p.price;
+          $("pPrice").value = p.sizes ? "" : p.price;
+          $("pSizes").value = p.sizes ? p.sizes.map(s => s.label + " " + s.price).join("\n") : "";
           $("pBundle").value = p.bundle5 === null ? "" : p.bundle5;
           $("pFree").checked = p.buy5get1;
           showPhoto();
