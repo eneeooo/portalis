@@ -1,4 +1,3 @@
-
 name: Deploy Portalis Website
 
 on:
@@ -17,10 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  # Build and deploy are separate jobs: deploy-pages looks the artifact up through the GitHub API,
+  # and doing that in the same job, a split second after the upload, can come back empty.
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -35,6 +33,14 @@ jobs:
         with:
           path: ./Portalis
 
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
       - name: Deploy website
         id: deployment
         uses: actions/deploy-pages@v4
