@@ -33,6 +33,7 @@
 
   <!-- shop (customer view) -->
   <div id="app" hidden>
+    <div class="sparkles" aria-hidden="true"><span>★</span><span>♥</span><span>★</span><span>●</span><span>★</span><span>♥</span><span>★</span><span>●</span></div>
     <div class="awning"></div>
     <div id="topbar" class="topbar">
       <img class="brand-logo" src="unique-logo.png" alt="Unique" />
@@ -76,6 +77,7 @@
   <script>
     let products = [];
     const cart = {};            // product id -> quantity
+    let tapped = null;          // product just tapped, so its card can bounce
 
     /* ---------- pricing ---------- */
     function priceLine(p, qty) {
@@ -147,9 +149,13 @@
     function renderShop() {
       const grid = $("grid");
       grid.replaceChildren();
-      if (!products.length) grid.append(el("div", "empty", "No products yet."));
+      if (!products.length) {
+        const empty = el("div", "empty");
+        empty.append(mascot(), el("div", "", "Shelves are being stocked! Come back soon ✨"));
+        grid.append(empty);
+      }
       products.forEach((p, i) => {
-        const b = el("button", "prod c" + (i % 6) + (p.image ? " has-photo" : ""));
+        const b = el("button", "prod c" + (i % 6) + (p.image ? " has-photo" : "") + (p.id === tapped ? " bounce" : ""));
         b.type = "button";
         // With a photo the card itself is see-through; the text sits in a small label under the picture.
         let box = b;
@@ -165,19 +171,20 @@
         const info = el("div");
         info.append(el("div", "price", peso(p.price)));
         if (p.bundle5 !== null) info.append(el("span", "tag", "5 for " + peso(p.bundle5)));
-        if (p.buy5get1) info.append(el("span", "tag", "Buy 5 Get 1!"));
+        if (p.buy5get1) info.append(el("span", "tag gift", "🎁 Buy 5 Get 1!"));
         box.append(info);
         if (cart[p.id] > 0) b.append(el("div", "count", String(cart[p.id])));
-        b.onclick = () => { cart[p.id] = (cart[p.id] || 0) + 1; renderShop(); renderCart(); };
+        b.onclick = () => { tapped = p.id; cart[p.id] = (cart[p.id] || 0) + 1; renderShop(); renderCart(); };
         grid.append(b);
       });
+      tapped = null;
     }
 
     function renderCart() {
       const box = $("cartLines");
       box.replaceChildren();
       const items = cartItems();
-      if (!items.length) box.append(el("div", "cart-empty", "Nothing yet. Tap a product!"));
+      if (!items.length) box.append(el("div", "cart-empty", "Your cart is empty. Pick something pretty! 🎀"));
       products.filter(p => cart[p.id] > 0).forEach((p, i) => {
         const it = items[i];
         const line = el("div", "line");
@@ -210,18 +217,35 @@
     $("clearCart").onclick = () => { emptyCart(); renderShop(); renderCart(); };
 
     /* ---------- checkout ---------- */
+    function confetti() {
+      const layer = el("div", "confetti");
+      const shapes = ["★", "♥", "●"];
+      const colors = ["#ffd83d", "#f7a3cb", "#2447e8", "#e0343f", "#7fd6b4"];
+      for (let i = 0; i < 36; i++) {
+        const bit = el("span", "", shapes[i % shapes.length]);
+        bit.style.left = Math.random() * 100 + "vw";
+        bit.style.color = colors[i % colors.length];
+        bit.style.fontSize = 14 + Math.random() * 16 + "px";
+        bit.style.animationDelay = Math.random() * 0.6 + "s";
+        layer.append(bit);
+      }
+      document.body.append(layer);
+      setTimeout(() => layer.remove(), 3500);
+    }
+
     function showReceipt(order) {
       const m = $("modal");
       m.replaceChildren();
       const box = el("div", "modal-box");
       box.append(buildReceipt(order));
-      box.append(el("p", "sent", "✓ Sent to the seller. Thank you!"));
+      box.append(el("p", "sent", "Thank you! Your order is being made ♡"));
       const done = el("button", "btn yellow big", "Done"); done.type = "button";
       done.style.width = "100%";
       done.onclick = () => { m.hidden = true; };
       box.append(done);
       m.append(box);
       m.hidden = false;
+      confetti();
     }
 
     $("checkoutBtn").onclick = () => run(async () => {

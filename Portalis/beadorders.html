@@ -25,13 +25,13 @@
   <main>
     <!-- orders -->
     <section id="tab-orders">
-      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px">
-        <h2 style="margin:0">To prepare</h2>
+      <h2 style="margin:0">To prepare</h2>
+      <div id="pendingOrders" class="orders" style="margin-top:14px"></div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:28px">
+        <h2 style="margin:0">Done<span id="doneTotal"></span></h2>
         <div class="spacer"></div>
         <button id="clearDone" class="btn white">Clear done orders</button>
       </div>
-      <div id="pendingOrders" class="orders" style="margin-top:14px"></div>
-      <h2 style="margin-top:28px">Done</h2>
       <div id="doneOrders" class="orders"></div>
     </section>
 
@@ -71,6 +71,29 @@
     let products = [];
     let orders = [];
     let editingId = null;
+    const newOrders = new Set(); // order numbers that arrived while this page was open and are not done yet
+
+    let audio = null;            // created on the first tap, because browsers block sound before a tap
+    document.addEventListener("pointerdown", () => {
+      audio = audio || new AudioContext();
+      if (audio.state === "suspended") audio.resume();
+    });
+    function chime() {
+      if (!audio) return;
+      [880, 1320].forEach((freq, i) => {
+        const osc = audio.createOscillator();
+        const gain = audio.createGain();
+        const t = audio.currentTime + i * 0.15;
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.2, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        osc.connect(gain);
+        gain.connect(audio.destination);
+        osc.start(t);
+        osc.stop(t + 0.4);
+      });
+    }
     let imageData = null;       // photo of the product being added/edited, as a small image data URL
 
     document.querySelectorAll(".tab").forEach(btn => {
@@ -88,11 +111,18 @@
 
     function orderCard(order) {
       const wrap = el("div", "order" + (order.done ? " done" : ""));
+      wrap.append(el("div", "stamp " + (order.done ? "mint" : "pink"), order.done ? "✓ Done" : "⏳ Waiting"));
+      if (!order.done && newOrders.has(order.no)) wrap.append(el("div", "new-sticker", "NEW!"));
       wrap.append(buildReceipt(order));
       const acts = el("div", "actions");
       const toggle = el("button", "btn " + (order.done ? "white" : "yellow"), order.done ? "↩ Undo" : "✓ Mark done");
       toggle.type = "button";
       toggle.onclick = () => run(async () => {
+        if (!order.done) {
+          newOrders.delete(order.no);
+          wrap.classList.add("popping");
+          await new Promise(resolve => setTimeout(resolve, 450));
+        }
         must(await sb.from("bead_orders").update({ done: !order.done }).eq("no", order.no));
         await loadOrders();
       });
@@ -108,10 +138,11 @@
     }
 
     function renderOrders() {
-      const pending = orders.filter(o => !o.done);
+      const pending = orders.filter(o => !o.done).reverse(); // oldest first
       const done = orders.filter(o => o.done);
-      $("pendingOrders").replaceChildren(...(pending.length ? pending.map(orderCard) : [el("div", "empty", "No orders waiting.")]));
-      $("doneOrders").replaceChildren(...(done.length ? done.map(orderCard) : [el("div", "empty", "Nothing done yet.")]));
+      $("pendingOrders").replaceChildren(...(pending.length ? pending.map(orderCard) : [el("div", "empty", "No orders waiting. Time for a snack! 🍡")]));
+      $("doneOrders").replaceChildren(...(done.length ? done.map(orderCard) : [el("div", "empty", "Nothing done yet. ✨")]));
+      $("doneTotal").textContent = done.length ? " · " + peso(done.reduce((sum, o) => sum + o.total, 0)) : "";
       const badge = $("pendingBadge");
       badge.hidden = pending.length === 0;
       badge.textContent = String(pending.length);
@@ -254,7 +285,7 @@
         const info = el("div", "info");
         info.append(el("div", "", p.name + " · " + peso(p.price)));
         if (p.bundle5 !== null) info.append(el("span", "tag", "5 for " + peso(p.bundle5)));
-        if (p.buy5get1) info.append(el("span", "tag", "Buy 5 Get 1!"));
+        if (p.buy5get1) info.append(el("span", "tag gift", "🎁 Buy 5 Get 1!"));
         const edit = el("button", "btn white", "Edit"); edit.type = "button";
         edit.onclick = () => {
           editingId = p.id;
@@ -284,7 +315,11 @@
     /* ---------- start ---------- */
     sb.channel("bead-shop")
       .on("postgres_changes", { event: "*", schema: "public", table: "bead_orders" }, payload => {
-        if (payload.eventType === "INSERT") toast("New order #" + payload.new.no + "!");
+        if (payload.eventType === "INSERT") {
+          newOrders.add(payload.new.no);
+          toast("New order #" + payload.new.no + "!");
+          chime();
+        }
         run(loadOrders);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "bead_products" }, () => run(loadProducts))

@@ -31,26 +31,40 @@ async function run(fn) {
   try { await fn(); } catch (e) { toast(e.message); }
 }
 
+const mascot = () => {
+  const img = el("img", "mascot");
+  img.src = "unique-logo.png";
+  img.alt = "";
+  return img;
+};
+
 // order = { no, customer, created_at, items: [{name, qty, free, total}], total }
 function buildReceipt(order) {
+  const wrap = el("div", "receipt-wrap");
   const r = el("div", "receipt");
-  r.append(el("h3", "", "Bead Box ★"));
-  r.append(el("div", "meta", "Order #" + order.no + " · " + fmtTime(order.created_at)));
+  const head = el("div", "r-head");
+  head.append(mascot(), el("h3", "", "Bead Box ★"));
+  r.append(head);
+  r.append(el("div", "r-no", "Order #" + order.no));
+  r.append(el("div", "meta", fmtTime(order.created_at)));
   if (order.customer) r.append(el("div", "who", "For: " + order.customer));
-  r.append(document.createElement("hr"));
+  r.append(el("div", "tear"));
   order.items.forEach(it => {
     const row = el("div", "r");
-    row.append(el("span", "", it.qty + " × " + it.name), el("span", "", peso(it.total)));
+    row.append(el("span", "q", String(it.qty)), el("span", "nm", it.name), el("span", "pr", peso(it.total)));
     r.append(row);
     if (it.free > 0) {
       const f = el("div", "r free");
-      f.append(el("span", "", it.free + " × " + it.name + " (FREE)"), el("span", "", peso(0)));
+      f.append(el("span", "q", "+" + it.free), el("span", "nm", it.name + " 🎁 FREE"), el("span", "pr", peso(0)));
       r.append(f);
     }
   });
-  r.append(document.createElement("hr"));
-  const t = el("div", "r total");
+  r.append(el("div", "tear"));
+  const t = el("div", "r-total");
   t.append(el("span", "", "TOTAL"), el("span", "", peso(order.total)));
   r.append(t);
-  return r;
+  r.append(el("div", "r-thanks", "Thank you! ♡ Come again!"));
+  r.append(el("div", "r-bars"));
+  wrap.append(r);
+  return wrap;
 }
