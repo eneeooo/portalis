@@ -595,6 +595,26 @@ function memberCloseButton(onClose) {
   return x;
 }
 
+/* mbti.js and mbti.css are loaded on demand, so pages only need common.js for the member card. */
+let mbtiLoading = null;
+function loadMbti() {
+  if (window.Mbti) return Promise.resolve(window.Mbti);
+  if (!mbtiLoading) {
+    mbtiLoading = new Promise((resolve, reject) => {
+      const css = document.createElement("link");
+      css.rel = "stylesheet";
+      css.href = "mbti.css";
+      document.head.appendChild(css);
+      const script = document.createElement("script");
+      script.src = "mbti.js";
+      script.onload = () => resolve(window.Mbti);
+      script.onerror = () => reject(new Error("mbti.js could not be loaded."));
+      document.head.appendChild(script);
+    });
+  }
+  return mbtiLoading;
+}
+
 function openMemberProfile(userId, hint) {
   if (!userId) return;
   hint = hint || {};
@@ -611,7 +631,11 @@ function openMemberProfile(userId, hint) {
   dialog.appendChild(card);
   document.body.appendChild(dialog);
 
-  sb.rpc("get_member_profile", { p_user_id: userId }).then(({ data, error }) => {
+  Promise.all([
+    sb.rpc("get_member_profile", { p_user_id: userId }),
+    sb.rpc("get_member_personality", { p_user_id: userId }),
+    loadMbti()
+  ]).then(([{ data, error }, personalityResult]) => {
     card.replaceChildren();
     const row = Array.isArray(data) ? data[0] : data;
     if (error || !row) {
@@ -622,32 +646,59 @@ function openMemberProfile(userId, hint) {
       card.appendChild(memberCloseButton(close));
       return;
     }
+    const body = el("div", "mc-scroll");
+    card.appendChild(body);
     const title = profileTitle({ student_number: row.student_number, role: row.role });
-    const head = el("div", "member-head");
-    head.appendChild(avatarNode(row.avatar_url, row.display_name, "member-avatar"));
-    const who = el("div", "member-who");
-    const nameLine = el("h2", "member-name", row.display_name || "Student");
+    const personalityRow = personalityResult.error ? null : (Array.isArray(personalityResult.data) ? personalityResult.data[0] : personalityResult.data);
+    const typeInfo = personalityRow ? Mbti.TYPES[personalityRow.mbti] : null;
+
+    // Top banner: centered photo, name, chips, small personality avatar in the bottom-left corner. The whole card takes the personality color.
+    const banner = el("div", "mc-banner");
+    if (typeInfo) {
+      const group = Mbti.GROUPS[typeInfo.group];
+      card.style.setProperty("--mc-bg", group.bg);
+      card.style.setProperty("--mc-accent", group.body);
+      banner.dataset.code = personalityRow.mbti;
+    }
+    const photos = el("div", "mc-photos");
+    photos.appendChild(avatarNode(row.avatar_url, row.display_name, "member-avatar mc-photo"));
+    banner.appendChild(photos);
+    if (personalityRow) banner.appendChild(Mbti.avatarNode(personalityRow.mbti, "md"));
+    const nameLine = el("h2", "member-name mc-name", row.display_name || "Student");
     if (row.nickname) nameLine.append(" ", el("span", "member-nick", "(" + row.nickname.toLowerCase() + ")"));
-    who.appendChild(nameLine);
-    const chips = el("div", "member-chips");
+    banner.appendChild(nameLine);
+    const chips = el("div", "member-chips mc-chips");
     chips.appendChild(el("span", "staff-title-card member-title", title));
     if (row.student_number) chips.appendChild(el("span", "member-number", row.student_number));
     const online = presence.users.some(u => u.user_id === row.user_id);
     chips.appendChild(el("span", "online-pill" + (online ? " on" : ""), online ? "Online now" : "Offline"));
-    who.appendChild(chips);
-    head.appendChild(who);
-    card.appendChild(head);
+    banner.appendChild(chips);
+    if (personalityRow) banner.appendChild(Mbti.chipNode(personalityRow.mbti));
+    body.appendChild(banner);
+
+    const personalityBox = el("div", "member-personality");
+    personalityBox.appendChild(el("h3", "member-label", "Personality"));
+    if (personalityResult.error) {
+      personalityBox.appendChild(el("p", "msg err", personalityResult.error.message + " (Run migration_personality.sql and then migration_personality_no_gender.sql in the Supabase SQL Editor.)"));
+    } else if (personalityRow) {
+      personalityBox.appendChild(Mbti.personalityNode(personalityRow, { compact: true, noAvatar: true }));
+    } else {
+      personalityBox.appendChild(el("p", "hint", userId === (presence.me && presence.me.user_id)
+        ? "You have not taken the personality quiz yet."
+        : "Has not taken the personality quiz yet."));
+    }
+    body.appendChild(personalityBox);
 
     const about = el("div", "member-section");
     about.appendChild(el("h3", "member-label", "About"));
     about.appendChild(el("p", row.about ? "member-about" : "hint", row.about || "This member has not written anything yet."));
-    card.appendChild(about);
+    body.appendChild(about);
 
     [["Favorite things", row.favorites], ["Hobbies", row.hobbies], ["Fun facts", row.fun_facts]].forEach(([label, text]) => {
       if (!text) return;
       const note = el("div", "member-note");
       note.append(el("h3", "member-label", label), el("p", "", text));
-      card.appendChild(note);
+      body.appendChild(note);
     });
 
     const facts = el("dl", "member-facts");
@@ -655,18 +706,23 @@ function openMemberProfile(userId, hint) {
     if (row.birth_month && row.birth_day) fact("Birthday", MONTHS[row.birth_month - 1] + " " + row.birth_day);
     if (row.member_since) fact("Joined Portalis", new Date(row.member_since).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }));
     fact("Class", "BSIT-12");
-    card.appendChild(facts);
+    body.appendChild(facts);
 
-    const actions = el("div", "edit-note-actions");
+    const actions = el("div", "mc-actions");
     if (userId === (presence.me && presence.me.user_id)) {
       const edit = el("a", "btn ghost", "Edit my profile");
       edit.href = "profile.html";
       actions.appendChild(edit);
     }
-    if (actions.children.length) card.appendChild(actions);
+    if (actions.children.length) body.appendChild(actions);
     const closeX = memberCloseButton(close);
     card.appendChild(closeX);
     closeX.focus();
+  }).catch(error => {
+    card.replaceChildren();
+    card.appendChild(el("h2", "", "Profile unavailable"));
+    card.appendChild(el("p", "msg err", error.message));
+    card.appendChild(memberCloseButton(close));
   });
 }
 

@@ -5,31 +5,50 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Portalis - Profile</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="mbti.css">
   <style>
-    /* ---------- Profile page layout ---------- */
+    /* ---------- Profile page layout: ID card on the left, forms on the right ---------- */
     .pf-intro { margin: 0 0 18px; }
+    .pf-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 24px; align-items: start; }
+    .pf-side { position: sticky; top: 16px; }
+    .pf-main { min-width: 0; }
 
-    .pf-hero { display: flex; align-items: center; gap: 24px; padding: 22px; margin-bottom: 22px; background: #fff3a0; border: 3px solid #000; box-shadow: 6px 6px 0 #000; }
-    .pf-avatar-box { position: relative; flex: none; width: 132px; height: 132px; }
+    /* ID card = what classmates see at the top of your profile */
+    .pf-idcard { padding: 22px 18px 20px; text-align: center; background: #fff3a0; border: 3px solid #000; box-shadow: 6px 6px 0 #000; }
+    .pf-idlabel { display: inline-block; margin: 0 0 16px; padding: 0 12px; border: 2px solid #000; border-radius: 999px; background: #fff; font-size: 14px; line-height: 1.6; }
+    .pf-photos { position: relative; width: 140px; margin: 0 auto 20px; }
+    .pf-avatar-box { position: relative; width: 140px; height: 140px; }
     .pf-avatar { display: block; width: 100%; height: 100%; border: 3px solid #000; border-radius: 50%; object-fit: cover; background: #f6b8dc; }
     .pf-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
-    label.pf-camera { position: absolute; right: -2px; bottom: -2px; width: 42px; height: 42px; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 3px solid #000; border-radius: 50%; background: #fff; color: #000; line-height: 0; cursor: pointer; box-shadow: 2px 2px 0 #000; }
+    label.pf-camera { position: absolute; left: -4px; bottom: -4px; width: 42px; height: 42px; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 3px solid #000; border-radius: 50%; background: #fff; color: #000; line-height: 0; cursor: pointer; box-shadow: 2px 2px 0 #000; }
     label.pf-camera svg { display: block; width: 22px; height: 22px; }
     label.pf-camera:hover { background: #f6b8dc; }
     .pf-file-input:focus-visible + label.pf-camera { outline: 3px solid #000; outline-offset: 3px; }
-    .pf-hero-info { flex: 1; min-width: 0; }
-    .pf-hero-name { margin: 0 0 8px; font-family: "Permanent Marker", "Comic Sans MS", cursive; font-size: 30px; line-height: 1.1; overflow-wrap: anywhere; }
-    .pf-hero-name .pf-nick { font-family: "Patrick Hand", "Comic Sans MS", cursive; font-size: 22px; opacity: .7; }
-    .pf-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .pf-mbti-slot { position: absolute; right: -58px; bottom: -14px; line-height: 0; }
+    .pf-mbti-slot:empty { display: none; }
+    .pf-mbti-slot .mbti-avatar { width: 112px; height: 112px; }
+
+    .pf-hero-name { margin: 0 0 8px; font-family: "Permanent Marker", "Comic Sans MS", cursive; font-size: 28px; line-height: 1.1; overflow-wrap: anywhere; }
+    .pf-hero-name .pf-nick { font-family: "Patrick Hand", "Comic Sans MS", cursive; font-size: 21px; opacity: .7; }
+    .pf-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 12px; }
     .pf-chip { padding: 1px 12px; border: 2px solid #000; background: #fff; font-size: 16px; line-height: 1.5; }
     .pf-chip.dark { background: #000; color: #fff; }
     .pf-chip:empty { display: none; }
-    .pf-hero-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .pf-hero-personality { margin: 0 0 12px; }
+    .pf-hero-personality:empty { display: none; }
+    .pf-hero-personality .mbti-chip { font-size: 17px; }
+    .pf-hero-personality .mbti-tagline { margin: 6px 0 0; font-size: 16px; line-height: 1.3; }
+    .pf-quiz-hint { padding: 10px 12px; border: 2px dashed #000; background: #fff; font-size: 16px; line-height: 1.3; }
+    .pf-quiz-hint a { display: inline-block; margin-top: 6px; }
+    .pf-hero-about { margin: 0 0 14px; padding: 10px 12px; border: 2px solid #000; background: #fff; font-size: 16px; line-height: 1.35; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .pf-hero-about:empty { display: none; }
+    .pf-hero-actions { display: flex; flex-direction: column; gap: 10px; }
     .pf-hero-actions button { margin: 0; }
-    label.pf-btn { display: inline-block; margin: 0; padding: 8px 16px; border: 2px solid #000; background: #fff; color: #000; cursor: pointer; }
+    label.pf-btn { display: block; margin: 0; padding: 8px 16px; border: 2px solid #000; background: #fff; color: #000; cursor: pointer; }
     label.pf-btn:hover { background: #000; color: #fff; box-shadow: 3px 3px 0 #000; }
-    .pf-file-hint { display: block; margin-top: 8px; font-size: 15px; opacity: .75; }
+    .pf-file-hint { display: block; margin-top: 10px; font-size: 15px; opacity: .75; }
 
+    /* form cards */
     .pf-card { margin: 0 0 22px; padding: 18px 22px 22px; background: #fff; border: 3px solid #000; box-shadow: 5px 5px 0 #000; }
     .pf-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 4px; padding-bottom: 10px; border-bottom: 2px dashed #000; }
     .pf-card-head h3 { margin: 0; font-size: 22px; }
@@ -42,6 +61,13 @@
     .pf-card .pf-note { margin: 4px 0 0; font-size: 15px; opacity: .7; }
     .pf-card textarea.short { min-height: 72px; }
     .pf-count { margin-top: 2px; text-align: right; font-size: 14px; opacity: .6; }
+
+    /* personality card */
+    .pf-personality-body { padding-top: 14px; }
+    .pf-personality-body p { margin: 0 0 12px; line-height: 1.4; }
+    .pf-personality-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px; }
+    .pf-personality-actions .btn { margin: 0; }
+    .pf-personality-actions small { opacity: .7; font-size: 15px; }
 
     details.pf-card { padding: 0; }
     details.pf-card > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 22px; cursor: pointer; list-style: none; }
@@ -58,24 +84,22 @@
     .pf-savebar .msg { flex: 1 1 220px; min-height: 0; margin: 0; font-size: 17px; line-height: 1.25; overflow-wrap: anywhere; }
     .pf-savebar .msg:empty { display: none; }
 
-    @media (max-width: 980px) {
-      .pf-hero { flex-wrap: wrap; gap: 18px; }
-      .pf-hero-name { font-size: clamp(24px, 4vw, 30px); }
+    @media (max-width: 900px) {
+      .pf-layout { grid-template-columns: 1fr; gap: 22px; }
+      .pf-side { position: static; }
+      .pf-idcard { max-width: 460px; margin: 0 auto; }
       .pf-grid { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 600px) {
-      .pf-hero { flex-direction: column; text-align: center; padding: 18px 14px; }
-      .pf-avatar-box { width: min(132px, 42vw); height: min(132px, 42vw); }
-      .pf-chips, .pf-hero-actions { justify-content: center; }
-      .pf-hero-actions { width: 100%; }
-      .pf-hero-actions button,
-      .pf-hero-actions label.pf-btn { flex: 1 1 140px; }
+      .pf-idcard { padding: 18px 14px; }
+      .pf-hero-name { font-size: clamp(24px, 7vw, 28px); }
       .pf-card { padding: 16px 14px 18px; }
       details.pf-card > summary { padding: 14px 14px; }
       .pf-details-body { padding: 0 14px 16px; }
       .pf-savebar { padding: 12px 72px 12px 12px; gap: 8px; }
       .pf-savebar button { min-height: 44px; }
+      .pf-hero-actions label.pf-btn, .pf-hero-actions button { min-height: 44px; }
     }
   </style>
 </head>
@@ -85,98 +109,114 @@
     <h2>My profile</h2>
     <p class="hint pf-intro">Your student number is your sign-in ID. Email is optional and is not used to log in. Tags show what classmates can and cannot see.</p>
 
-    <header class="pf-hero">
-      <div class="pf-avatar-box">
-        <img id="avatar" class="pf-avatar" alt="Profile picture">
-        <input id="photo" class="pf-file-input" type="file" accept="image/*">
-        <label for="photo" class="pf-camera" title="Change picture" aria-label="Change profile picture"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.6" fill="none" stroke="currentColor" stroke-width="2"/></svg></label>
-      </div>
-      <div class="pf-hero-info">
-        <div id="heroName" class="pf-hero-name">Loading...</div>
-        <div class="pf-chips">
-          <span id="heroRole" class="pf-chip dark"></span>
-          <span id="heroNumber" class="pf-chip"></span>
-        </div>
-        <div class="pf-hero-actions">
-          <label for="photo" class="pf-btn">Change picture</label>
-          <button id="previewPublic" class="ghost" type="button">See how classmates view me</button>
-        </div>
-        <small id="fileName" class="pf-file-hint">Image only, up to 3 MB</small>
-      </div>
-    </header>
+    <div class="pf-layout">
+      <aside class="pf-side" aria-label="Profile card preview">
+        <header class="pf-idcard">
+          <span class="pf-idlabel">Your profile card</span>
+          <div id="heroPhotos" class="pf-photos">
+            <div class="pf-avatar-box">
+              <img id="avatar" class="pf-avatar" alt="Profile picture">
+              <input id="photo" class="pf-file-input" type="file" accept="image/*">
+              <label for="photo" class="pf-camera" title="Change picture" aria-label="Change profile picture"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.6" fill="none" stroke="currentColor" stroke-width="2"/></svg></label>
+            </div>
+            <span id="heroMbtiAvatar" class="pf-mbti-slot"></span>
+          </div>
+          <div id="heroName" class="pf-hero-name">Loading...</div>
+          <div class="pf-chips">
+            <span id="heroRole" class="pf-chip dark"></span>
+            <span id="heroNumber" class="pf-chip"></span>
+          </div>
+          <div id="heroPersonality" class="pf-hero-personality"></div>
+          <p id="heroAbout" class="pf-hero-about"></p>
+          <div class="pf-hero-actions">
+            <label for="photo" class="pf-btn">Change picture</label>
+            <button id="previewPublic" class="ghost" type="button">See how classmates view me</button>
+          </div>
+          <small id="fileName" class="pf-file-hint">Image only, up to 3 MB</small>
+        </header>
+      </aside>
 
-    <section class="pf-card" aria-labelledby="basicTitle">
-      <div class="pf-card-head"><h3 id="basicTitle">Basic info</h3><span class="pf-tag public">Seen by classmates</span></div>
-      <div class="pf-grid">
-        <div class="pf-span">
-          <label for="fullName">Full name</label>
-          <input id="fullName" maxlength="100" autocomplete="name" placeholder="First and last name">
-        </div>
-        <div id="nicknameField">
-          <label for="nickname">Nickname</label>
-          <input id="nickname" maxlength="40" placeholder="e.g. Ric">
-          <p class="pf-note">Shown next to your name.</p>
-        </div>
-        <div>
-          <label for="birthDate">Birthday</label>
-          <input id="birthDate" type="date" autocomplete="bday">
-          <p class="pf-note">Classmates see the month and day only.</p>
-        </div>
-      </div>
-    </section>
+      <main class="pf-main">
+        <section class="pf-card" aria-labelledby="basicTitle">
+          <div class="pf-card-head"><h3 id="basicTitle">Basic info</h3><span class="pf-tag public">Seen by classmates</span></div>
+          <div class="pf-grid">
+            <div class="pf-span">
+              <label for="fullName">Full name</label>
+              <input id="fullName" maxlength="100" autocomplete="name" placeholder="First and last name">
+            </div>
+            <div id="nicknameField">
+              <label for="nickname">Nickname</label>
+              <input id="nickname" maxlength="40" placeholder="e.g. Ric">
+              <p class="pf-note">Shown next to your name.</p>
+            </div>
+            <div>
+              <label for="birthDate">Birthday</label>
+              <input id="birthDate" type="date" autocomplete="bday">
+              <p class="pf-note">Classmates see the month and day only.</p>
+            </div>
+          </div>
+        </section>
 
-    <section class="pf-card" aria-labelledby="aboutTitle">
-      <div class="pf-card-head"><h3 id="aboutTitle">About me</h3><span class="pf-tag public">Seen by classmates</span></div>
-      <label for="about">A short introduction (optional)</label>
-      <textarea id="about" maxlength="500" placeholder="Tell your classmates a little about yourself"></textarea>
-    </section>
+        <section class="pf-card" aria-labelledby="aboutTitle">
+          <div class="pf-card-head"><h3 id="aboutTitle">About me</h3><span class="pf-tag public">Seen by classmates</span></div>
+          <label for="about">A short introduction (optional)</label>
+          <textarea id="about" maxlength="500" placeholder="Tell your classmates a little about yourself"></textarea>
+        </section>
 
-    <section class="pf-card" id="getToKnow" aria-labelledby="getToTitle">
-      <div class="pf-card-head"><h3 id="getToTitle">Get to know me</h3><span class="pf-tag public">Seen by classmates</span></div>
-      <label for="favorites">Favorite things</label>
-      <textarea id="favorites" class="short" maxlength="400" placeholder="Foods, shows, colors, music..."></textarea>
-      <label for="hobbies">Hobbies</label>
-      <textarea id="hobbies" class="short" maxlength="400" placeholder="What do you do for fun?"></textarea>
-      <label for="funFacts">Fun facts about me</label>
-      <textarea id="funFacts" class="short" maxlength="400" placeholder="Something people might not know"></textarea>
-    </section>
+        <section class="pf-card" id="personalityCard" aria-labelledby="personalityTitle">
+          <div class="pf-card-head"><h3 id="personalityTitle">Personality</h3><span class="pf-tag public">Seen by classmates</span></div>
+          <div id="personalityBody" class="pf-personality-body"><p class="hint">Loading...</p></div>
+        </section>
 
-    <section class="pf-card" aria-labelledby="contactTitle">
-      <div class="pf-card-head"><h3 id="contactTitle">Contact</h3><span class="pf-tag private">Only you</span></div>
-      <div class="pf-grid">
-        <div>
-          <label for="email">Email (optional)</label>
-          <input id="email" type="email" maxlength="254" placeholder="Not set">
+        <section class="pf-card" id="getToKnow" aria-labelledby="getToTitle">
+          <div class="pf-card-head"><h3 id="getToTitle">Get to know me</h3><span class="pf-tag public">Seen by classmates</span></div>
+          <label for="favorites">Favorite things</label>
+          <textarea id="favorites" class="short" maxlength="400" placeholder="Foods, shows, colors, music..."></textarea>
+          <label for="hobbies">Hobbies</label>
+          <textarea id="hobbies" class="short" maxlength="400" placeholder="What do you do for fun?"></textarea>
+          <label for="funFacts">Fun facts about me</label>
+          <textarea id="funFacts" class="short" maxlength="400" placeholder="Something people might not know"></textarea>
+        </section>
+
+        <section class="pf-card" aria-labelledby="contactTitle">
+          <div class="pf-card-head"><h3 id="contactTitle">Contact</h3><span class="pf-tag private">Only you</span></div>
+          <div class="pf-grid">
+            <div>
+              <label for="email">Email (optional)</label>
+              <input id="email" type="email" maxlength="254" placeholder="Not set">
+            </div>
+            <div>
+              <label for="contacts">Other contacts (optional)</label>
+              <input id="contacts" maxlength="240" placeholder="Phone, social link, etc.">
+            </div>
+          </div>
+        </section>
+
+        <details class="pf-card" id="passwordBox">
+          <summary><span class="pf-summary-title">Change password</span><span class="pf-tag private">Only you</span></summary>
+          <div class="pf-details-body">
+            <p class="hint">Choose a new password with at least 6 characters.</p>
+            <label for="newPassword">New password</label>
+            <input id="newPassword" type="password" autocomplete="new-password">
+            <label for="confirmPassword">Confirm new password</label>
+            <input id="confirmPassword" type="password" autocomplete="new-password">
+            <button id="changePassword" type="button">Update password</button>
+          </div>
+        </details>
+
+        <div class="pf-savebar">
+          <button id="save" type="button">Save profile</button>
+          <p id="msg" class="msg" role="status"></p>
         </div>
-        <div>
-          <label for="contacts">Other contacts (optional)</label>
-          <input id="contacts" maxlength="240" placeholder="Phone, social link, etc.">
-        </div>
-      </div>
-    </section>
-
-    <details class="pf-card" id="passwordBox">
-      <summary><span class="pf-summary-title">Change password</span><span class="pf-tag private">Only you</span></summary>
-      <div class="pf-details-body">
-        <p class="hint">Choose a new password with at least 6 characters.</p>
-        <label for="newPassword">New password</label>
-        <input id="newPassword" type="password" autocomplete="new-password">
-        <label for="confirmPassword">Confirm new password</label>
-        <input id="confirmPassword" type="password" autocomplete="new-password">
-        <button id="changePassword" type="button">Update password</button>
-      </div>
-    </details>
-
-    <div class="pf-savebar">
-      <button id="save" type="button">Save profile</button>
-      <p id="msg" class="msg" role="status"></p>
+      </main>
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
   <script src="common.js"></script>
+  <script src="mbti.js"></script>
   <script>
-    let ctx, avatarUrl = "", currentEmail = "", hasNewFields = true;
+    let ctx, avatarUrl = "", currentEmail = "", hasNewFields = true, personality = null, personalityError = "";
     const $ = id => document.getElementById(id);
     const msg = $("msg");
     function show(text, error) { msg.className = "msg" + (error ? " err" : " ok"); msg.textContent = text; }
@@ -194,7 +234,7 @@
     });
     const refreshCounters = () => counters.forEach(update => update());
 
-    /* header card follows the name and nickname fields */
+    /* profile card follows the name, nickname and about fields */
     function refreshHero() {
       const name = $("fullName").value.trim() || "Your name";
       const nick = $("nickname").value.trim();
@@ -206,9 +246,55 @@
         span.textContent = " (" + nick.toLowerCase() + ")";
         node.appendChild(span);
       }
+      const about = $("about").value.trim();
+      $("heroAbout").textContent = about.length > 140 ? about.slice(0, 140).trimEnd() + "..." : about;
     }
     $("fullName").addEventListener("input", refreshHero);
     $("nickname").addEventListener("input", refreshHero);
+    $("about").addEventListener("input", refreshHero);
+
+    function quizLink(text, cls) {
+      const link = el("a", cls, text);
+      link.href = "personality.html";
+      return link;
+    }
+
+    /* personality: the profile card (left) and the Personality card (right) */
+    function renderPersonality() {
+      const slot = $("heroMbtiAvatar");
+      const line = $("heroPersonality");
+      const body = $("personalityBody");
+      slot.replaceChildren();
+      line.replaceChildren();
+      body.replaceChildren();
+
+      if (personalityError) {
+        body.appendChild(el("p", "msg err", personalityError + " (Run migration_personality.sql and then migration_personality_no_gender.sql in the Supabase SQL Editor, then refresh.)"));
+        return;
+      }
+
+      if (!personality) {
+        const hint = el("div", "pf-quiz-hint");
+        hint.append("No personality type yet.", document.createElement("br"), quizLink("Take the quiz", "btn ghost"));
+        line.appendChild(hint);
+
+        body.appendChild(el("p", "", "Take a short quiz of " + Mbti.QUESTIONS.length + " statements to find your personality type. Your type and its character then show on your profile card. It can only be added by finishing the quiz."));
+        const actions = el("div", "pf-personality-actions");
+        actions.appendChild(quizLink("Take the quiz", "btn"));
+        body.appendChild(actions);
+        return;
+      }
+
+      slot.appendChild(Mbti.avatarNode(personality.mbti, "md"));
+      line.appendChild(Mbti.chipNode(personality.mbti));
+      line.appendChild(el("p", "mbti-tagline", Mbti.TYPES[personality.mbti].tagline));
+
+      body.appendChild(Mbti.personalityNode(personality));
+      const actions = el("div", "pf-personality-actions");
+      actions.appendChild(quizLink("Retake the quiz", "btn ghost"));
+      actions.appendChild(el("small", "", "Taken on " + new Date(personality.taken_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })));
+      body.appendChild(actions);
+    }
 
     async function init() {
       ctx = await requireAuth();
@@ -216,6 +302,12 @@
       renderBar(ctx, "profile");
       $("heroRole").textContent = profileTitle(ctx.profile);
       $("heroNumber").textContent = ctx.profile.student_number || "";
+
+      const { data: pRows, error: pError } = await sb.rpc("get_member_personality", { p_user_id: ctx.user.id });
+      personalityError = pError ? pError.message : "";
+      personality = (Array.isArray(pRows) ? pRows[0] : pRows) || null;
+      renderPersonality();
+
       const base = "email,full_name,birth_date,contacts,about,avatar_url";
       let { data, error } = await sb.from("profiles").select(base + ",nickname,favorites,hobbies,fun_facts").eq("id", ctx.user.id).single();
       if (error && /nickname|favorites|hobbies|fun_facts|column/i.test(error.message)) {

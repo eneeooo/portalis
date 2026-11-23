@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Portalis - Personality quiz</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="mbti.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="bar"></div>
+    <h2>Personality quiz</h2>
+    <div id="root"><p class="hint">Loading...</p></div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script src="mbti.js"></script>
+  <script>
+    const PER_PAGE = 5;
+    const QUESTIONS = Mbti.QUESTIONS;
+    const PAGES = Math.ceil(QUESTIONS.length / PER_PAGE);
+    const SCALE_LABELS = ["Strongly disagree", "Disagree", "Slightly disagree", "Neutral", "Slightly agree", "Agree", "Strongly agree"];
+    const root = document.getElementById("root");
+    let ctx, saved = null, answers = [], page = 0;
+
+    function resetAnswers() { answers = Array(QUESTIONS.length).fill(null); page = 0; }
+    function answeredCount() { return answers.filter(v => v !== null).length; }
+
+    function profileLink(text, cls) {
+      const link = el("a", cls || "btn ghost", text);
+      link.href = "profile.html";
+      return link;
+    }
+
+    /* ---------- intro ---------- */
+    function showIntro() {
+      root.replaceChildren();
+      const card = el("section", "qz-intro");
+      card.appendChild(el("h3", "", saved ? "Your personality type" : "Find your personality type"));
+      card.appendChild(el("p", "", "Answer " + QUESTIONS.length + " short statements about how you think and act. It takes about 5 minutes. There are no right or wrong answers, so go with your first instinct."));
+      const list = el("ul");
+      [
+        "Pick how much you agree with each statement.",
+        "Your type is added to your profile when you finish, with its own character.",
+        "Classmates can see your type on your profile card. You can retake the quiz any time."
+      ].forEach(text => list.appendChild(el("li", "", text)));
+      card.appendChild(list);
+      if (saved) card.appendChild(Mbti.personalityNode(saved, { compact: true }));
+      const actions = el("div", "qz-actions");
+      const start = el("button", "", saved ? "Retake the quiz" : "Start the quiz");
+      start.type = "button";
+      start.onclick = () => { resetAnswers(); showPage(); };
+      actions.append(start, profileLink("Back to my profile"));
+      card.appendChild(actions);
+      root.appendChild(card);
+    }
+
+    /* ---------- quiz pages ---------- */
+    function showPage() {
+      root.replaceChildren();
+      const card = el("section", "qz-card");
+
+      const progress = el("div", "qz-progress");
+      const text = el("div", "qz-progress-text");
+      const pageText = el("span", "", "Page " + (page + 1) + " of " + PAGES);
+      const countText = el("span");
+      text.append(pageText, countText);
+      const track = el("div", "qz-progress-track");
+      const fill = el("div", "qz-progress-fill");
+      track.appendChild(fill);
+      progress.append(text, track);
+      card.appendChild(progress);
+      const updateProgress = () => {
+        countText.textContent = answeredCount() + " / " + QUESTIONS.length + " answered";
+        fill.style.width = (answeredCount() / QUESTIONS.length * 100) + "%";
+      };
+      updateProgress();
+
+      const first = page * PER_PAGE;
+      const last = Math.min(first + PER_PAGE, QUESTIONS.length);
+      const items = [];
+      for (let i = first; i < last; i++) {
+        const item = el("div", "qz-item");
+        const statement = el("p", "qz-text", QUESTIONS[i].text);
+        statement.id = "q" + i;
+        item.appendChild(statement);
+
+        const scale = el("div", "qz-scale");
+        scale.setAttribute("role", "radiogroup");
+        scale.setAttribute("aria-labelledby", statement.id);
+        scale.appendChild(el("span", "qz-end disagree", "Disagree"));
+        const dots = [];
+        for (let v = 1; v <= 7; v++) {
+          const dot = el("button", "qz-dot s" + v);
+          dot.type = "button";
+          dot.setAttribute("role", "radio");
+          dot.setAttribute("aria-label", SCALE_LABELS[v - 1]);
+          dot.title = SCALE_LABELS[v - 1];
+          dot.setAttribute("aria-checked", answers[i] === v ? "true" : "false");
+          dot.onclick = () => {
+            answers[i] = v;
+            dots.forEach((d, index) => d.setAttribute("aria-checked", index + 1 === v ? "true" : "false"));
+            item.classList.remove("missing");
+            msg.textContent = "";
+            updateProgress();
+            const next = item.nextElementSibling;
+            if (next && next.classList.contains("qz-item")) next.scrollIntoView({ behavior: "smooth", block: "center" });
+          };
+          dots.push(dot);
+          scale.appendChild(dot);
+        }
+        scale.appendChild(el("span", "qz-end agree", "Agree"));
+        item.appendChild(scale);
+        items.push({ index: i, node: item });
+        card.appendChild(item);
+      }
+
+      const msg = el("p", "msg");
+      msg.setAttribute("role", "status");
+
+      card.appendChild(msg);
+
+      const nav = el("div", "qz-nav");
+      const back = el("button", "ghost", page === 0 ? "Cancel" : "Back");
+      back.type = "button";
+      back.onclick = () => {
+        if (page === 0) { showIntro(); return; }
+        page -= 1; showPage(); window.scrollTo(0, 0);
+      };
+      const isLast = page === PAGES - 1;
+      const next = el("button", "", isLast ? "See my result" : "Next");
+      next.type = "button";
+      next.onclick = () => {
+        const missing = items.filter(entry => answers[entry.index] === null);
+        items.forEach(entry => entry.node.classList.toggle("missing", answers[entry.index] === null));
+        if (missing.length) {
+          msg.className = "msg err";
+          msg.textContent = "Answer every statement on this page to continue.";
+          missing[0].node.scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
+        }
+        if (isLast) { showResult(); return; }
+        page += 1; showPage(); window.scrollTo(0, 0);
+      };
+      nav.append(back, el("span", "qz-spacer"), next);
+      card.appendChild(nav);
+      root.appendChild(card);
+    }
+
+    /* ---------- result + save ---------- */
+    async function saveResult(result, statusNode, retryButton) {
+      statusNode.className = "msg";
+      statusNode.textContent = "Saving to your profile...";
+      retryButton.hidden = true;
+      const { error } = await sb.rpc("save_my_personality", { p_mbti: result.type, p_scores: result.scores });
+      if (error) {
+        statusNode.className = "msg err";
+        statusNode.textContent = "Could not save your result: " + error.message + " (Run migration_personality.sql and then migration_personality_no_gender.sql in the Supabase SQL Editor if you have not yet.)";
+        retryButton.hidden = false;
+        return;
+      }
+      saved = { user_id: ctx.user.id, mbti: result.type, scores: result.scores };
+      statusNode.className = "msg ok";
+      statusNode.textContent = "Saved. " + result.type + " is now on your profile.";
+    }
+
+    function showResult() {
+      const result = Mbti.scoreAnswers(answers);
+      root.replaceChildren();
+      const card = el("section", "qz-result");
+      card.appendChild(el("h3", "", "Your result"));
+      card.appendChild(Mbti.personalityNode({ mbti: result.type, scores: result.scores }));
+      const status = el("p", "msg");
+      status.setAttribute("role", "status");
+      card.appendChild(status);
+      const actions = el("div", "qz-actions");
+      const retry = el("button", "", "Try saving again");
+      retry.type = "button";
+      retry.hidden = true;
+      retry.onclick = () => saveResult(result, status, retry);
+      const again = el("button", "ghost", "Retake the quiz");
+      again.type = "button";
+      again.onclick = () => { resetAnswers(); showPage(); window.scrollTo(0, 0); };
+      actions.append(retry, profileLink("Back to my profile", "btn"), again);
+      card.appendChild(actions);
+      root.appendChild(card);
+      window.scrollTo(0, 0);
+      saveResult(result, status, retry);
+    }
+
+    async function init() {
+      ctx = await requireAuth();
+      if (!ctx) return;
+      renderBar(ctx, "profile");
+      const { data, error } = await sb.rpc("get_member_personality", { p_user_id: ctx.user.id });
+      if (error) {
+        root.replaceChildren(el("p", "msg err", error.message + " (Run migration_personality.sql and then migration_personality_no_gender.sql in the Supabase SQL Editor, then refresh.)"));
+        return;
+      }
+      saved = (Array.isArray(data) ? data[0] : data) || null;
+      resetAnswers();
+      showIntro();
+    }
+    init();
+  </script>
+</body>
+</html>

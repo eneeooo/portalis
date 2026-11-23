@@ -1,0 +1,134 @@
+/* Portalis personality (MBTI) styles. Loaded by profile.html, personality.html and,
+   on demand, by the member profile card (common.js). */
+
+.mbti-avatar { display: inline-block; flex: none; line-height: 0; }
+.mbti-avatar img { display: block; width: 100%; height: 100%; max-width: none; object-fit: contain; }
+.mbti-avatar.sm { width: 60px; height: 60px; }
+.mbti-avatar.md { width: 96px; height: 96px; }
+.mbti-avatar.lg { width: 150px; height: 150px; }
+.mbti-avatar.xl { width: 180px; height: 180px; }
+
+.mbti-chip { display: inline-block; padding: 1px 12px; border: 2px solid #000; font-size: 16px; line-height: 1.5; }
+
+/* result block: used on the profile page, the quiz result and the member card */
+.mbti-block { display: block; }
+.mbti-head { display: flex; align-items: center; gap: 16px; }
+.mbti-who { min-width: 0; }
+.mbti-code { font-family: "Permanent Marker", "Comic Sans MS", cursive; font-size: 40px; line-height: 1; letter-spacing: .04em; }
+.mbti-role { display: inline-block; margin: 6px 0 4px; padding: 0 10px; border: 2px solid #000; font-size: 16px; line-height: 1.5; }
+.mbti-tagline { margin: 4px 0 0; line-height: 1.3; }
+.mbti-about { margin: 14px 0 8px; line-height: 1.45; }
+.mbti-traits { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.mbti-trait { padding: 0 10px; border: 2px solid #000; border-radius: 999px; background: #fff; font-size: 15px; line-height: 1.5; }
+
+.mbti-bars { display: grid; gap: 10px; margin-top: 16px; }
+.mbti-bar-label { display: block; margin-bottom: 3px; font-size: 16px; }
+.mbti-track { display: block; height: 14px; border: 2px solid #000; background: #fff; }
+.mbti-fill { display: block; height: 100%; border-right: 2px solid #000; background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.45) 0 6px, transparent 6px 12px); }
+
+.mbti-block.compact .mbti-code { font-size: 30px; }
+.mbti-block.compact .mbti-role { font-size: 14px; margin: 4px 0 2px; }
+.mbti-block.compact .mbti-tagline { font-size: 16px; }
+.mbti-block.compact .mbti-bars { gap: 6px; margin-top: 12px; }
+.mbti-block.compact .mbti-bar-label { font-size: 14px; margin-bottom: 1px; }
+.mbti-block.compact .mbti-track { height: 10px; }
+
+/* member card (common.js) */
+.member-personality { margin: 10px 0; padding: 12px 14px; background: #fff; border: 2px solid #000; box-shadow: 3px 3px 0 #000; }
+.member-personality .member-label { margin-bottom: 8px; }
+
+/* quiz page */
+.qz-intro, .qz-card, .qz-result { margin: 0 0 22px; padding: 20px 22px 24px; background: #fff; border: 3px solid #000; box-shadow: 5px 5px 0 #000; }
+.qz-intro h3 { margin-bottom: 8px; }
+.qz-intro ul { margin: 8px 0 14px; padding-left: 22px; line-height: 1.5; }
+.qz-intro .mbti-block { margin: 14px 0; padding: 14px; background: #fff3a0; border: 2px solid #000; }
+
+.qz-progress { margin: 0 0 18px; }
+.qz-progress-text { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 4px; font-size: 16px; }
+.qz-progress-track { height: 16px; border: 2px solid #000; background: #fff; }
+.qz-progress-fill { height: 100%; background: #b9f0b0; border-right: 2px solid #000; transition: width .25s ease; }
+
+.qz-item { margin: 0; padding: 18px 0; border-bottom: 2px dashed #000; }
+.qz-item:last-of-type { border-bottom: 0; }
+.qz-text { margin: 0 0 14px; font-size: 21px; line-height: 1.3; text-align: center; overflow-wrap: anywhere; }
+.qz-scale { display: flex; align-items: center; justify-content: center; gap: clamp(6px, 2.4vw, 16px); }
+.qz-end { flex: none; width: 74px; font-size: 15px; line-height: 1.1; text-align: center; }
+.qz-end.disagree { color: #7b1e5a; }
+.qz-end.agree { color: #1d6b12; }
+button.qz-dot { flex: none; margin: 0; padding: 0; border-radius: 50%; background: #fff; border: 3px solid #000; }
+button.qz-dot:hover { background: #000; box-shadow: none; }
+button.qz-dot.s1, button.qz-dot.s7 { width: 44px; height: 44px; }
+button.qz-dot.s2, button.qz-dot.s6 { width: 36px; height: 36px; }
+button.qz-dot.s3, button.qz-dot.s5 { width: 30px; height: 30px; }
+button.qz-dot.s4 { width: 24px; height: 24px; }
+button.qz-dot.s1[aria-checked="true"], button.qz-dot.s2[aria-checked="true"], button.qz-dot.s3[aria-checked="true"] { background: #f6b8dc; box-shadow: inset 0 0 0 4px #fff; }
+button.qz-dot.s4[aria-checked="true"] { background: #bbb; box-shadow: inset 0 0 0 3px #fff; }
+button.qz-dot.s5[aria-checked="true"], button.qz-dot.s6[aria-checked="true"], button.qz-dot.s7[aria-checked="true"] { background: #b9f0b0; box-shadow: inset 0 0 0 4px #fff; }
+button.qz-dot[aria-checked="true"] { border-color: #000; outline: 3px solid #000; outline-offset: 2px; }
+button.qz-dot:focus-visible { outline: 3px solid #000; outline-offset: 3px; }
+.qz-item.missing .qz-text { background: #ffd0d0; }
+
+.qz-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }
+.qz-nav button { margin: 0; }
+.qz-nav .qz-spacer { flex: 1; }
+.qz-nav button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+
+.qz-result .mbti-head { margin-bottom: 4px; }
+.qz-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.qz-actions .btn, .qz-actions button { margin: 0; }
+
+@media (max-width: 600px) {
+  .qz-intro, .qz-card, .qz-result { padding: 16px 12px 18px; }
+  .qz-text { font-size: 19px; }
+  .qz-end { width: 52px; font-size: 13px; }
+  button.qz-dot.s1, button.qz-dot.s7 { width: 38px; height: 38px; }
+  button.qz-dot.s2, button.qz-dot.s6 { width: 32px; height: 32px; }
+  button.qz-dot.s3, button.qz-dot.s5 { width: 27px; height: 27px; }
+  button.qz-dot.s4 { width: 22px; height: 22px; }
+  .mbti-head { gap: 12px; }
+  
+  .mbti-code { font-size: 32px; }
+  .qz-nav button { min-height: 44px; }
+}
+
+
+/* member profile card (popup): content scrolls, the X stays put */
+.member-card { max-width: 580px; text-align: left; display: flex; flex-direction: column; max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); overflow: hidden; }
+.mc-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -22px -22px; padding: 0 22px 22px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }
+.mc-scroll::-webkit-scrollbar { display: none; }
+
+/* card color: the whole popup takes the personality color (yellow when there is no result) */
+.modal-card.member-card { background: radial-gradient(rgba(0,0,0,.07) 1.4px, transparent 1.4px) 0 0 / 18px 18px, var(--mc-bg, #fff8cf); }
+
+/* banner: centered photo, small avatar in the bottom-left corner */
+.mc-banner { position: relative; overflow: hidden; min-height: 250px; margin: 0 0 20px; padding: 40px 16px 20px; text-align: center; border: 3px solid #000; box-shadow: 6px 6px 0 #000;
+  background: radial-gradient(rgba(255,255,255,.45) 1.6px, transparent 1.6px) 0 0 / 16px 16px, var(--mc-accent, #ffd23f); }
+.mc-banner::before { content: attr(data-code); position: absolute; right: -6px; bottom: -22px; font-family: "Permanent Marker", "Comic Sans MS", cursive; font-size: 128px; line-height: 1; letter-spacing: .04em; color: #000; opacity: .09; transform: rotate(-6deg); pointer-events: none; }
+.mc-banner::after { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 16px; background: repeating-linear-gradient(135deg, var(--mc-bg, #fff8cf) 0 12px, #fff 12px 24px); border-bottom: 3px solid #000; }
+.mc-banner > * { position: relative; z-index: 1; }
+.mc-banner .mbti-avatar { position: absolute; left: -10px; bottom: 6px; width: 124px; height: 124px; }
+.mc-banner .mbti-avatar img { filter: drop-shadow(3px 4px 0 rgba(0,0,0,.28)); }
+.mc-photos { display: flex; justify-content: center; margin-bottom: 14px; }
+.mc-photos .mc-photo { width: 124px; height: 124px; border: 4px solid #000; box-shadow: 5px 5px 0 #000; background: #fff; font-size: 40px; }
+.mc-name { margin: 0 0 10px; font-size: 31px; line-height: 1.1; text-shadow: 2px 2px 0 #fff; }
+.mc-chips { justify-content: center; margin-bottom: 12px; }
+.mc-banner .mbti-chip { background: #fff !important; font-family: "Permanent Marker", "Comic Sans MS", cursive; font-size: 18px; letter-spacing: .03em; transform: rotate(-2deg); box-shadow: 3px 3px 0 #000; }
+
+/* sections */
+.member-card .member-personality { margin: 0 0 18px; padding: 14px 16px 16px; border-top: 8px solid var(--mc-accent, #000); }
+.member-card .member-label { display: inline-block; margin-bottom: 8px; padding-bottom: 2px; border-bottom: 3px solid #000; }
+.member-card .member-personality .member-label { border-bottom-color: #000; }
+.member-card .member-section { margin: 0 0 14px; padding: 12px 16px; background: #fff; border: 2px solid #000; box-shadow: 3px 3px 0 #000; }
+.member-card .member-note { text-align: left; }
+.member-card .member-facts { margin-top: 16px; padding: 14px 16px; border: 2px dashed #000; background: rgba(255,255,255,.7); }
+.mc-actions { margin-top: 16px; }
+.mc-actions .btn { margin: 0; }
+
+@media (max-width: 600px) {
+  .mbti-avatar.lg { width: 110px; height: 110px; }
+  .mc-banner { min-height: 0; padding: 36px 10px 16px; }
+  .mc-banner .mbti-avatar { width: 60px; height: 60px; left: -5px; bottom: 4px; }
+  .mc-photos .mc-photo { width: 96px; height: 96px; }
+  .mc-name { font-size: 25px; }
+  .mc-banner::before { font-size: 88px; }
+}
