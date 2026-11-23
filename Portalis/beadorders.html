@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Bead Box - Orders</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="beadbox.css" />
+</head>
+<body>
+  <div class="awning"></div>
+
+  <div class="topbar">
+    <img class="brand-logo" src="unique-logo.png" alt="Unique" />
+    <div class="logo">Bead <b>Box</b> <span class="star">★</span></div>
+  </div>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="orders">🧾 Orders<span id="pendingBadge" class="badge" hidden></span></button>
+    <button class="tab" data-tab="products">➕ Add Product</button>
+  </nav>
+
+  <main>
+    <!-- orders -->
+    <section id="tab-orders">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px">
+        <h2 style="margin:0">To prepare</h2>
+        <div class="spacer"></div>
+        <button id="clearDone" class="btn white">Clear done orders</button>
+      </div>
+      <div id="pendingOrders" class="orders" style="margin-top:14px"></div>
+      <h2 style="margin-top:28px">Done</h2>
+      <div id="doneOrders" class="orders"></div>
+    </section>
+
+    <!-- add product -->
+    <section id="tab-products" class="products-wrap" hidden>
+      <form id="productForm" class="form sticker">
+        <h2 id="formTitle">New product</h2>
+        <label for="pName">Product name</label>
+        <input id="pName" class="field" required maxlength="80" autocomplete="off" />
+        <label for="pPrice">Price (₱)</label>
+        <input id="pPrice" class="field" type="number" min="0" step="any" inputmode="decimal" required />
+        <label for="pBundle">Price for 5 (optional, e.g. 125)</label>
+        <input id="pBundle" class="field" type="number" min="0" step="any" inputmode="decimal" />
+        <label class="check"><input id="pFree" type="checkbox" /> Buy 5 get 1 free</label>
+        <label for="pPhoto">Photo (optional, white background is made see-through)</label>
+        <input id="pPhoto" class="field" type="file" accept="image/*" />
+        <div id="photoPreview" class="photo-preview" hidden>
+          <img id="photoImg" alt="" />
+          <button id="removePhoto" class="btn white" type="button">Remove photo</button>
+        </div>
+        <button id="saveProduct" class="btn yellow big" type="submit" style="width:100%;margin-top:16px">Add product</button>
+        <button id="cancelEdit" class="btn white" type="button" style="width:100%;margin-top:10px" hidden>Cancel edit</button>
+      </form>
+      <div>
+        <h2>Products</h2>
+        <div id="productList" class="plist sticker"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="beadbox.js"></script>
+  <script>
+    let products = [];
+    let orders = [];
+    let editingId = null;
+    let imageData = null;       // photo of the product being added/edited, as a small image data URL
+
+    document.querySelectorAll(".tab").forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b === btn));
+        ["orders", "products"].forEach(name => { $("tab-" + name).hidden = name !== btn.dataset.tab; });
+      };
+    });
+
+    /* ---------- orders ---------- */
+    async function loadOrders() {
+      orders = must(await sb.from("bead_orders").select("*").order("no", { ascending: false }));
+      renderOrders();
+    }
+
+    function orderCard(order) {
+      const wrap = el("div", "order" + (order.done ? " done" : ""));
+      wrap.append(buildReceipt(order));
+      const acts = el("div", "actions");
+      const toggle = el("button", "btn " + (order.done ? "white" : "yellow"), order.done ? "↩ Undo" : "✓ Mark done");
+      toggle.type = "button";
+      toggle.onclick = () => run(async () => {
+        must(await sb.from("bead_orders").update({ done: !order.done }).eq("no", order.no));
+        await loadOrders();
+      });
+      const del = el("button", "btn red", "Delete"); del.type = "button";
+      del.onclick = () => run(async () => {
+        if (!confirm("Delete order #" + order.no + "?")) return;
+        must(await sb.from("bead_orders").delete().eq("no", order.no));
+        await loadOrders();
+      });
+      acts.append(toggle, del);
+      wrap.append(acts);
+      return wrap;
+    }
+
+    function renderOrders() {
+      const pending = orders.filter(o => !o.done);
+      const done = orders.filter(o => o.done);
+      $("pendingOrders").replaceChildren(...(pending.length ? pending.map(orderCard) : [el("div", "empty", "No orders waiting.")]));
+      $("doneOrders").replaceChildren(...(done.length ? done.map(orderCard) : [el("div", "empty", "Nothing done yet.")]));
+      const badge = $("pendingBadge");
+      badge.hidden = pending.length === 0;
+      badge.textContent = String(pending.length);
+    }
+
+    $("clearDone").onclick = () => run(async () => {
+      if (!confirm("Remove all done orders?")) return;
+      must(await sb.from("bead_orders").delete().eq("done", true));
+      await loadOrders();
+    });
+
+    /* ---------- product photo ---------- */
+    // Makes the white background of a photo transparent. Only white that touches the photo's edge, or white
+    // regions larger than 2% of the photo (like the hole inside a keychain loop), is removed, so white
+    // details inside the product stay solid.
+    function removeWhite(imageData) {
+      const { width: w, height: h, data } = imageData;
+      const n = w * h;
+      const isWhite = (i, min) => Math.min(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) >= min;
+      const white = new Uint8Array(n);
+      for (let i = 0; i < n; i++) if (isWhite(i, 250)) white[i] = 1;
+
+      const seen = new Uint8Array(n);
+      const remove = new Uint8Array(n);
+      const stack = new Int32Array(n);
+      const region = new Int32Array(n);
+      for (let start = 0; start < n; start++) {
+        if (!white[start] || seen[start]) continue;
+        let sp = 0, count = 0, touchesEdge = false;
+        stack[sp++] = start; seen[start] = 1;
+        while (sp) {
+          const i = stack[--sp];
+          region[count++] = i;
+          const x = i % w, y = (i / w) | 0;
+          if (x === 0 || y === 0 || x === w - 1 || y === h - 1) touchesEdge = true;
+          if (x > 0 && white[i - 1] && !seen[i - 1]) { seen[i - 1] = 1; stack[sp++] = i - 1; }
+          if (x < w - 1 && white[i + 1] && !seen[i + 1]) { seen[i + 1] = 1; stack[sp++] = i + 1; }
+          if (y > 0 && white[i - w] && !seen[i - w]) { seen[i - w] = 1; stack[sp++] = i - w; }
+          if (y < h - 1 && white[i + w] && !seen[i + w]) { seen[i + w] = 1; stack[sp++] = i + w; }
+        }
+        if (touchesEdge || count > 0.02 * n) for (let k = 0; k < count; k++) remove[region[k]] = 1;
+      }
+      // soften the edge: nearly-white pixels right next to a removed pixel go too
+      const halo = [];
+      for (let i = 0; i < n; i++) {
+        if (remove[i] || !isWhite(i, 225)) continue;
+        const x = i % w, y = (i / w) | 0;
+        if ((x > 0 && remove[i - 1]) || (x < w - 1 && remove[i + 1]) || (y > 0 && remove[i - w]) || (y < h - 1 && remove[i + w])) halo.push(i);
+      }
+      halo.forEach(i => { remove[i] = 1; });
+      for (let i = 0; i < n; i++) if (remove[i]) data[i * 4 + 3] = 0;
+      return imageData;
+    }
+
+    function resizeImage(file) {
+      return new Promise((resolve, reject) => {
+        if (!file.type.startsWith("image/")) { reject(new Error("Choose an image file.")); return; }
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          const scale = Math.min(1, 400 / Math.max(img.width, img.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          ctx.putImageData(removeWhite(ctx.getImageData(0, 0, canvas.width, canvas.height)), 0, 0);
+          // WebP keeps transparency and is small; Safari cannot make WebP, so it gets PNG.
+          const webp = canvas.toDataURL("image/webp", 0.9);
+          const out = webp.startsWith("data:image/webp") ? webp : canvas.toDataURL("image/png");
+          if (out.length >= 390000) { reject(new Error("That photo is too detailed. Try a simpler or smaller photo.")); return; }
+          resolve(out);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read that image.")); };
+        img.src = url;
+      });
+    }
+    function showPhoto() {
+      $("photoPreview").hidden = imageData === null;
+      if (imageData !== null) $("photoImg").src = imageData;
+    }
+    $("pPhoto").onchange = () => run(async () => {
+      const file = $("pPhoto").files[0];
+      if (!file) return;
+      try { imageData = await resizeImage(file); }
+      finally { $("pPhoto").value = ""; }
+      showPhoto();
+    });
+    $("removePhoto").onclick = () => { imageData = null; showPhoto(); };
+
+    /* ---------- products ---------- */
+    async function loadProducts() {
+      products = must(await sb.from("bead_products").select("*").order("id"));
+      renderProducts();
+    }
+
+    function resetForm() {
+      editingId = null;
+      imageData = null;
+      $("productForm").reset();
+      showPhoto();
+      $("formTitle").textContent = "New product";
+      $("saveProduct").textContent = "Add product";
+      $("cancelEdit").hidden = true;
+    }
+    $("cancelEdit").onclick = resetForm;
+
+    $("productForm").onsubmit = e => {
+      e.preventDefault();
+      run(async () => {
+        const bundleRaw = $("pBundle").value.trim();
+        const data = {
+          name: $("pName").value.trim(),
+          price: Number($("pPrice").value),
+          bundle5: bundleRaw === "" ? null : Number(bundleRaw),
+          buy5get1: $("pFree").checked,
+          image: imageData
+        };
+        if (editingId) must(await sb.from("bead_products").update(data).eq("id", editingId));
+        else must(await sb.from("bead_products").insert(data));
+        resetForm();
+        await loadProducts();
+        toast("Product saved");
+      });
+    };
+
+    function renderProducts() {
+      const list = $("productList");
+      list.replaceChildren();
+      if (!products.length) list.append(el("div", "empty", "No products yet."));
+      products.forEach(p => {
+        const row = el("div", "prow");
+        if (p.image) {
+          const thumb = el("img", "thumb");
+          thumb.src = p.image;
+          thumb.alt = "";
+          row.append(thumb);
+        }
+        const info = el("div", "info");
+        info.append(el("div", "", p.name + " · " + peso(p.price)));
+        if (p.bundle5 !== null) info.append(el("span", "tag", "5 for " + peso(p.bundle5)));
+        if (p.buy5get1) info.append(el("span", "tag", "Buy 5 Get 1!"));
+        const edit = el("button", "btn white", "Edit"); edit.type = "button";
+        edit.onclick = () => {
+          editingId = p.id;
+          imageData = p.image;
+          $("pName").value = p.name;
+          $("pPrice").value = p.price;
+          $("pBundle").value = p.bundle5 === null ? "" : p.bundle5;
+          $("pFree").checked = p.buy5get1;
+          showPhoto();
+          $("formTitle").textContent = "Edit product";
+          $("saveProduct").textContent = "Save changes";
+          $("cancelEdit").hidden = false;
+          $("pName").focus();
+        };
+        const del = el("button", "btn red", "Delete"); del.type = "button";
+        del.onclick = () => run(async () => {
+          if (!confirm("Delete " + p.name + "? Old orders keep their receipts.")) return;
+          must(await sb.from("bead_products").delete().eq("id", p.id));
+          if (editingId === p.id) resetForm();
+          await loadProducts();
+        });
+        row.append(info, edit, del);
+        list.append(row);
+      });
+    }
+
+    /* ---------- start ---------- */
+    sb.channel("bead-shop")
+      .on("postgres_changes", { event: "*", schema: "public", table: "bead_orders" }, payload => {
+        if (payload.eventType === "INSERT") toast("New order #" + payload.new.no + "!");
+        run(loadOrders);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "bead_products" }, () => run(loadProducts))
+      .subscribe(status => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") toast("Live updates are off. Reload the page.");
+      });
+    run(() => Promise.all([loadOrders(), loadProducts()]));
+  </script>
+</body>
+</html>

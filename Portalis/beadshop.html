@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Bead Box</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="beadbox.css" />
+</head>
+<body>
+
+  <!-- first page -->
+  <div id="intro">
+    <div class="awning"></div>
+    <div class="intro-body">
+      <div class="booth sticker">
+        <span class="star s1">★</span>
+        <span class="star s2">★</span>
+        <div class="window">
+          <div class="logo">Bead <b>Box</b></div>
+          <p>Beads, keychains &amp; more!</p>
+          <p class="ready">READY!</p>
+        </div>
+        <div class="actions">
+          <button id="introFull" class="btn yellow big">⛶ Go Full Screen</button>
+          <button id="introSkip" class="btn white">Open shop without full screen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- shop (customer view) -->
+  <div id="app" hidden>
+    <div class="awning"></div>
+    <div id="topbar" class="topbar">
+      <img class="brand-logo" src="unique-logo.png" alt="Unique" />
+      <div class="logo">Bead <b>Box</b> <span class="star">★</span></div>
+      <div class="spacer"></div>
+      <button id="fsBtn" class="btn white">⛶ Full Screen</button>
+    </div>
+
+    <main>
+      <section class="shop">
+        <h2>Tap what you want</h2>
+        <div id="grid" class="grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <button id="openCart" class="btn yellow big" hidden>🛒 Checkout</button>
+
+  <!-- checkout box: only opens when the customer taps the Checkout button -->
+  <div id="cartPanel" hidden>
+    <div class="cart sticker">
+      <div class="cart-head">
+        <h2>Your cart</h2>
+        <button id="closeCart" class="btn white" type="button">✕ Close</button>
+      </div>
+      <div id="cartLines"></div>
+      <div class="totalrow"><span>Total</span><span id="cartTotal">₱0</span></div>
+      <label for="customer">Your name</label>
+      <input id="customer" class="field" placeholder="Optional" autocomplete="off" maxlength="60" />
+      <button id="checkoutBtn" class="btn yellow big" disabled>Place order</button>
+      <button id="clearCart" class="btn white">Clear cart</button>
+    </div>
+  </div>
+
+  <div id="modal" hidden></div>
+  <div id="toast" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="beadbox.js"></script>
+  <script>
+    let products = [];
+    const cart = {};            // product id -> quantity
+
+    /* ---------- pricing ---------- */
+    function priceLine(p, qty) {
+      const free = p.buy5get1 ? Math.floor(qty / FREE_EVERY) : 0;
+      const total = p.bundle5 !== null
+        ? Math.floor(qty / FREE_EVERY) * p.bundle5 + (qty % FREE_EVERY) * p.price
+        : qty * p.price;
+      return { free, total };
+    }
+    function cartItems() {
+      return products.filter(p => cart[p.id] > 0).map(p => {
+        const qty = cart[p.id];
+        const { free, total } = priceLine(p, qty);
+        return { name: p.name, price: p.price, qty, free, total };
+      });
+    }
+
+    /* ---------- full screen ---------- */
+    async function toggleFullscreen() {
+      if (!document.documentElement.requestFullscreen) {
+        throw new Error("This browser has no full screen mode. On iPhone: Share → Add to Home Screen.");
+      }
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    }
+    document.addEventListener("fullscreenchange", () => {
+      const on = !!document.fullscreenElement;
+      document.body.classList.toggle("is-fs", on);
+      $("fsBtn").classList.remove("show");
+      $("fsBtn").textContent = on ? "✕ Exit Full Screen" : "⛶ Full Screen";
+    });
+
+    // In full screen the button is faded. Hover shows it (mouse); a tap on the top bar shows it for 3 seconds (touch).
+    // The tap that reveals the button must not also exit full screen, hence fsWasVisible.
+    let fsRevealTimer;
+    let fsWasVisible = true;
+    $("topbar").addEventListener("pointerdown", e => {
+      const btn = $("fsBtn");
+      const fs = !!document.fullscreenElement;
+      fsWasVisible = !fs || e.pointerType === "mouse" || btn.classList.contains("show");
+      if (!fs) return;
+      btn.classList.add("show");
+      clearTimeout(fsRevealTimer);
+      fsRevealTimer = setTimeout(() => btn.classList.remove("show"), 3000);
+    });
+    $("fsBtn").onclick = () => {
+      const visible = fsWasVisible;
+      fsWasVisible = true;
+      if (visible) run(toggleFullscreen);
+    };
+
+    function enterApp() { $("intro").hidden = true; $("app").hidden = false; }
+    $("introFull").onclick = () => run(async () => { await toggleFullscreen(); enterApp(); });
+    $("introSkip").onclick = enterApp;
+
+    /* ---------- products ---------- */
+    async function loadProducts() {
+      products = must(await sb.from("bead_products").select("*").order("id"));
+      renderShop();
+      renderCart();
+    }
+    sb.channel("bead-products")
+      .on("postgres_changes", { event: "*", schema: "public", table: "bead_products" }, () => run(loadProducts))
+      .subscribe(status => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") toast("Live product updates are off. Reload the page.");
+      });
+    run(loadProducts);
+
+    function renderShop() {
+      const grid = $("grid");
+      grid.replaceChildren();
+      if (!products.length) grid.append(el("div", "empty", "No products yet."));
+      products.forEach((p, i) => {
+        const b = el("button", "prod c" + (i % 6) + (p.image ? " has-photo" : ""));
+        b.type = "button";
+        // With a photo the card itself is see-through; the text sits in a small label under the picture.
+        let box = b;
+        if (p.image) {
+          const pic = el("img", "pic");
+          pic.src = p.image;
+          pic.alt = "";
+          b.append(pic);
+          box = el("div", "label");
+          b.append(box);
+        }
+        box.append(el("div", "name", p.name));
+        const info = el("div");
+        info.append(el("div", "price", peso(p.price)));
+        if (p.bundle5 !== null) info.append(el("span", "tag", "5 for " + peso(p.bundle5)));
+        if (p.buy5get1) info.append(el("span", "tag", "Buy 5 Get 1!"));
+        box.append(info);
+        if (cart[p.id] > 0) b.append(el("div", "count", String(cart[p.id])));
+        b.onclick = () => { cart[p.id] = (cart[p.id] || 0) + 1; renderShop(); renderCart(); };
+        grid.append(b);
+      });
+    }
+
+    function renderCart() {
+      const box = $("cartLines");
+      box.replaceChildren();
+      const items = cartItems();
+      if (!items.length) box.append(el("div", "cart-empty", "Nothing yet. Tap a product!"));
+      products.filter(p => cart[p.id] > 0).forEach((p, i) => {
+        const it = items[i];
+        const line = el("div", "line");
+        line.append(el("div", "n", it.name + " · " + peso(it.price)));
+        line.append(el("div", "t", peso(it.total)));
+        const q = el("div", "qty");
+        const minus = el("button", "", "−"); minus.type = "button";
+        const plus = el("button", "", "+"); plus.type = "button";
+        minus.onclick = () => { cart[p.id] -= 1; renderShop(); renderCart(); };
+        plus.onclick = () => { cart[p.id] += 1; renderShop(); renderCart(); };
+        q.append(minus, el("span", "", String(it.qty)), plus);
+        line.append(q);
+        if (it.free > 0) line.append(el("div", "free-tag", "🎁 +" + it.free + " FREE " + it.name));
+        box.append(line);
+      });
+      const total = items.reduce((s, it) => s + it.total, 0);
+      const count = items.reduce((s, it) => s + it.qty, 0);
+      $("cartTotal").textContent = peso(total);
+      $("checkoutBtn").disabled = !items.length;
+      $("openCart").hidden = count === 0;
+      $("openCart").textContent = "🛒 Checkout · " + count + (count === 1 ? " item" : " items") + " · " + peso(total);
+      if (count === 0) $("cartPanel").hidden = true;
+    }
+
+    $("openCart").onclick = () => { $("cartPanel").hidden = false; };
+    $("closeCart").onclick = () => { $("cartPanel").hidden = true; };
+    $("cartPanel").onclick = e => { if (e.target === $("cartPanel")) $("cartPanel").hidden = true; };
+
+    function emptyCart() { Object.keys(cart).forEach(k => delete cart[k]); }
+    $("clearCart").onclick = () => { emptyCart(); renderShop(); renderCart(); };
+
+    /* ---------- checkout ---------- */
+    function showReceipt(order) {
+      const m = $("modal");
+      m.replaceChildren();
+      const box = el("div", "modal-box");
+      box.append(buildReceipt(order));
+      box.append(el("p", "sent", "✓ Sent to the seller. Thank you!"));
+      const done = el("button", "btn yellow big", "Done"); done.type = "button";
+      done.style.width = "100%";
+      done.onclick = () => { m.hidden = true; };
+      box.append(done);
+      m.append(box);
+      m.hidden = false;
+    }
+
+    $("checkoutBtn").onclick = () => run(async () => {
+      const items = cartItems();
+      const total = items.reduce((s, it) => s + it.total, 0);
+      const customer = $("customer").value.trim();
+      $("checkoutBtn").disabled = true;
+      try {
+        const order = must(await sb.from("bead_orders").insert({ customer, items, total }).select().single());
+        emptyCart();
+        $("customer").value = "";
+        showReceipt(order);
+      } finally {
+        renderShop();
+        renderCart();
+      }
+    });
+  </script>
+</body>
+</html>

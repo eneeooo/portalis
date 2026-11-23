@@ -1,0 +1,56 @@
+// Shared helpers for beadshop.html (customer) and beadorders.html (seller).
+const FREE_EVERY = 5;
+
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+};
+const peso = n => "₱" + (Number.isInteger(n) ? n : n.toFixed(2));
+const fmtTime = value =>
+  new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+let toastTimer;
+function toast(text) {
+  const t = $("toast");
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 3500);
+}
+
+// Supabase calls return { data, error } instead of throwing; this makes them throw.
+function must(result) {
+  if (result.error) throw new Error(result.error.message);
+  return result.data;
+}
+// Click handlers use this so any thrown error shows up as a toast.
+async function run(fn) {
+  try { await fn(); } catch (e) { toast(e.message); }
+}
+
+// order = { no, customer, created_at, items: [{name, qty, free, total}], total }
+function buildReceipt(order) {
+  const r = el("div", "receipt");
+  r.append(el("h3", "", "Bead Box ★"));
+  r.append(el("div", "meta", "Order #" + order.no + " · " + fmtTime(order.created_at)));
+  if (order.customer) r.append(el("div", "who", "For: " + order.customer));
+  r.append(document.createElement("hr"));
+  order.items.forEach(it => {
+    const row = el("div", "r");
+    row.append(el("span", "", it.qty + " × " + it.name), el("span", "", peso(it.total)));
+    r.append(row);
+    if (it.free > 0) {
+      const f = el("div", "r free");
+      f.append(el("span", "", it.free + " × " + it.name + " (FREE)"), el("span", "", peso(0)));
+      r.append(f);
+    }
+  });
+  r.append(document.createElement("hr"));
+  const t = el("div", "r total");
+  t.append(el("span", "", "TOTAL"), el("span", "", peso(order.total)));
+  r.append(t);
+  return r;
+}
