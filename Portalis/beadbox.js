@@ -43,7 +43,9 @@ function buildReceipt(order) {
   const wrap = el("div", "receipt-wrap");
   const r = el("div", "receipt");
   const head = el("div", "r-head");
-  head.append(mascot(), el("h3", "", "Bead Box ★"));
+  const title = el("h3", "logo");
+  title.append("anik ", el("b", "", "anik"), " ", el("span", "star", "★"));
+  head.append(mascot(), title);
   r.append(head);
   r.append(el("div", "r-no", "Order #" + order.no));
   r.append(el("div", "meta", fmtTime(order.created_at)));

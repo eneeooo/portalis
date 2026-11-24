@@ -192,6 +192,8 @@ label { font-weight: 600; display: block; margin-top: 8px; }
 }
 .receipt .r-head .mascot { height: 44px; margin: 0; }
 .receipt h3 { margin: 0; font-size: 1.5rem; color: var(--blue); }
+.receipt h3.logo { font-size: 1.2rem; padding: 2px 14px 4px; box-shadow: 3px 3px 0 var(--navy); }
+.receipt h3.logo .star { font-size: 1.3rem; }
 .receipt .r-no {
   display: table; margin: 0 auto 6px; padding: 2px 18px; font-weight: 700; font-size: 1.3rem;
   background: var(--pink); border: 3px solid var(--navy); border-radius: 20px; transform: rotate(-2deg);
@@ -220,8 +222,8 @@ label { font-weight: 600; display: block; margin-top: 8px; }
 
 /* orders */
 .orders { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 22px; align-items: start; }
-.order { position: relative; border-left: 10px solid var(--pink); padding-left: 10px; border-radius: 12px; }
-.order.done { opacity: .55; border-left-color: #7fd6b4; }
+.order { position: relative; border-radius: 12px; }
+.order.done { opacity: .55; }
 .order .actions { display: flex; gap: 10px; margin-top: 12px; }
 .order .actions .btn { flex: 1; }
 .empty { opacity: .65; padding: 20px 0; }
