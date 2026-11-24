@@ -112,6 +112,18 @@
 .bday-btn-video { background: #7be0ff; }
 .bday-btn-photo { background: #b6f0a0; }
 .bday-btn-remove { background: #ffb3b3; }
+.bday-select {
+  margin: 0;
+  padding: 6px 12px;
+  border: 2px solid #000;
+  border-radius: 999px;
+  background: #ffe9a8;
+  color: #000;
+  max-width: 220px;
+  cursor: pointer;
+  box-shadow: 2px 3px 0 #000;
+}
+.bday-select:disabled { opacity: 0.55; cursor: not-allowed; }
 .bday-status { min-width: 120px; font-size: 15px; }
 .bday-status.is-bad { color: #b00020; font-weight: bold; }
 .bday-hint { margin: 4px 0 0; font-size: 14px; opacity: 0.8; }

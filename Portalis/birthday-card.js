@@ -1,12 +1,14 @@
 /* Portalis birthday card
-   - Colorful canvas animation that runs exactly as long as song/maligayang-bati.mp3
-   - "Download video" records that same animation + song into a video file (mp4 or webm)
-   - Admin and officer can add ONE photo per birthday celebrant (shown in the animation)
+   - Colorful canvas animation (4 styles) that runs exactly as long as the chosen song in the song/ folder
+   - Admin and officer pick the song + style, add ONE photo, and are the only ones who see "Download video"
+   - Everyone else only gets the play button
    Needs: config.js (sb) and common.js (el) loaded first. */
 (function () {
   "use strict";
 
-  var SONG_URL = "song/maligayang-bati.mp3";
+  var SONG_DIR = "song/";
+  var SONG_LIST_URL = SONG_DIR + "songs.json"; // written by the deploy workflow from the files in song/
+  var DEFAULT_SONG = "maligayang-bati.mp3";
   var BUCKET = "birthday";
   var MUXER_URL = "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.js";
   var W = 1280;
@@ -373,6 +375,360 @@
     g.restore();
   }
 
+  /* ---------- extra card styles (disco, candy, galaxy) ---------- */
+  var stars = [], notes = [], hearts = [], bubbles = [], pops = [], shooters = [];
+  for (i = 0; i < 150; i++) stars.push({ x: rnd() * W, y: rnd() * H, r: 0.8 + rnd() * 2.2, tw: 1 + rnd() * 3, ph: rnd() * TAU, hue: Math.floor(rnd() * 360) });
+  for (i = 0; i < 16; i++) notes.push({ x: 30 + rnd() * (W - 60), period: 6 + rnd() * 5, phase: rnd() * 12, size: 0.8 + rnd() * 0.8, sway: 15 + rnd() * 25, hue: Math.floor(rnd() * 360) });
+  for (i = 0; i < 14; i++) hearts.push({ x: 30 + rnd() * (W - 60), period: 7 + rnd() * 5, phase: rnd() * 12, size: 0.6 + rnd() * 0.9, sway: 15 + rnd() * 30, hue: Math.floor(rnd() * 360) });
+  for (i = 0; i < 20; i++) bubbles.push({ x: rnd() * W, period: 8 + rnd() * 6, phase: rnd() * 14, r: 18 + rnd() * 36, sway: 15 + rnd() * 30 });
+  for (i = 0; i < 7; i++) pops.push({ x: 60 + (i / 6) * (W - 120) + (rnd() - 0.5) * 80, period: 12 + rnd() * 5, phase: rnd() * 15, size: 0.7 + rnd() * 0.5, sway: 20 + rnd() * 25 });
+  for (i = 0; i < 5; i++) shooters.push({ period: 6 + rnd() * 3, phase: rnd() * 9, x: rnd() * W * 0.7, y: rnd() * H * 0.5, speed: 700 + rnd() * 300 });
+
+  function riseU(p, t) { return ((t + p.phase) / p.period) % 1; }
+
+  function drawNote(g, x, y, s, hue, rot) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    g.scale(s, s);
+    g.lineJoin = "round";
+    g.lineWidth = 3.5;
+    g.strokeStyle = "#000";
+    g.fillStyle = "hsl(" + hue + ",100%,62%)";
+    g.fillRect(9, -42, 5, 42);
+    g.strokeRect(9, -42, 5, 42);
+    g.beginPath();
+    g.ellipse(0, 0, 13, 9, -0.4, 0, TAU);
+    g.fill();
+    g.stroke();
+    g.beginPath();
+    g.moveTo(14, -42);
+    g.bezierCurveTo(32, -36, 32, -22, 24, -12);
+    g.bezierCurveTo(30, -24, 24, -30, 14, -28);
+    g.closePath();
+    g.fill();
+    g.stroke();
+    g.restore();
+  }
+
+  function drawHeart(g, x, y, s, hue, rot) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    g.scale(s, s);
+    g.beginPath();
+    g.moveTo(0, 16);
+    g.bezierCurveTo(-36, -10, -18, -36, 0, -14);
+    g.bezierCurveTo(18, -36, 36, -10, 0, 16);
+    g.closePath();
+    g.fillStyle = "hsl(" + hue + ",100%,64%)";
+    g.fill();
+    g.lineJoin = "round";
+    g.lineWidth = 3.5;
+    g.strokeStyle = "#000";
+    g.stroke();
+    g.beginPath();
+    g.ellipse(-12, -14, 6, 4, -0.7, 0, TAU);
+    g.fillStyle = "rgba(255,255,255,0.8)";
+    g.fill();
+    g.restore();
+  }
+
+  function drawLollipop(g, x, y, s, rot) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    g.scale(s, s);
+    g.lineCap = "round";
+    g.strokeStyle = "#000";
+    g.lineWidth = 9;
+    g.beginPath(); g.moveTo(0, 30); g.lineTo(0, 110); g.stroke();
+    g.strokeStyle = "#fff";
+    g.lineWidth = 4;
+    g.beginPath(); g.moveTo(0, 30); g.lineTo(0, 110); g.stroke();
+    for (var k = 0; k < 8; k++) {
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.arc(0, 0, 34, (k / 8) * TAU, ((k + 1) / 8) * TAU);
+      g.closePath();
+      g.fillStyle = PALETTE[k % PALETTE.length];
+      g.fill();
+    }
+    g.beginPath();
+    g.arc(0, 0, 34, 0, TAU);
+    g.lineWidth = 4;
+    g.strokeStyle = "#000";
+    g.stroke();
+    g.beginPath();
+    g.ellipse(-12, -14, 8, 5, -0.7, 0, TAU);
+    g.fillStyle = "rgba(255,255,255,0.6)";
+    g.fill();
+    g.restore();
+  }
+
+  function drawBubble(g, x, y, r, t, k) {
+    var gr = g.createLinearGradient(x - r, y - r, x + r, y + r);
+    for (var c = 0; c < 5; c++) gr.addColorStop(c / 4, "hsl(" + ((t * 60 + k * 40 + c * 60) % 360) + ",100%,65%)");
+    g.beginPath();
+    g.arc(x, y, r, 0, TAU);
+    g.fillStyle = "rgba(255,255,255,0.22)";
+    g.fill();
+    g.lineWidth = 4;
+    g.strokeStyle = gr;
+    g.stroke();
+    g.beginPath();
+    g.ellipse(x - r * 0.35, y - r * 0.4, r * 0.22, r * 0.12, -0.6, 0, TAU);
+    g.fillStyle = "rgba(255,255,255,0.85)";
+    g.fill();
+  }
+
+  function drawNotes(g, t) {
+    for (var k = 0; k < notes.length; k++) {
+      var n = notes[k], u = riseU(n, t);
+      drawNote(g, n.x + Math.sin(u * TAU * 2) * n.sway, H + 60 - u * (H + 160), n.size, (n.hue + t * 40) % 360, Math.sin(t * 2 + k) * 0.3);
+    }
+  }
+  function drawHearts(g, t) {
+    for (var k = 0; k < hearts.length; k++) {
+      var h = hearts[k], u = riseU(h, t);
+      drawHeart(g, h.x + Math.sin(u * TAU * 2) * h.sway, H + 50 - u * (H + 120), h.size * (1 + 0.08 * Math.sin(t * 6 + k)), (h.hue + t * 30) % 360, Math.sin(t * 1.5 + k) * 0.25);
+    }
+  }
+  function drawBubbles(g, t) {
+    for (var k = 0; k < bubbles.length; k++) {
+      var b = bubbles[k], u = riseU(b, t);
+      drawBubble(g, b.x + Math.sin(u * TAU * 2) * b.sway, H + b.r + 10 - u * (H + 2 * b.r + 20), b.r, t, k);
+    }
+  }
+  function drawLollipops(g, t) {
+    for (var k = 0; k < pops.length; k++) {
+      var p = pops[k], u = riseU(p, t);
+      drawLollipop(g, p.x + Math.sin(u * TAU * 2) * p.sway, H + 60 - u * (H + 260), p.size, Math.sin(t * 1.3 + k) * 0.3);
+    }
+  }
+
+  function drawDiscoBall(g, x, y, r, t) {
+    g.save();
+    g.strokeStyle = "#000";
+    g.lineWidth = 3;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, y - r); g.stroke();
+    g.beginPath();
+    g.arc(x, y, r, 0, TAU);
+    g.save();
+    g.clip();
+    var n = 10, cs = (2 * r) / n, shift = Math.floor(t * 3);
+    for (var a = 0; a < n; a++) {
+      for (var b = 0; b < n; b++) {
+        var l = 55 + 38 * Math.sin(t * 3 + a * 1.7 + b * 2.3);
+        g.fillStyle = "hsl(" + (((a + shift) * 36 + b * 20 + t * 60) % 360) + ",85%," + l + "%)";
+        g.fillRect(x - r + a * cs, y - r + b * cs, cs - 1.5, cs - 1.5);
+      }
+    }
+    g.restore();
+    g.beginPath();
+    g.arc(x, y, r, 0, TAU);
+    g.lineWidth = 4;
+    g.stroke();
+    for (var k = 0; k < 4; k++) drawSparkle(g, x + Math.cos(t * 1.5 + k * 1.6) * (r + 22), y + Math.sin(t * 1.5 + k * 1.6) * (r + 22), 10 + 6 * Math.sin(t * 4 + k), 0.5 + 0.5 * Math.abs(Math.sin(t * 3 + k)), PALETTE[k]);
+    g.restore();
+  }
+
+  function drawDiscoBackground(g, t) {
+    var hh = (t * 30) % 360;
+    var grad = g.createLinearGradient(0, 0, 0, H);
+    var baseHue = 270 + 45 * Math.sin(t * 0.3);
+    grad.addColorStop(0, "hsl(" + baseHue + ",80%,16%)");
+    grad.addColorStop(1, "hsl(" + (baseHue + 40) + ",85%,30%)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, W, H);
+    var beat = Math.pow(Math.max(0, Math.sin(t * TAU * 2)), 4); // steady 120 bpm pulse
+    var glow = g.createRadialGradient(350, 410, 20, 350, 410, 460 + beat * 70);
+    glow.addColorStop(0, "hsla(" + ((hh + 120) % 360) + ",100%,60%," + (0.35 + beat * 0.25) + ")");
+    glow.addColorStop(1, "hsla(" + ((hh + 120) % 360) + ",100%,60%,0)");
+    g.fillStyle = glow;
+    g.fillRect(0, 0, W, H);
+    g.save();
+    g.globalCompositeOperation = "lighter";
+    var origins = [[0, 0], [W, 0], [W / 2, -30], [1190, 72]];
+    for (var k = 0; k < 9; k++) {
+      var o = origins[k % origins.length];
+      var base = Math.PI / 2 + Math.sin(t * 0.6 + k * 1.7) * 1.0;
+      var half = 0.07;
+      g.fillStyle = "hsla(" + ((hh + k * 40) % 360) + ",100%,55%,0.2)";
+      g.beginPath();
+      g.moveTo(o[0], o[1]);
+      g.lineTo(o[0] + Math.cos(base - half) * 1700, o[1] + Math.sin(base - half) * 1700);
+      g.lineTo(o[0] + Math.cos(base + half) * 1700, o[1] + Math.sin(base + half) * 1700);
+      g.closePath();
+      g.fill();
+    }
+    g.restore();
+    var cols = 32, tw = W / cols;
+    g.strokeStyle = "rgba(0,0,0,0.6)";
+    g.lineWidth = 2;
+    for (var r = 0; r < 2; r++) {
+      for (var c = 0; c < cols; c++) {
+        g.fillStyle = "hsl(" + ((c * 12 + r * 60 + t * 140) % 360) + ",100%," + (48 + 14 * Math.sin(t * 5 + c * 0.8 + r * 2)) + "%)";
+        g.fillRect(c * tw, H - 70 + r * 35, tw, 35);
+        g.strokeRect(c * tw, H - 70 + r * 35, tw, 35);
+      }
+    }
+  }
+
+  function drawCandyBackground(g, t) {
+    var cols = ["#ff5d8f", "#ffd23f", "#3ec1ff", "#5ee06f", "#b57bff", "#ff9a3c"];
+    var sw = 90, shift = t * 40, base = Math.floor(shift / sw), frac = shift - base * sw;
+    g.save();
+    g.translate(W / 2, H / 2);
+    g.rotate(-0.5);
+    for (var k = -20; k <= 20; k++) {
+      g.fillStyle = cols[(((k - base) % cols.length) + cols.length) % cols.length];
+      g.fillRect(k * sw + frac, -1300, sw, 2600);
+    }
+    g.restore();
+    g.fillStyle = "rgba(255,255,255,0.28)";
+    for (var gx = 0; gx < 20; gx++) {
+      for (var gy = 0; gy < 12; gy++) {
+        g.beginPath();
+        g.arc(((gx * 70 + t * 14 + (gy % 2) * 35) % (W + 70)) - 35, gy * 70 + 20, 13, 0, TAU);
+        g.fill();
+      }
+    }
+    var soft = g.createRadialGradient(350, 410, 40, 350, 410, 420);
+    soft.addColorStop(0, "rgba(255,255,255,0.5)");
+    soft.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = soft;
+    g.fillRect(0, 0, W, H);
+  }
+
+  function drawPlanet(g, x, y, r, hue, ring) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(-0.35);
+    function ringArc(a0, a1) {
+      g.beginPath();
+      g.ellipse(0, 0, r * 1.9, r * 0.5, 0, a0, a1);
+      g.lineCap = "butt";
+      g.lineWidth = 14;
+      g.strokeStyle = "#000";
+      g.stroke();
+      g.lineWidth = 8;
+      g.strokeStyle = "hsl(" + ((hue + 40) % 360) + ",100%,65%)";
+      g.stroke();
+    }
+    if (ring) ringArc(Math.PI, TAU);
+    var pg = g.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r);
+    pg.addColorStop(0, "hsl(" + hue + ",100%,78%)");
+    pg.addColorStop(1, "hsl(" + hue + ",90%,45%)");
+    g.beginPath();
+    g.arc(0, 0, r, 0, TAU);
+    g.fillStyle = pg;
+    g.fill();
+    g.save();
+    g.clip();
+    g.fillStyle = "rgba(255,255,255,0.22)";
+    g.fillRect(-r, -r * 0.45, 2 * r, r * 0.22);
+    g.fillRect(-r, r * 0.15, 2 * r, r * 0.3);
+    g.restore();
+    g.lineWidth = 4;
+    g.strokeStyle = "#000";
+    g.beginPath();
+    g.arc(0, 0, r, 0, TAU);
+    g.stroke();
+    if (ring) ringArc(0, Math.PI);
+    g.restore();
+  }
+
+  function drawGalaxyBackground(g, t) {
+    var h = 25 * Math.sin(t * 0.2);
+    var grad = g.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, "hsl(" + (225 + h) + ",85%,16%)");
+    grad.addColorStop(0.55, "hsl(" + (275 + h) + ",80%,24%)");
+    grad.addColorStop(1, "hsl(" + (325 + h) + ",80%,22%)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, W, H);
+    g.save();
+    g.globalCompositeOperation = "lighter";
+    var neb = [[220, 180, 420, 0], [1050, 500, 460, 120], [700, 120, 380, 220], [300, 620, 380, 300]];
+    neb.forEach(function (n, k) {
+      var nx = n[0] + Math.sin(t * 0.3 + k) * 40, ny = n[1] + Math.cos(t * 0.25 + k) * 30, hu = (n[3] + t * 10) % 360;
+      var rg = g.createRadialGradient(nx, ny, 10, nx, ny, n[2]);
+      rg.addColorStop(0, "hsla(" + hu + ",100%,55%,0.35)");
+      rg.addColorStop(1, "hsla(" + hu + ",100%,55%,0)");
+      g.fillStyle = rg;
+      g.fillRect(0, 0, W, H);
+    });
+    g.lineCap = "round";
+    g.lineJoin = "round";
+    for (var k = 0; k < 3; k++) {
+      for (var pass = 0; pass < 2; pass++) {
+        g.lineWidth = pass ? 16 : 64;
+        g.strokeStyle = "hsla(" + ((t * 25 + k * 110) % 360) + ",100%,60%," + (pass ? 0.35 : 0.14) + ")";
+        g.beginPath();
+        for (var x = -40; x <= W + 40; x += 40) {
+          var y = 150 + k * 210 + Math.sin(x * 0.004 + t * 0.5 + k * 2) * 70 + Math.sin(x * 0.012 - t * 0.9 + k) * 22;
+          if (x === -40) g.moveTo(x, y); else g.lineTo(x, y);
+        }
+        g.stroke();
+      }
+    }
+    g.restore();
+    for (var s = 0; s < stars.length; s++) {
+      var st = stars[s];
+      g.globalAlpha = 0.35 + 0.65 * Math.abs(Math.sin(t * st.tw + st.ph));
+      g.fillStyle = "hsl(" + st.hue + ",100%,85%)";
+      g.beginPath();
+      g.arc(st.x, st.y, st.r, 0, TAU);
+      g.fill();
+      if (st.r > 2.4) {
+        g.strokeStyle = g.fillStyle;
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.moveTo(st.x - st.r * 3, st.y); g.lineTo(st.x + st.r * 3, st.y);
+        g.moveTo(st.x, st.y - st.r * 3); g.lineTo(st.x, st.y + st.r * 3);
+        g.stroke();
+      }
+    }
+    g.globalAlpha = 1;
+    drawPlanet(g, 110, 118, 56, (320 + t * 6) % 360, true);
+    drawPlanet(g, 90, 640, 34, (190 + t * 6) % 360, false);
+  }
+
+  function drawShooters(g, t) {
+    g.save();
+    g.lineCap = "round";
+    for (var k = 0; k < shooters.length; k++) {
+      var s = shooters[k];
+      var age = (t + s.phase) % s.period;
+      if (age > 0.9) continue;
+      var d = age * s.speed, dx = Math.cos(0.6), dy = Math.sin(0.6);
+      var hx = s.x + d * dx, hy = s.y + d * dy;
+      var gr = g.createLinearGradient(hx - dx * 220, hy - dy * 220, hx, hy);
+      gr.addColorStop(0, "rgba(255,255,255,0)");
+      gr.addColorStop(1, "#fff");
+      g.globalAlpha = clamp((0.9 - age) * 3, 0, 1);
+      g.strokeStyle = gr;
+      g.lineWidth = 5;
+      g.beginPath();
+      g.moveTo(hx - dx * 220, hy - dy * 220);
+      g.lineTo(hx, hy);
+      g.stroke();
+      g.fillStyle = "#fff";
+      g.beginPath();
+      g.arc(hx, hy, 6, 0, TAU);
+      g.fill();
+    }
+    g.restore();
+  }
+
+  // Each style only draws what sits BEHIND the cake / photo and the text; the foreground is shared.
+  var STYLES = [
+    { label: "Classic rainbow", back: function (g, t, T) { drawBackground(g, t); drawBokeh(g, t); drawFireworks(g, t); drawBalloons(g, t); drawConfetti(g, t, T); } },
+    { label: "Disco party", back: function (g, t, T) { drawDiscoBackground(g, t); drawFireworks(g, t); drawNotes(g, t); drawConfetti(g, t, T); drawDiscoBall(g, 1190, 72, 58, t); } },
+    { label: "Candy pop", back: function (g, t, T) { drawCandyBackground(g, t); drawBubbles(g, t); drawLollipops(g, t); drawFireworks(g, t); drawHearts(g, t); drawConfetti(g, t, T); } },
+    { label: "Galaxy night", back: function (g, t, T) { drawGalaxyBackground(g, t); drawShooters(g, t); drawBokeh(g, t); drawFireworks(g, t); drawConfetti(g, t, T); } }
+  ];
+
   function drawVisual(g, st, t) {
     var cx = 350, cy = 410;
     var pop = easeOutElastic((t - 0.9) / 1.4);
@@ -584,11 +940,7 @@
     var T = st.duration;
     g.save();
     g.clearRect(0, 0, W, H);
-    drawBackground(g, t);
-    drawBokeh(g, t);
-    drawFireworks(g, t);
-    drawBalloons(g, t);
-    drawConfetti(g, t, T);
+    STYLES[st.style].back(g, t, T);
     drawVisual(g, st, t);
     drawTexts(g, st, t);
     drawTitle(g, t);
@@ -606,18 +958,55 @@
   /* ---------- shared audio (one song element for the whole page) ---------- */
   var shared = { audio: null, ac: null, src: null, rec: null, active: null };
 
+  function songUrl(file) { return SONG_DIR + encodeURIComponent(file); }
+  function songLabel(file) {
+    var name = file.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim();
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
   function getAudio() {
     if (!shared.audio) {
       var a = new Audio();
-      a.preload = "metadata";
-      a.src = SONG_URL;
+      a.preload = "auto";
       shared.audio = a;
     }
     return shared.audio;
   }
-  function songDuration() {
-    var d = getAudio().duration;
-    return isFinite(d) && d > 1 ? d : FALLBACK_DURATION;
+  // Points the shared player at one song and waits until its length is known.
+  function loadSong(file) {
+    var a = getAudio();
+    var url = new URL(songUrl(file), document.baseURI).href;
+    if (a.src !== url) { a.src = url; a.load(); }
+    if (a.readyState >= 1) return Promise.resolve(a.duration);
+    return new Promise(function (resolve, reject) {
+      a.addEventListener("loadedmetadata", function () { resolve(a.duration); }, { once: true });
+      a.addEventListener("error", function () { reject(new Error("Could not load song/" + file)); }, { once: true });
+    });
+  }
+  // Song length for the idle preview, read with its own element so it never disturbs the playing song.
+  var durations = {};
+  function readDuration(file) {
+    if (!durations[file]) {
+      durations[file] = new Promise(function (resolve, reject) {
+        var a = new Audio();
+        a.preload = "metadata";
+        a.onloadedmetadata = function () { resolve(a.duration); };
+        a.onerror = function () { delete durations[file]; reject(new Error("Could not load song/" + file)); };
+        a.src = songUrl(file);
+      });
+    }
+    return durations[file];
+  }
+  // song/songs.json is generated at deploy time from the files in the song folder.
+  var songListPromise = null;
+  function loadSongList() {
+    if (!songListPromise) {
+      songListPromise = fetch(SONG_LIST_URL, { cache: "no-cache" }).then(function (res) {
+        if (!res.ok) throw new Error("Could not read " + SONG_LIST_URL + ". Redeploy the site so the song list is built.");
+        return res.json();
+      });
+      songListPromise.catch(function () { songListPromise = null; });
+    }
+    return songListPromise;
   }
   function ensureGraph() {
     if (shared.ac) return shared;
@@ -731,8 +1120,8 @@
     await loadMuxer();
     if (!window.Mp4Muxer) throw unsupported("Video writer missing.");
 
-    var resp = await fetch(SONG_URL);
-    if (!resp.ok) throw new Error("Could not load " + SONG_URL);
+    var resp = await fetch(songUrl(st.song));
+    if (!resp.ok) throw new Error("Could not load song/" + st.song);
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) throw unsupported("No audio decoder.");
     var actx = new AC();
@@ -845,7 +1234,9 @@
       message: opts.message || "",
       photo: null,
       photoPath: opts.photoPath || null,
-      duration: songDuration(),
+      song: opts.song || DEFAULT_SONG,
+      style: opts.style || 0,
+      duration: FALLBACK_DURATION,
       mode: "idle",
       raf: 0,
       _name: null,
@@ -873,15 +1264,24 @@
 
     var tools = el("div", "bday-tools");
     var btnPlay = el("button", "bday-btn bday-btn-play", "\u25B6 Play song");
-    var btnVideo = el("button", "bday-btn bday-btn-video", "\u2B07 Download video");
     btnPlay.type = "button";
-    btnVideo.type = "button";
     var status = el("span", "bday-status");
     status.setAttribute("aria-live", "polite");
-    tools.append(btnPlay, btnVideo);
+    tools.append(btnPlay);
 
-    var photoBtn, removeBtn, fileInput;
+    var btnVideo, songSel, styleSel, photoBtn, removeBtn, fileInput;
     if (opts.isAdmin) {
+      btnVideo = el("button", "bday-btn bday-btn-video", "\u2B07 Download video");
+      btnVideo.type = "button";
+      songSel = document.createElement("select");
+      songSel.className = "bday-select";
+      songSel.setAttribute("aria-label", "Birthday song");
+      songSel.appendChild(new Option(songLabel(st.song), st.song));
+      styleSel = document.createElement("select");
+      styleSel.className = "bday-select";
+      styleSel.setAttribute("aria-label", "Animation style");
+      STYLES.forEach(function (s, k) { styleSel.appendChild(new Option(s.label, String(k))); });
+      styleSel.value = String(st.style);
       photoBtn = el("button", "bday-btn bday-btn-photo", st.photoPath ? "\uD83D\uDCF7 Change photo" : "\uD83D\uDCF7 Add photo");
       photoBtn.type = "button";
       removeBtn = el("button", "bday-btn bday-btn-remove", "Remove photo");
@@ -891,11 +1291,11 @@
       fileInput.type = "file";
       fileInput.accept = "image/*";
       fileInput.hidden = true;
-      tools.append(photoBtn, removeBtn, fileInput);
+      tools.append(btnVideo, songSel, styleSel, photoBtn, removeBtn, fileInput);
     }
     tools.appendChild(status);
     wrap.append(stage, bar, tools);
-    if (opts.isAdmin) wrap.appendChild(el("p", "bday-hint", "Admin / officer: you can add 1 photo for this celebration. It appears in the card and in the downloaded video."));
+    if (opts.isAdmin) wrap.appendChild(el("p", "bday-hint", "Admin / officer: pick the song and animation style, and add 1 photo for this celebration. They appear in the card and in the downloaded video. Only you can download the video."));
 
     function notify(text, bad) {
       if (opts.onNotify) opts.onNotify(text, bad);
@@ -905,15 +1305,19 @@
       status.classList.toggle("is-bad", !!bad);
     }
     function setProgress(p) { fill.style.width = clamp(p, 0, 1) * 100 + "%"; }
-    function drawIdle() { st.duration = songDuration(); drawFrame(st, IDLE_T); }
+    function drawIdle() { drawFrame(st, IDLE_T); }
 
     function setUi(mode) {
       st.mode = mode;
       stage.classList.toggle("is-live", mode !== "idle");
       btnPlay.textContent = mode === "play" ? "\u25A0 Stop" : "\u25B6 Play song";
       btnPlay.disabled = mode === "record";
-      btnVideo.textContent = mode === "record" ? "Cancel recording" : "\u2B07 Download video";
-      btnVideo.disabled = mode === "play";
+      if (btnVideo) {
+        btnVideo.textContent = mode === "record" ? "Cancel recording" : "\u2B07 Download video";
+        btnVideo.disabled = mode === "play";
+        songSel.disabled = mode !== "idle";
+        styleSel.disabled = mode !== "idle";
+      }
       if (photoBtn) photoBtn.disabled = mode !== "idle";
       if (removeBtn) removeBtn.disabled = mode !== "idle";
     }
@@ -954,6 +1358,7 @@
         if (recMime === null) { setStatus("This browser cannot record video. Try Chrome, Edge, or Safari 14.1+.", true); return; }
       }
       try {
+        await loadSong(st.song);
         ensureGraph();
         await shared.ac.resume();
         route(mode === "record");
@@ -1001,12 +1406,12 @@
       try {
         await audio.play();
       } catch (e) {
-        setStatus("Could not play " + SONG_URL + ". Check that the song file is uploaded.", true);
+        setStatus("Could not play song/" + st.song + ". Check that the song file is uploaded.", true);
         if (recorder && recorder.state !== "inactive") { discard = true; try { recorder.stop(); } catch (_) {} }
         resetToIdle();
         return;
       }
-      st.duration = songDuration();
+      st.duration = audio.duration;
 
       function tick() {
         if (shared.active !== st) return;
@@ -1084,14 +1489,68 @@
       setStatus("");
       start("play");
     };
-    btnVideo.onclick = function () {
-      if (st.mode === "record") { st.abort(); return; }
-      setStatus("");
-      if (supportsWebCodecs()) startExport();
-      else start("record");
-    };
+
+    function loadLength() {
+      readDuration(st.song).then(function (d) {
+        st.duration = d;
+        if (st.mode === "idle") { drawIdle(); setStatus("Song length " + fmtTime(d)); }
+      }).catch(function (e) { setStatus(e.message, true); });
+    }
+
+    // Saves the admin / officer's song + style choice for this celebrant so everyone sees the same card.
+    async function saveSettings(song, style) {
+      var row = await sb.from("birthday_settings").upsert({ recipient_id: opts.recipientId, song: song, style: style, updated_at: new Date().toISOString() }, { onConflict: "recipient_id" });
+      if (row.error) throw row.error;
+      st.song = song;
+      st.style = style;
+    }
+    function settingsError(e) {
+      var msg = (e && e.message) || "Could not save the choice.";
+      return /birthday_settings/i.test(msg) ? "Run sql/migration_birthday_settings.sql in Supabase first." : msg;
+    }
 
     if (opts.isAdmin) {
+      btnVideo.onclick = function () {
+        if (st.mode === "record") { st.abort(); return; }
+        setStatus("");
+        if (supportsWebCodecs()) startExport();
+        else start("record");
+      };
+      loadSongList().then(function (list) {
+        songSel.replaceChildren();
+        list.forEach(function (file) { songSel.appendChild(new Option(songLabel(file), file)); });
+        if (list.indexOf(st.song) < 0) {
+          songSel.selectedIndex = -1;
+          setStatus("The saved song (" + st.song + ") is not in the song folder. Pick another.", true);
+        } else songSel.value = st.song;
+      }).catch(function (e) { setStatus(e.message, true); });
+      songSel.onchange = async function () {
+        var previous = st.song;
+        songSel.disabled = true;
+        try {
+          await saveSettings(songSel.value, st.style);
+          st.duration = FALLBACK_DURATION;
+          loadLength();
+          notify("Birthday song saved.", false);
+        } catch (e) {
+          songSel.value = previous;
+          notify(settingsError(e), true);
+        }
+        songSel.disabled = st.mode !== "idle";
+      };
+      styleSel.onchange = async function () {
+        var previous = st.style;
+        styleSel.disabled = true;
+        try {
+          await saveSettings(st.song, Number(styleSel.value));
+          drawIdle();
+          notify("Animation style saved.", false);
+        } catch (e) {
+          styleSel.value = String(previous);
+          notify(settingsError(e), true);
+        }
+        styleSel.disabled = st.mode !== "idle";
+      };
       photoBtn.onclick = function () { fileInput.click(); };
       fileInput.onchange = async function () {
         var file = fileInput.files && fileInput.files[0];
@@ -1156,13 +1615,7 @@
         .catch(function () {})
         .then(function () { st._name = null; st._msg = null; if (st.mode === "idle") drawIdle(); });
     }
-    var au = getAudio();
-    function onMeta() {
-      st.duration = songDuration();
-      if (st.mode === "idle") { drawIdle(); setStatus("Song length " + fmtTime(st.duration)); }
-    }
-    if (isFinite(au.duration) && au.duration > 1) onMeta();
-    else au.addEventListener("loadedmetadata", onMeta, { once: true });
+    loadLength();
     if (st.photoPath) {
       fetchPhoto(st.photoPath).then(function (img) { st.photo = img; if (st.mode === "idle") drawIdle(); }).catch(function () {});
     }

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Portalis - Notes</title>
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="birthday-card.css?v=1" />
+    <link rel="stylesheet" href="birthday-card.css?v=2" />
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
@@ -76,7 +76,7 @@
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
     <script src="config.js"></script>
     <script src="common.js"></script>
-    <script src="birthday-card.js?v=1"></script>
+    <script src="birthday-card.js?v=2"></script>
     <script src="calendar.js?v=1"></script>
     <script>
       let ctx,
@@ -169,6 +169,7 @@
           return;
         }
         const photos = {};
+        const settings = {};
         try {
           const ids = Array.from(new Set(data.map((row) => row.recipient_id)));
           const { data: photoRows } = await sb
@@ -177,6 +178,13 @@
             .in("recipient_id", ids);
           (photoRows || []).forEach((row) => {
             photos[row.recipient_id] = row.image_path;
+          });
+          const { data: settingRows } = await sb
+            .from("birthday_settings")
+            .select("recipient_id,song,style")
+            .in("recipient_id", ids);
+          (settingRows || []).forEach((row) => {
+            settings[row.recipient_id] = row;
           });
         } catch (_) {}
         PortalisBirthday.stopAll();
@@ -212,6 +220,8 @@
               name: person.name,
               message: person.message,
               photoPath: photos[recipientId] || null,
+              song: (settings[recipientId] || {}).song,
+              style: (settings[recipientId] || {}).style,
               isAdmin: !!ctx.isAdmin,
               onNotify: (text, bad) => (bad ? err(text) : ok(text)),
             }),

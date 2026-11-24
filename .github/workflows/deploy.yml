@@ -28,6 +28,9 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
+      - name: Build song list from the song folder
+        run: ls Portalis/song | grep -iE '\.(mp3|m4a|ogg|wav)$' | jq -R . | jq -s . > Portalis/song/songs.json
+
       - name: Upload Portalis folder
         uses: actions/upload-pages-artifact@v3
         with:
