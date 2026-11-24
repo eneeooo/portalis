@@ -113,7 +113,8 @@
 
     function orderCard(order) {
       const wrap = el("div", "order" + (order.done ? " done" : ""));
-      wrap.append(el("div", "stamp " + (order.done ? "mint" : "pink"), order.done ? "✓ Done" : "⏳ Waiting"));
+      const stamp = order.done ? ["mint", "✓ Done"] : order.paid ? ["mint", "💰 Paid"] : ["pink", "⏳ Waiting"];
+      wrap.append(el("div", "stamp " + stamp[0], stamp[1]));
       if (!order.done && newOrders.has(order.no)) wrap.append(el("div", "new-sticker", "NEW!"));
       wrap.append(buildReceipt(order));
       const acts = el("div", "actions");
@@ -134,7 +135,13 @@
         must(await sb.from("bead_orders").delete().eq("no", order.no));
         await loadOrders();
       });
-      acts.append(toggle, del);
+      const pay = el("button", "btn white", order.paid ? "✓ Paid · Undo" : "💰 Mark paid");
+      pay.type = "button";
+      pay.onclick = () => run(async () => {
+        must(await sb.from("bead_orders").update({ paid: !order.paid }).eq("no", order.no));
+        await loadOrders();
+      });
+      acts.append(toggle, pay, del);
       wrap.append(acts);
       return wrap;
     }
