@@ -72,44 +72,49 @@ Portalis aims to grow into a reliable and functional web platform through contin
 
 ## Supabase setup
 
-Run `Portalis\setup.sql`, `Portalis\migration_features.sql`,
-`Portalis\migration_student_number_birthdays.sql`,
-`Portalis\migration_birthday_wishes.sql`,
-`Portalis\migration_birthday_wishes_privacy.sql`,
-`Portalis\migration_birthday_public_message.sql`,
-`Portalis\migration_staff_author_titles.sql`,
-`Portalis\migration_confession_feelings_fund_admin.sql`,
-`Portalis\migration_fund_advance_payments.sql`,
-`Portalis\migration_officer_role.sql`,
-`Portalis\migration_fund_delete_guard.sql`,
-`Portalis\migration_fund_periods_and_advances.sql`,
-`Portalis\migration_fund_current_weeks.sql`,
-`Portalis\migration_admin_confession_authors.sql`,
-`Portalis\migration_admin_only_suggestions.sql`,
-`Portalis\migration_optional_email.sql`, and
-`Portalis\migration_supabase_auth_restore.sql` in the Supabase SQL Editor.
-Run `Portalis\migration_attendance_presence.sql` to enable Attendance,
+Run `sql/setup.sql`, `sql/migration_features.sql`,
+`sql/migration_student_number_birthdays.sql`,
+`sql/migration_birthday_wishes.sql`,
+`sql/migration_birthday_wishes_privacy.sql`,
+`sql/migration_birthday_public_message.sql`,
+`sql/migration_staff_author_titles.sql`,
+`sql/migration_confession_feelings_fund_admin.sql`,
+`sql/migration_fund_advance_payments.sql`,
+`sql/migration_officer_role.sql`,
+`sql/migration_fund_delete_guard.sql`,
+`sql/migration_fund_periods_and_advances.sql`,
+`sql/migration_fund_current_weeks.sql`,
+`sql/migration_admin_confession_authors.sql`,
+`sql/migration_admin_only_suggestions.sql`,
+`sql/migration_optional_email.sql`, and
+`sql/migration_supabase_auth_restore.sql` in the Supabase SQL Editor.
+Then run `sql/migration_fix_profile_update.sql`, `sql/migration_profile_email_confirm.sql`,
+`sql/migration_fix_auth_deletes.sql`, `sql/migration_import_bsit12_credentials.sql`,
+`sql/migration_admin_reset_password.sql`, and `sql/migration_force_password_change.sql` (students still on
+`@Default` must choose a new password before using the site). Also set the minimum password length to 8 in
+the Supabase Auth settings. The step-by-step order is explained in [`Portalis/README.txt`](Portalis/README.txt).
+Run `sql/migration_attendance_presence.sql` to enable Attendance,
 view-profile and the online list (it also sets the school-year roster order; edit
 `SCHOOL`, `ACADEMIC_YEAR` and `CLASS_LABEL` at the top of the script in
-`Portalis\attendance.html` for a new term).
-Then run `Portalis\migration_profile_nickname_online.sql` (nicknames, Get to know me
-notes, working online list). Then run `Portalis\migration_memories_and_updates.sql` (Memories tab, confession
-full names for admins, nicknames in attendance). Then run `Portalis\migration_memories_multi_photos.sql` (several photos per memory).
-Then run `Portalis\migration_school_events.sql` (school calendar: the date and time widget in the top bar, the Calendar page, event cards on Notes, and event notice pictures).
-Then run `Portalis\migration_calendar_birthdays.sql` (shows classmates' birthdays on the calendar; month and day only).
-Run `sql\migration_subject_groups.sql` to let admins and officers group reviewer subjects by year and
+`Portalis/attendance.html` for a new term).
+Then run `sql/migration_profile_nickname_online.sql` (nicknames, Get to know me
+notes, working online list). Then run `sql/migration_memories_and_updates.sql` (Memories tab, confession
+full names for admins, nicknames in attendance). Then run `sql/migration_memories_multi_photos.sql` (several photos per memory).
+Then run `sql/migration_school_events.sql` (school calendar: the date and time widget in the top bar, the Calendar page, event cards on Notes, and event notice pictures).
+Then run `sql/migration_calendar_birthdays.sql` (shows classmates' birthdays on the calendar; month and day only).
+Run `sql/migration_subject_groups.sql` to let admins and officers group reviewer subjects by year and
 semester, reorder them, and choose which subjects students see (Admin -> Subjects, or Officer -> Reviewer subjects).
-Run `Portalis\migration_java_projects.sql` to enable private, per-account
+Run `sql/migration_java_projects.sql` to enable private, per-account
 Java projects in the Java compiler tab.
-Optionally run `Portalis\migration_seed_get_to_know.sql`
+Optionally run `sql/migration_seed_get_to_know.sql`
 once to fill in the answers from the class "Get to know each other" document;
 it only fills fields that are still empty.
-After `Portalis\migration_profile_email_confirm.sql`, run
-`Portalis\migration_profile_birthday_edit.sql` to let students edit their birthdays.
+After `sql/migration_profile_email_confirm.sql`, run
+`sql/migration_profile_birthday_edit.sql` to let students edit their birthdays.
 The restore script supports the `portalis_auth_users` table if the custom-auth
 migration was applied; it does not undo that migration or recover deleted Auth
 users.
-Do not run `Portalis\migration_custom_auth.sql`. Deploy the
+Do not run `sql/migration_custom_auth.sql`. Deploy the
 `username-login`, `auth-email-update`, and `admin-delete-user` Edge Functions
 with `--no-verify-jwt`, then follow the existing-user instructions in
-[`Portalis\README.txt`](Portalis/README.txt).
+[`Portalis/README.txt`](Portalis/README.txt).

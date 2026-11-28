@@ -5,6 +5,7 @@
 
   // ------------------------------------------------------------------ config
   var COMPILER_API = "https://ce.judge0.com/submissions";
+  var SERVICE_UNAVAILABLE = "The Java compiler service is unavailable right now (it may be busy or offline). Wait a minute, then press Try again.";
   var JAVA_LANGUAGE_ID = 91;
   var MAX_SOURCE_LENGTH = 30000;
   var MAX_STDIN_LENGTH = 5000;
@@ -657,8 +658,8 @@
     } catch (error) {
       if (my !== runId) return;
       term.pendingEcho = null;
-      var timedOut = error && error.name === "AbortError";
-      term.message = timedOut ? "The compiler service took too long to answer." : (error && error.message ? error.message : "Could not reach the compiler service.");
+      var unreachable = error && (error.name === "AbortError" || error.name === "TypeError");
+      term.message = unreachable || !error || !error.message ? SERVICE_UNAVAILABLE : error.message;
       term.retry = true;
       setTermState("error", "no connection");
       renderTerminal();
@@ -668,7 +669,7 @@
   }
 
   function httpError(status) {
-    var e = new Error(status === 429 ? "The free compiler service is busy right now (too many requests). Wait a few seconds, then press Try again." : "The compiler service answered with HTTP " + status + ".");
+    var e = new Error(status === 429 || status >= 500 ? SERVICE_UNAVAILABLE : "The compiler service answered with HTTP " + status + ".");
     e.status = status;
     return e;
   }

@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Portalis - Profile</title>
+    <meta name="description" content="Edit your Portalis profile: picture, about me, contacts, birthday, and password." />
+    <link rel="icon" href="logos/logo-ccs.png" type="image/png" />
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="mbti.css">
   <style>
@@ -101,6 +103,13 @@
       .pf-savebar button { min-height: 44px; }
       .pf-hero-actions label.pf-btn, .pf-hero-actions button { min-height: 44px; }
     }
+    /* ---------- Show/hide password eye ---------- */
+    .pw-field { position: relative; }
+    .pw-field input { padding-right: 46px; }
+    .pw-field .pw-eye, .pw-field .pw-eye:hover { position: absolute; top: 0; right: 0; bottom: 0; width: 44px; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; background: none; color: #000; border: 0; box-shadow: none; cursor: pointer; }
+    .pw-field .pw-eye:focus-visible { outline: 3px solid #000; outline-offset: -3px; }
+    .pw-field .pw-eye .pw-slash { display: none; }
+    .pw-field .pw-eye[aria-pressed="true"] .pw-slash { display: block; }
   </style>
 </head>
 <body>
@@ -195,11 +204,11 @@
         <details class="pf-card" id="passwordBox">
           <summary><span class="pf-summary-title">Change password</span><span class="pf-tag private">Only you</span></summary>
           <div class="pf-details-body">
-            <p class="hint">Choose a new password with at least 6 characters.</p>
+            <p class="hint">Choose a new password with at least 8 characters.</p>
             <label for="newPassword">New password</label>
-            <input id="newPassword" type="password" autocomplete="new-password">
+            <div class="pw-field"><input id="newPassword" type="password" autocomplete="new-password"><button class="pw-eye" type="button" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line class="pw-slash" x1="3" y1="3" x2="21" y2="21"/></svg></button></div>
             <label for="confirmPassword">Confirm new password</label>
-            <input id="confirmPassword" type="password" autocomplete="new-password">
+            <div class="pw-field"><input id="confirmPassword" type="password" autocomplete="new-password"><button class="pw-eye" type="button" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line class="pw-slash" x1="3" y1="3" x2="21" y2="21"/></svg></button></div>
             <button id="changePassword" type="button">Update password</button>
           </div>
         </details>
@@ -211,7 +220,7 @@
       </main>
     </div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
   <script src="common.js"></script>
   <script src="mbti.js"></script>
@@ -300,6 +309,10 @@
       ctx = await requireAuth();
       if (!ctx) return;
       renderBar(ctx, "profile");
+      if (ctx.mustChangePassword) {
+        $("passwordBox").open = true;
+        show("You are using the default password. Choose a new password to continue.", true);
+      }
       $("heroRole").textContent = profileTitle(ctx.profile);
       $("heroNumber").textContent = ctx.profile.student_number || "";
 
@@ -426,14 +439,25 @@
       } finally { $("save").disabled = false; }
     };
     $("previewPublic").onclick = () => { if (ctx) openMemberProfile(ctx.user.id); };
+    document.querySelectorAll(".pw-eye").forEach(eye => {
+      eye.onclick = () => {
+        const input = eye.previousElementSibling;
+        const show = input.type === "password";
+        input.type = show ? "text" : "password";
+        eye.setAttribute("aria-pressed", String(show));
+        eye.setAttribute("aria-label", show ? "Hide password" : "Show password");
+      };
+    });
     $("changePassword").onclick = async () => {
       const password = $("newPassword").value;
-      if (password.length < 6) { show("Password must be at least 6 characters.", true); return; }
+      if (password.length < 8) { show("Password must be at least 8 characters.", true); return; }
+      if (password === "@Default") { show("Choose a password other than the default one.", true); return; }
       if (password !== $("confirmPassword").value) { show("Passwords do not match.", true); return; }
       const { error } = await sb.auth.updateUser({ password });
       if (error) { show(error.message, true); return; }
       $("newPassword").value = ""; $("confirmPassword").value = "";
       show("Password updated.", false);
+      if (ctx.mustChangePassword) location.href = "dashboard.html";
     };
     init();
   </script>

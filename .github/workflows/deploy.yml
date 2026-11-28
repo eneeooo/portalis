@@ -31,6 +31,9 @@ jobs:
       - name: Build song list from the song folder
         run: ls Portalis/song | grep -iE '\.(mp3|m4a|ogg|wav)$' | jq -R . | jq -s . > Portalis/song/songs.json
 
+      - name: Minify CSS and JS
+        run: npx --yes esbuild@0.28.2 Portalis/*.js Portalis/*.css --minify --allow-overwrite --outdir=Portalis
+
       - name: Upload Portalis folder
         uses: actions/upload-pages-artifact@v3
         with:

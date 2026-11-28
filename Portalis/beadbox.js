@@ -33,7 +33,7 @@ async function run(fn) {
 
 const mascot = () => {
   const img = el("img", "mascot");
-  img.src = "unique-logo.png";
+  img.src = "unique-logo.webp";
   img.alt = "";
   return img;
 };

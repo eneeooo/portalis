@@ -211,6 +211,9 @@ async function requireAuth(adminOnly) {
     await forceSignOut("Your profile no longer exists. Sign up again or contact an admin.");
     return null;
   }
+  const { data: mustChange, error: mustChangeError } = await sb.rpc("must_change_password");
+  if (mustChangeError) { alert("Unable to check your password status: " + mustChangeError.message); return null; }
+  if (mustChange && !location.pathname.endsWith("/profile.html")) { location.href = "profile.html"; return null; }
   const role = prof.role;
   const isAdmin = role === "admin" || role === "officer";
   if (adminOnly && role !== "admin") { location.href = "dashboard.html"; return null; }
@@ -226,7 +229,7 @@ async function requireAuth(adminOnly) {
     }
   }
   startSessionWatch();
-  return { user: userData.user, profile: prof, role: role, isAdmin };
+  return { user: userData.user, profile: prof, role: role, isAdmin, mustChangePassword: mustChange };
 }
 
 /* Phones: the top bar shrinks to the profile + a Menu button; every tab lives inside the menu. */

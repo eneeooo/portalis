@@ -103,7 +103,10 @@ SETUP
   4d. Run migration_admin_reset_password.sql to enable the admin page's password
       reset action for students and officers. It resets Supabase Auth directly to
       @Default and clears any legacy password hash.
+  4e. Run migration_force_password_change.sql after migration_admin_reset_password.sql. Accounts still
+      using the default password @Default are sent to the Profile page until they choose a new one.
   5. Set the Supabase Auth settings (Dashboard -> Authentication):
+       - Set the minimum password length to 8 in the Auth settings (the site also checks this in the browser).
        - Sign In / Providers -> Email -> choose whether to require email confirmation.
          If enabled, new signups must confirm the email address before signing in.
        - Sign In / Providers -> Email -> turn OFF "Secure email change" if students
@@ -134,7 +137,7 @@ SETUP
      student or officer passwords to @Default. Passwords cannot be viewed or recovered;
      after a reset, tell the account holder to change the default password after signing in.
   8. Upload the Portalis folder to GitHub Pages and configure config.js with the
-     project's Supabase URL and anon key. Never put a service-role key there.
+     project's Supabase URL and publishable key. Never put a service-role key there.
 
 FAILED TO FETCH / CANNOT REACH THE SIGN-IN SERVICE
   Login calls the username-login Edge Function. Open diagnose.html on your

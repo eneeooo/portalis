@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Portalis - Sign up</title>
+    <meta name="description" content="Create a Portalis account using your student number if you are on the class roster." />
+    <link rel="icon" href="logos/logo-ccs.png" type="image/png" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -21,7 +23,7 @@
         <label for="birthDate">Birthdate</label>
         <input id="birthDate" type="date" autocomplete="bday" />
         <label for="password">Password</label>
-        <input id="password" type="password" autocomplete="new-password" placeholder="At least 6 characters" />
+        <input id="password" type="password" autocomplete="new-password" placeholder="At least 8 characters" />
         <label for="password2">Confirm password</label>
         <input id="password2" type="password" autocomplete="new-password" placeholder="Type it again" />
         <button id="signup" class="full">Create account</button>
@@ -29,7 +31,7 @@
         <p class="switch">Already have an account? <a href="index.html">Log in</a></p>
       </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js"></script>
     <script src="config.js"></script>
     <script>
       const msg = document.getElementById("msg");
@@ -57,7 +59,7 @@
         const todayPart = type => todayParts.find(part => part.type === type).value;
         const manilaToday = todayPart("year") + "-" + todayPart("month") + "-" + todayPart("day");
         if (birth_date > manilaToday) return show("Birthdate cannot be in the future.", true);
-        if (password.length < 6) return show("Password must be at least 6 characters.", true);
+        if (password.length < 8) return show("Password must be at least 8 characters.", true);
         if (password !== password2) return show("Passwords do not match.", true);
         btn.disabled = true;
         try {
